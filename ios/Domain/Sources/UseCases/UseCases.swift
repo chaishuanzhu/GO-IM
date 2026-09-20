@@ -202,12 +202,15 @@ public struct ObserveMessagesUseCase: Sendable {
 
 public struct MarkReadUseCase: Sendable {
     private let messages: MessageRepository
+    private let conversations: ConversationRepository
 
-    public init(messages: MessageRepository) {
+    public init(messages: MessageRepository, conversations: ConversationRepository) {
         self.messages = messages
+        self.conversations = conversations
     }
 
     public func execute(conversationId: String, peer: String, chatType: ChatType) async throws {
+        try await conversations.setUnread(conversationId: conversationId, count: 0)
         try await messages.markRead(conversationId: conversationId, peer: peer, chatType: chatType)
     }
 }

@@ -4,6 +4,7 @@ import Domain
 public actor ConversationRepositoryImpl: ConversationRepository {
     private let store: LocalStore
     private var continuations: [UUID: AsyncStream<[Conversation]>.Continuation] = [:]
+    private var activeId: String?
 
     public init(store: LocalStore) {
         self.store = store
@@ -32,7 +33,7 @@ public actor ConversationRepositoryImpl: ConversationRepository {
         }
     }
 
-    public func upsertConversation(from message: Message, title: String?) async throws {
+    public func upsertConversation(from message: Message, title: String?, incrementUnread: Bool) async throws {
         let existing = (try? await store.allConversations())?.first(where: { $0.id == message.conversationId })
         let peer = message.chatType == .group
             ? message.toUID
@@ -56,8 +57,10 @@ public actor ConversationRepositoryImpl: ConversationRepository {
         }
         conv.lastMessagePreview = message.listPreview
         conv.lastMessageAt = message.timestampMs
-        if !message.isOutgoing {
+        if incrementUnread, !message.isOutgoing {
             conv.unreadCount = (existing?.unreadCount ?? 0) + 1
+        } else if existing != nil {
+            conv.unreadCount = existing!.unreadCount
         }
         do {
             try await store.upsertConversation(conv)
@@ -102,6 +105,14 @@ public actor ConversationRepositoryImpl: ConversationRepository {
         } catch {
             throw DomainError.persistence(error.localizedDescription)
         }
+    }
+
+    public func setActiveConversationId(_ id: String?) async {
+        activeId = id
+    }
+
+    public func activeConversationId() async -> String? {
+        activeId
     }
 
     private func register(id: UUID, continuation: AsyncStream<[Conversation]>.Continuation) {

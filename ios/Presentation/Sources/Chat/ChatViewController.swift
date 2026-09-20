@@ -21,6 +21,10 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
     private var pickerMode: PickerMode = .album
     private enum PickerMode { case album, video }
 
+    /// First open / first data fill should land on the latest message after layout.
+    private var pendingScrollToBottom = false
+    private var hasScrolledToBottomOnce = false
+
     public init(env: AppEnvironment, conversation: Conversation) {
         self.env = env
         viewModel = ChatViewModel(env: env, conversation: conversation)
@@ -55,6 +59,15 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         NotificationCenter.default.removeObserver(self)
     }
 
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if !hasScrolledToBottomOnce, viewModel.messages.count > 0 {
+            scrollToBottom(animated: false, force: true)
+        } else {
+            flushPendingScrollToBottom()
+        }
+    }
+
     private func configureBindings() {
         viewModel.onChange = { [weak self] in
             guard let self else { return }
@@ -63,19 +76,23 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
             let prepended = self.viewModel.didPrependHistory
             let oldOffset = self.tableView.contentOffset.y
             let oldHeight = self.tableView.contentSize.height
+            let isInitialFill = previousCount == 0 && newCount > 0
 
             self.tableView.reloadData()
 
-            if prepended, newCount > previousCount {
+            if prepended, newCount > previousCount, previousCount > 0 {
                 self.tableView.layoutIfNeeded()
                 let delta = self.tableView.contentSize.height - oldHeight
                 self.tableView.contentOffset.y = max(0, oldOffset + delta)
+            } else if isInitialFill {
+                // Entering chat: always pin to latest once layout is ready.
+                self.scrollToBottom(animated: false, force: true)
             } else if newCount > previousCount {
-                // Only animate scroll when a new row appears — status handoffs shouldn't jump.
-                self.scrollToBottom(animated: true)
+                self.scrollToBottom(animated: true, force: false)
             } else if self.isNearBottom {
-                self.scrollToBottom(animated: false)
+                self.scrollToBottom(animated: false, force: false)
             }
+
             if let err = self.viewModel.errorMessage {
                 self.presentError(title: "发送失败", message: err)
                 self.viewModel.errorMessage = nil
@@ -160,6 +177,7 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateTableInsetsForComposer()
+        flushPendingScrollToBottom()
     }
 
     private func updateTableInsetsForComposer() {
@@ -170,6 +188,10 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         inset.bottom = bottom
         tableView.contentInset = inset
         tableView.verticalScrollIndicatorInsets.bottom = bottom
+        // Inset change can leave the latest message covered — re-pin if we intended to be at bottom.
+        if hasScrolledToBottomOnce, isNearBottom || pendingScrollToBottom {
+            pendingScrollToBottom = true
+        }
     }
 
     @objc private func dismissInputs() {
@@ -301,7 +323,7 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         } completion: { _ in
             self.updateTableInsetsForComposer()
             if mode != .none {
-                self.scrollToBottom(animated: true)
+                self.scrollToBottom(animated: true, force: false)
             }
         }
     }
@@ -481,9 +503,29 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         present(alert, animated: true)
     }
 
-    private func scrollToBottom(animated: Bool) {
+    private func scrollToBottom(animated: Bool, force: Bool) {
         let count = viewModel.messages.count
-        guard count > 0 else { return }
-        tableView.scrollToRow(at: IndexPath(row: count - 1, section: 0), at: .bottom, animated: animated)
+        guard count > 0 else {
+            if force { pendingScrollToBottom = true }
+            return
+        }
+        tableView.layoutIfNeeded()
+        guard tableView.bounds.height > 1, tableView.window != nil else {
+            pendingScrollToBottom = true
+            return
+        }
+        let indexPath = IndexPath(row: count - 1, section: 0)
+        guard tableView.numberOfRows(inSection: 0) > indexPath.row else {
+            pendingScrollToBottom = true
+            return
+        }
+        tableView.scrollToRow(at: indexPath, at: .bottom, animated: animated)
+        hasScrolledToBottomOnce = true
+        pendingScrollToBottom = false
+    }
+
+    private func flushPendingScrollToBottom() {
+        guard pendingScrollToBottom else { return }
+        scrollToBottom(animated: false, force: true)
     }
 }

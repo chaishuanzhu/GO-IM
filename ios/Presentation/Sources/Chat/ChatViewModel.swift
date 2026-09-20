@@ -37,26 +37,33 @@ public final class ChatViewModel {
                 didPrependHistory = previousCount > 0
                     && list.count > previousCount
                     && list.first?.id != previousFirstId
+                // Keep unread cleared while the chat is open (live arrivals included).
+                try? await env.conversations.setUnread(conversationId: conversation.id, count: 0)
                 onChange?()
                 didPrependHistory = false
             }
         }
         Task {
+            // Mark active before history so inbound history rows do not bump unread.
+            await env.conversations.setActiveConversationId(conversation.id)
             try? await env.markRead.execute(
                 conversationId: conversation.id,
                 peer: conversation.peerOrGroupId,
                 chatType: conversation.chatType
             )
-        }
-        if !didRequestInitialHistory {
-            didRequestInitialHistory = true
-            Task { await fetchHistory(before: nil) }
+            if !didRequestInitialHistory {
+                didRequestInitialHistory = true
+                await fetchHistory(before: nil)
+            }
         }
     }
 
     public func stop() {
         observeTask?.cancel()
         observeTask = nil
+        Task {
+            await env.conversations.setActiveConversationId(nil)
+        }
     }
 
     /// Pull older page when the user scrolls to the top.
@@ -122,7 +129,8 @@ public final class ChatViewModel {
                     status: .sent,
                     isOutgoing: true
                 ),
-                title: conversation.title
+                title: conversation.title,
+                incrementUnread: false
             )
         } catch {
             errorMessage = error.localizedDescription
@@ -177,7 +185,7 @@ public final class ChatViewModel {
                 meta: placeholder,
                 from: user
             )
-            try? await env.conversations.upsertConversation(from: pending, title: conversation.title)
+            try? await env.conversations.upsertConversation(from: pending, title: conversation.title, incrementUnread: false)
         } catch {
             errorMessage = error.localizedDescription
             onChange?()
@@ -209,7 +217,7 @@ public final class ChatViewModel {
 
             let sent = try await env.messages.deliverOutgoingFile(pending, meta: meta)
             env.files.removeStaged(fileId: localId)
-            try? await env.conversations.upsertConversation(from: sent, title: conversation.title)
+            try? await env.conversations.upsertConversation(from: sent, title: conversation.title, incrementUnread: false)
         } catch {
             try? await env.messages.markStatus(
                 clientSeq: pending.clientSeq,
@@ -264,7 +272,7 @@ public final class ChatViewModel {
                 localHeight: height > 0 ? height : nil,
                 localDuration: duration > 0 ? duration : nil
             )
-            try? await env.conversations.upsertConversation(from: sent, title: conversation.title)
+            try? await env.conversations.upsertConversation(from: sent, title: conversation.title, incrementUnread: false)
             onChange?()
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

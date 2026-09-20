@@ -98,6 +98,8 @@ public protocol MessageRepository: Sendable {
     ) async throws -> Int
     /// Called when the gateway emits the CmdHistory completion signal.
     func completeHistory(delivered: Int) async
+    /// True while a CmdHistory request is in flight (history rows must not bump unread).
+    func isHistoryInFlight() async -> Bool
     func syncOffline() async throws
     func markRead(conversationId: String, peer: String, chatType: ChatType) async throws
 }
@@ -105,11 +107,14 @@ public protocol MessageRepository: Sendable {
 public protocol ConversationRepository: Sendable {
     func observeConversations() -> AsyncStream<[Conversation]>
     func conversations() async throws -> [Conversation]
-    func upsertConversation(from message: Message, title: String?) async throws
+    func upsertConversation(from message: Message, title: String?, incrementUnread: Bool) async throws
     func setUnread(conversationId: String, count: Int) async throws
     func deleteConversation(id: String) async throws
     /// Apply cached group names onto existing group conversations.
     func syncGroupTitles() async throws
+    /// Conversation currently open in chat UI (skips unread increments for that id).
+    func setActiveConversationId(_ id: String?) async
+    func activeConversationId() async -> String?
 }
 
 public protocol GroupRepository: Sendable {

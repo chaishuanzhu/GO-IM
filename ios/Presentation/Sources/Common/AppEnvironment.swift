@@ -56,7 +56,7 @@ public final class AppEnvironment {
         sendFile = SendFileMessageUseCase(files: files, messages: messages)
         observeConversations = ObserveConversationsUseCase(conversations: conversations)
         observeMessages = ObserveMessagesUseCase(messages: messages)
-        markRead = MarkReadUseCase(messages: messages)
+        markRead = MarkReadUseCase(messages: messages, conversations: conversations)
         createGroup = CreateGroupUseCase(groups: groups)
         joinGroup = JoinGroupUseCase(groups: groups)
         leaveGroup = LeaveGroupUseCase(groups: groups)

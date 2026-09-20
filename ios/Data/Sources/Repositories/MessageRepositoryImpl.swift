@@ -8,6 +8,7 @@ public actor MessageRepositoryImpl: MessageRepository {
     private var ackTracker: OutboundAckTracker?
     private var historyContinuation: CheckedContinuation<Int, Never>?
     private var historyTimeoutTask: Task<Void, Never>?
+    private var historyInFlightCount = 0
 
     public init(store: LocalStore, connection: ConnectionRepository) {
         self.store = store
@@ -185,13 +186,10 @@ public actor MessageRepositoryImpl: MessageRepository {
         chatType: ChatType
     ) async throws -> Int {
         _ = conversationId
-        historyTimeoutTask?.cancel()
-        if let pending = historyContinuation {
-            historyContinuation = nil
-            pending.resume(returning: 0)
-        }
+        // Cancel any prior in-flight history wait (pairs its inFlight counter).
+        finishHistoryWait(delivered: 0)
 
-        // Arm waiter before send so a fast finish frame cannot be missed.
+        historyInFlightCount += 1
         return await withCheckedContinuation { (cont: CheckedContinuation<Int, Never>) in
             historyContinuation = cont
             historyTimeoutTask = Task {
@@ -219,11 +217,18 @@ public actor MessageRepositoryImpl: MessageRepository {
         await finishHistoryWait(delivered: delivered)
     }
 
+    public func isHistoryInFlight() async -> Bool {
+        historyInFlightCount > 0
+    }
+
     private func finishHistoryWait(delivered: Int) {
         historyTimeoutTask?.cancel()
         historyTimeoutTask = nil
         guard let cont = historyContinuation else { return }
         historyContinuation = nil
+        if historyInFlightCount > 0 {
+            historyInFlightCount -= 1
+        }
         cont.resume(returning: delivered)
     }
 
@@ -232,7 +237,7 @@ public actor MessageRepositoryImpl: MessageRepository {
     }
 
     public func markRead(conversationId: String, peer: String, chatType: ChatType) async throws {
-        try await store.setUnread(conversationId: conversationId, count: 0)
+        _ = conversationId
         try await connection.send(OutboundEnvelope(kind: .readReceipt(to: peer, chatType: chatType)))
     }
 

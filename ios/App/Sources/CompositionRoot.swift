@@ -114,7 +114,16 @@ public enum CompositionRoot {
             switch event {
             case let .message(msg):
                 try? await messages.upsert(msg)
-                try? await conversations.upsertConversation(from: msg, title: nil)
+                let historyInFlight = await messages.isHistoryInFlight()
+                let activeId = await conversations.activeConversationId()
+                let incrementUnread = !msg.isOutgoing
+                    && !historyInFlight
+                    && activeId != msg.conversationId
+                try? await conversations.upsertConversation(
+                    from: msg,
+                    title: nil,
+                    incrementUnread: incrementUnread
+                )
             case let .ack(seq, msgId):
                 try? await messages.markStatus(clientSeq: seq, status: .sent, serverMsgId: msgId)
             case let .historyFinished(delivered):
