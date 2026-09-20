@@ -290,6 +290,9 @@ public final class ChatViewModel {
                 try await env.messages.retry(message)
             case .image, .voice, .video, .file:
                 _ = try await env.sendFile.retry(message)
+            case .unsupported:
+                errorMessage = MsgType.unsupportedPlaceholder
+                onChange?()
             }
         } catch {
             errorMessage = error.localizedDescription

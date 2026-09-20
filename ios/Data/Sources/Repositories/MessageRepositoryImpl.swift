@@ -275,6 +275,8 @@ public actor MessageRepositoryImpl: MessageRepository {
             try await connection.send(OutboundEnvelope(kind: .chat(message)))
         case .image, .voice, .video, .file:
             try await connection.send(OutboundEnvelope(kind: .file(message)))
+        case .unsupported:
+            throw DomainError.invalidState(MsgType.unsupportedPlaceholder)
         }
     }
 

@@ -198,7 +198,7 @@ public final class CmdDispatchHandler: IMInboundHandler, @unchecked Sendable {
             fromUID: wire.from,
             toUID: wire.to,
             chatType: ChatType(rawValue: wire.chatType) ?? .single,
-            msgType: MsgType(rawValue: wire.msgType) ?? .text,
+            msgType: MsgType(rawValue: wire.msgType),
             content: wire.content,
             timestampMs: wire.timestamp,
             status: .sent,

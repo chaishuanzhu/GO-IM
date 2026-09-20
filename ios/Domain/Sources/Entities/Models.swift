@@ -10,12 +10,38 @@ public enum ChatType: Int32, Sendable, Codable {
     case group = 2
 }
 
-public enum MsgType: Int32, Sendable, Codable {
-    case text = 1
-    case image = 2
-    case voice = 3
-    case video = 4
-    case file = 5
+public enum MsgType: Sendable, Codable, Equatable {
+    case text
+    case image
+    case voice
+    case video
+    case file
+    /// Wire value not recognized by this client build; keep original code for round-trip.
+    case unsupported(Int32)
+
+    public static let unsupportedPlaceholder = "暂不支持的消息类型，请升级到最新版本"
+
+    public var rawValue: Int32 {
+        switch self {
+        case .text: return 1
+        case .image: return 2
+        case .voice: return 3
+        case .video: return 4
+        case .file: return 5
+        case let .unsupported(code): return code
+        }
+    }
+
+    public init(rawValue: Int32) {
+        switch rawValue {
+        case 1: self = .text
+        case 2: self = .image
+        case 3: self = .voice
+        case 4: self = .video
+        case 5: self = .file
+        default: self = .unsupported(rawValue)
+        }
+    }
 
     /// Map upload MIME to protocol msg_type (docs/07-api-reference.md §10.2).
     public static func from(mime: String) -> MsgType {

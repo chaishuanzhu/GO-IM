@@ -116,7 +116,7 @@ public struct MessageRecord: Codable, FetchableRecord, PersistableRecord, Sendab
             fromUID: fromUid,
             toUID: toUid,
             chatType: ChatType(rawValue: Int32(chatType)) ?? .single,
-            msgType: MsgType(rawValue: Int32(msgType)) ?? .text,
+            msgType: MsgType(rawValue: Int32(msgType)),
             content: content,
             timestampMs: timestampMs,
             status: MessageStatus(rawValue: status) ?? .sent,

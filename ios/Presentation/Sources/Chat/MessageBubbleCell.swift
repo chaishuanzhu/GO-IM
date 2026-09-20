@@ -256,6 +256,8 @@ final class MessageBubbleCell: UITableViewCell {
             configureFile(message.content, fileURL: fileURL, outgoing: outgoing)
         case .text:
             configureText(message.content)
+        case .unsupported:
+            configureText(MsgType.unsupportedPlaceholder)
         }
     }
 
