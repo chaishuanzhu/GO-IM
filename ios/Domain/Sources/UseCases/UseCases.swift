@@ -69,18 +69,110 @@ public struct SendFileMessageUseCase: Sendable {
         localHeight: Int? = nil,
         localDuration: Int? = nil
     ) async throws -> Message {
-        var meta = try await files.upload(data: data, fileName: fileName, mime: mime)
-        // Prefer server dims; fall back to client-measured pixels when server returns 0.
-        if (meta.width ?? 0) <= 0, let localWidth, localWidth > 0 {
-            meta.width = localWidth
+        // 1) Stage locally and show a sending bubble immediately.
+        let localId = try files.stageLocalFile(data: data, fileName: fileName)
+        let placeholder = FileMeta(
+            fileId: localId,
+            name: fileName,
+            size: Int64(data.count),
+            mime: mime,
+            width: localWidth,
+            height: localHeight,
+            duration: localDuration
+        )
+        let pending = try await messages.enqueueOutgoingFile(
+            to: to,
+            chatType: chatType,
+            meta: placeholder,
+            from: from
+        )
+
+        // 2) Upload, then deliver over the wire.
+        do {
+            var meta = try await files.upload(data: data, fileName: fileName, mime: mime)
+            if (meta.width ?? 0) <= 0, let localWidth, localWidth > 0 {
+                meta.width = localWidth
+            }
+            if (meta.height ?? 0) <= 0, let localHeight, localHeight > 0 {
+                meta.height = localHeight
+            }
+            if (meta.duration ?? 0) <= 0, let localDuration, localDuration > 0 {
+                meta.duration = localDuration
+            }
+            let sent = try await messages.deliverOutgoingFile(pending, meta: meta)
+            files.removeStaged(fileId: localId)
+            return sent
+        } catch {
+            try? await messages.markStatus(
+                clientSeq: pending.clientSeq,
+                status: .failed,
+                serverMsgId: nil
+            )
+            throw error
         }
-        if (meta.height ?? 0) <= 0, let localHeight, localHeight > 0 {
-            meta.height = localHeight
+    }
+
+    /// Retry a failed outgoing media message (re-upload when still staged locally).
+    public func retry(_ message: Message) async throws -> Message {
+        guard message.isOutgoing else {
+            throw DomainError.invalidState("only outgoing messages can be retried")
         }
-        if (meta.duration ?? 0) <= 0, let localDuration, localDuration > 0 {
-            meta.duration = localDuration
+        guard let meta = Self.parseFileMeta(message.content) else {
+            try await messages.retry(message)
+            return message
         }
-        return try await messages.sendFile(to: to, chatType: chatType, meta: meta, from: from)
+        if meta.fileId.hasPrefix("local:") {
+            guard let data = files.stagedData(fileId: meta.fileId), !data.isEmpty else {
+                throw DomainError.invalidState("本地文件已失效，请重新选择发送")
+            }
+            try? await messages.markStatus(
+                clientSeq: message.clientSeq,
+                status: .sending,
+                serverMsgId: nil
+            )
+            do {
+                var uploaded = try await files.upload(data: data, fileName: meta.name, mime: meta.mime)
+                if (uploaded.width ?? 0) <= 0 { uploaded.width = meta.width }
+                if (uploaded.height ?? 0) <= 0 { uploaded.height = meta.height }
+                if (uploaded.duration ?? 0) <= 0 { uploaded.duration = meta.duration }
+                let sent = try await messages.deliverOutgoingFile(message, meta: uploaded)
+                files.removeStaged(fileId: meta.fileId)
+                return sent
+            } catch {
+                try? await messages.markStatus(
+                    clientSeq: message.clientSeq,
+                    status: .failed,
+                    serverMsgId: nil
+                )
+                throw error
+            }
+        }
+        try await messages.retry(message)
+        return message
+    }
+
+    private static func parseFileMeta(_ content: String) -> FileMeta? {
+        guard let data = content.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        let fileId: String
+        if let s = obj["file_id"] as? String {
+            fileId = s
+        } else if let n = obj["file_id"] as? NSNumber {
+            fileId = n.stringValue
+        } else {
+            return nil
+        }
+        return FileMeta(
+            fileId: fileId,
+            name: obj["name"] as? String ?? "file",
+            size: (obj["size"] as? NSNumber)?.int64Value ?? 0,
+            mime: obj["mime"] as? String ?? "application/octet-stream",
+            width: (obj["width"] as? NSNumber)?.intValue,
+            height: (obj["height"] as? NSNumber)?.intValue,
+            duration: (obj["duration"] as? NSNumber)?.intValue
+        )
     }
 }
 

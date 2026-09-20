@@ -58,13 +58,28 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
     private func configureBindings() {
         viewModel.onChange = { [weak self] in
             guard let self else { return }
+            let previousCount = self.tableView.numberOfRows(inSection: 0)
+            let newCount = self.viewModel.messages.count
             self.tableView.reloadData()
-            self.scrollToBottom(animated: true)
+            // Only animate scroll when a new row appears — status handoffs shouldn't jump.
+            if newCount > previousCount {
+                self.scrollToBottom(animated: true)
+            } else if self.isNearBottom {
+                self.scrollToBottom(animated: false)
+            }
             if let err = self.viewModel.errorMessage {
                 self.presentError(title: "发送失败", message: err)
                 self.viewModel.errorMessage = nil
             }
         }
+    }
+
+    private var isNearBottom: Bool {
+        let visible = tableView.bounds.height
+        guard visible > 0 else { return true }
+        let offsetY = tableView.contentOffset.y
+        let contentH = tableView.contentSize.height
+        return offsetY + visible >= contentH - 120
     }
 
     private func configureLayout() {
@@ -165,6 +180,10 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         }, onOpen: { [weak self] url in
             UIApplication.shared.open(url)
         })
+        cell.onRetry = { [weak self] in
+            let messageId = m.id
+            Task { await self?.viewModel.retryMessage(id: messageId) }
+        }
         return cell
     }
 
@@ -185,9 +204,7 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
     }
 
     func composerBar(_ bar: ChatComposerBar, didFinishVoice data: Data, duration: Int) {
-        composer.isBusy = true
         Task {
-            defer { composer.isBusy = false }
             await viewModel.sendAttachment(data: data, fileName: "voice.m4a", mime: "audio/mp4", duration: duration)
         }
     }
@@ -225,33 +242,29 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         extraImages: [UIImage],
         sendOriginal: Bool
     ) {
-        composer.isBusy = true
         composer.dismissAccessory()
+        // Fire each image as soon as it's ready — don't wait for all loads + full compress.
         Task {
-            defer { composer.isBusy = false }
-            do {
-                var images = extraImages
-                for asset in assets {
-                    if let image = await loadUIImage(from: asset) {
-                        images.append(image)
-                    }
+            var index = 0
+            func nextName() -> String {
+                index += 1
+                return "photo-\(index).jpg"
+            }
+
+            for image in extraImages {
+                await viewModel.sendImage(image, fileName: nextName(), original: sendOriginal)
+            }
+
+            var hadAsset = false
+            for asset in assets {
+                if let image = await loadUIImage(from: asset) {
+                    hadAsset = true
+                    await viewModel.sendImage(image, fileName: nextName(), original: sendOriginal)
                 }
-                guard !images.isEmpty else {
-                    throw DomainError.invalidState("未能读取所选图片")
-                }
-                for (idx, image) in images.enumerated() {
-                    guard let compressed = ImageCompressor.jpegDataForUpload(from: image, original: sendOriginal) else {
-                        throw DomainError.invalidState("图片压缩失败")
-                    }
-                    await viewModel.sendImage(
-                        data: compressed.data,
-                        fileName: "photo-\(idx + 1).jpg",
-                        width: compressed.width,
-                        height: compressed.height
-                    )
-                }
-            } catch {
-                presentError(title: "发送图片失败", message: error.localizedDescription)
+            }
+
+            if extraImages.isEmpty && !hadAsset {
+                presentError(title: "发送图片失败", message: "未能读取所选图片")
             }
         }
     }
@@ -304,10 +317,8 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
             }
         case .video:
             guard let provider = results.first?.itemProvider else { return }
-            composer.isBusy = true
             composer.dismissAccessory()
             Task {
-                defer { composer.isBusy = false }
                 do {
                     let (data, name, mime, duration) = try await loadVideo(from: provider)
                     await viewModel.sendAttachment(data: data, fileName: name, mime: mime, duration: duration)
@@ -334,10 +345,8 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
 
     public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard let url = urls.first else { return }
-        composer.isBusy = true
         composer.dismissAccessory()
         Task {
-            defer { composer.isBusy = false }
             do {
                 let accessed = url.startAccessingSecurityScopedResource()
                 defer { if accessed { url.stopAccessingSecurityScopedResource() } }

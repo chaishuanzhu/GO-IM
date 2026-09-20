@@ -86,9 +86,82 @@ public actor MessageRepositoryImpl: MessageRepository {
     }
 
     public func sendFile(to: String, chatType: ChatType, meta: FileMeta, from: User) async throws -> Message {
+        let message = try await enqueueOutgoingFile(to: to, chatType: chatType, meta: meta, from: from)
+        return try await deliverOutgoingFile(message, meta: meta)
+    }
+
+    public func enqueueOutgoingFile(
+        to: String,
+        chatType: ChatType,
+        meta: FileMeta,
+        from: User
+    ) async throws -> Message {
         let conversationId = chatType == .group
             ? ConversationID.group(to)
             : ConversationID.dm(uidA: from.uid, uidB: to)
+        let content = try Self.encodeFileContent(meta)
+        let msgType = MsgType.from(mime: meta.mime)
+        let seq = Int64(Date().timeIntervalSince1970 * 1000) % 1_000_000_000_000
+        let message = Message(
+            clientSeq: seq,
+            conversationId: conversationId,
+            fromUID: from.uid,
+            toUID: to,
+            chatType: chatType,
+            msgType: msgType,
+            content: content,
+            timestampMs: Int64(Date().timeIntervalSince1970 * 1000),
+            status: .sending,
+            isOutgoing: true
+        )
+        try await upsert(message)
+        return message
+    }
+
+    public func deliverOutgoingFile(_ message: Message, meta: FileMeta) async throws -> Message {
+        // Build the wire payload with final meta, but don't upsert yet — keeps the
+        // local preview on screen until send succeeds (avoids local→remote flash).
+        var pending = message
+        pending.content = try Self.encodeFileContent(meta)
+        pending.msgType = MsgType.from(mime: meta.mime)
+        pending.status = .sending
+        do {
+            try await connection.send(OutboundEnvelope(kind: .file(pending)))
+            pending.status = .sent
+            try await upsert(pending)
+            return pending
+        } catch {
+            var failed = message
+            failed.status = .failed
+            try await upsert(failed)
+            throw error
+        }
+    }
+
+    public func retry(_ message: Message) async throws {
+        guard message.isOutgoing else {
+            throw DomainError.invalidState("only outgoing messages can be retried")
+        }
+        var pending = message
+        pending.status = .sending
+        try await upsert(pending)
+        do {
+            switch message.msgType {
+            case .text:
+                try await connection.send(OutboundEnvelope(kind: .chat(pending)))
+            case .image, .voice, .video, .file:
+                try await connection.send(OutboundEnvelope(kind: .file(pending)))
+            }
+            pending.status = .sent
+            try await upsert(pending)
+        } catch {
+            pending.status = .failed
+            try await upsert(pending)
+            throw error
+        }
+    }
+
+    private static func encodeFileContent(_ meta: FileMeta) throws -> String {
         var payload: [String: Any] = [
             "file_id": meta.fileId,
             "name": meta.name,
@@ -104,31 +177,7 @@ public actor MessageRepositoryImpl: MessageRepository {
               let content = String(data: jsonData, encoding: .utf8) else {
             throw DomainError.invalidState("file meta json encode failed")
         }
-        let msgType = MsgType.from(mime: meta.mime)
-        let seq = Int64(Date().timeIntervalSince1970 * 1000) % 1_000_000_000_000
-        var message = Message(
-            clientSeq: seq,
-            conversationId: conversationId,
-            fromUID: from.uid,
-            toUID: to,
-            chatType: chatType,
-            msgType: msgType,
-            content: content,
-            timestampMs: Int64(Date().timeIntervalSince1970 * 1000),
-            status: .sending,
-            isOutgoing: true
-        )
-        try await upsert(message)
-        do {
-            try await connection.send(OutboundEnvelope(kind: .file(message)))
-            message.status = .sent
-            try await upsert(message)
-        } catch {
-            message.status = .failed
-            try await upsert(message)
-            throw error
-        }
-        return message
+        return content
     }
 
     public func loadHistory(conversationId: String, peer: String, before: Int64?, limit: Int) async throws {

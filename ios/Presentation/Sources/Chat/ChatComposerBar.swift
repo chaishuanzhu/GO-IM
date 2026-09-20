@@ -42,7 +42,6 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
     private let toolRow = UIStackView()
     private let topStack = UIStackView()
     private let accessoryHost = UIView()
-    private let busy = UIActivityIndicatorView(style: .medium)
 
     private var emojiButton: UIButton!
     private var mentionButton: UIButton!
@@ -97,14 +96,6 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         NotificationCenter.default.removeObserver(self)
     }
 
-    var isBusy: Bool = false {
-        didSet {
-            if isBusy { busy.startAnimating() } else { busy.stopAnimating() }
-            busy.isHidden = !isBusy
-            isUserInteractionEnabled = !isBusy || accessory == .voice
-        }
-    }
-
     func insertMention(_ uid: String) {
         let token = "@\(uid) "
         textView.text = (textView.text ?? "") + token
@@ -157,10 +148,7 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         placeholder.translatesAutoresizingMaskIntoConstraints = false
         textView.addSubview(placeholder)
 
-        busy.hidesWhenStopped = true
-        busy.translatesAutoresizingMaskIntoConstraints = false
-
-        let inputRow = UIStackView(arrangedSubviews: [textView, busy])
+        let inputRow = UIStackView(arrangedSubviews: [textView])
         inputRow.axis = .horizontal
         inputRow.alignment = .bottom
         inputRow.spacing = 8

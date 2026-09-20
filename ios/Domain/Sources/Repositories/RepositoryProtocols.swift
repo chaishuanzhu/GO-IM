@@ -80,6 +80,12 @@ public protocol MessageRepository: Sendable {
     func markStatus(clientSeq: Int64, status: MessageStatus, serverMsgId: Int64?) async throws
     func sendText(to: String, chatType: ChatType, text: String, from: User) async throws -> Message
     func sendFile(to: String, chatType: ChatType, meta: FileMeta, from: User) async throws -> Message
+    /// Insert an outgoing file/image bubble immediately (`sending`) without uploading/wiring yet.
+    func enqueueOutgoingFile(to: String, chatType: ChatType, meta: FileMeta, from: User) async throws -> Message
+    /// Replace placeholder meta, deliver over the wire, and mark sent/failed.
+    func deliverOutgoingFile(_ message: Message, meta: FileMeta) async throws -> Message
+    /// Resend a locally failed outgoing message (same clientSeq / content).
+    func retry(_ message: Message) async throws
     func loadHistory(conversationId: String, peer: String, before: Int64?, limit: Int) async throws
     func syncOffline() async throws
     func markRead(conversationId: String, peer: String, chatType: ChatType) async throws
@@ -118,6 +124,11 @@ public protocol FriendRepository: Sendable {
 public protocol FileRepository: Sendable {
     func upload(data: Data, fileName: String, mime: String) async throws -> FileMeta
     func fileURL(fileId: String, thumb: Bool) -> URL?
+    /// Persist bytes under a `local:` id so the chat list can show the bubble before upload.
+    func stageLocalFile(data: Data, fileName: String) throws -> String
+    func replaceStaged(fileId: String, data: Data) throws
+    func stagedData(fileId: String) -> Data?
+    func removeStaged(fileId: String)
 }
 
 public protocol SearchRepository: Sendable {

@@ -81,7 +81,26 @@ public final class FileRepositoryImpl: FileRepository, @unchecked Sendable {
         }
     }
 
+    public func stageLocalFile(data: Data, fileName: String) throws -> String {
+        try LocalMediaStore.shared.stage(data: data, suggestedName: fileName)
+    }
+
+    public func replaceStaged(fileId: String, data: Data) throws {
+        try LocalMediaStore.shared.replace(fileId, data: data)
+    }
+
+    public func stagedData(fileId: String) -> Data? {
+        LocalMediaStore.shared.data(for: fileId)
+    }
+
+    public func removeStaged(fileId: String) {
+        LocalMediaStore.shared.remove(fileId)
+    }
+
     public func fileURL(fileId: String, thumb: Bool) -> URL? {
+        if let local = LocalMediaStore.shared.urlIfPresent(for: fileId) {
+            return local
+        }
         guard let user = auth.currentUser() else { return nil }
         var components = URLComponents(
             url: ServerConfigHolder.shared.baseURL.appendingPathComponent("file"),

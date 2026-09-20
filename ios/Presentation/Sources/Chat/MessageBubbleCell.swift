@@ -13,6 +13,10 @@ final class MessageBubbleCell: UITableViewCell {
     private let mediaIcon = UIImageView()
     private let statusLabel = UILabel()
     private let stack = UIStackView()
+    private let bubbleRow = UIStackView()
+    private let statusAccessory = UIView()
+    private let activityView = UIActivityIndicatorView(style: .medium)
+    private let failButton = UIButton(type: .system)
     private let contentStack = UIStackView()
     private let mediaRow = UIStackView()
 
@@ -32,7 +36,9 @@ final class MessageBubbleCell: UITableViewCell {
     private var textStackConstraints: [NSLayoutConstraint] = []
 
     private var openURL: URL?
+    private var boundImageFileId: String?
     var onOpenURL: ((URL) -> Void)?
+    var onRetry: (() -> Void)?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -66,7 +72,35 @@ final class MessageBubbleCell: UITableViewCell {
 
         statusLabel.font = .preferredFont(forTextStyle: .caption2)
         statusLabel.adjustsFontForContentSizeCategory = true
-        statusLabel.textColor = .systemRed
+        statusLabel.textColor = .secondaryLabel
+        statusLabel.isHidden = true
+
+        activityView.hidesWhenStopped = true
+        activityView.translatesAutoresizingMaskIntoConstraints = false
+
+        var failConfig = UIButton.Configuration.plain()
+        failConfig.image = UIImage(systemName: "exclamationmark.circle.fill")
+        failConfig.baseForegroundColor = .systemRed
+        failConfig.contentInsets = .zero
+        failButton.configuration = failConfig
+        failButton.accessibilityLabel = "发送失败，点击重试"
+        failButton.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
+        failButton.translatesAutoresizingMaskIntoConstraints = false
+        failButton.isHidden = true
+
+        statusAccessory.translatesAutoresizingMaskIntoConstraints = false
+        statusAccessory.addSubview(activityView)
+        statusAccessory.addSubview(failButton)
+        NSLayoutConstraint.activate([
+            statusAccessory.widthAnchor.constraint(equalToConstant: 22),
+            statusAccessory.heightAnchor.constraint(equalToConstant: 22),
+            activityView.centerXAnchor.constraint(equalTo: statusAccessory.centerXAnchor),
+            activityView.centerYAnchor.constraint(equalTo: statusAccessory.centerYAnchor),
+            failButton.centerXAnchor.constraint(equalTo: statusAccessory.centerXAnchor),
+            failButton.centerYAnchor.constraint(equalTo: statusAccessory.centerYAnchor),
+            failButton.widthAnchor.constraint(equalToConstant: 22),
+            failButton.heightAnchor.constraint(equalToConstant: 22),
+        ])
 
         imageViewBubble.contentMode = .scaleAspectFill
         imageViewBubble.clipsToBounds = true
@@ -111,11 +145,17 @@ final class MessageBubbleCell: UITableViewCell {
         ]
         NSLayoutConstraint.activate(textStackConstraints)
 
+        bubbleRow.axis = .horizontal
+        bubbleRow.spacing = 6
+        bubbleRow.alignment = .bottom
+        bubbleRow.addArrangedSubview(statusAccessory)
+        bubbleRow.addArrangedSubview(bubbleView)
+
         stack.axis = .vertical
         stack.spacing = 4
         stack.alignment = .leading
         stack.addArrangedSubview(metaLabel)
-        stack.addArrangedSubview(bubbleView)
+        stack.addArrangedSubview(bubbleRow)
         stack.addArrangedSubview(statusLabel)
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.setContentHuggingPriority(.required, for: .horizontal)
@@ -166,8 +206,8 @@ final class MessageBubbleCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         imageViewBubble.kf.cancelDownloadTask()
-        imageViewBubble.image = nil
-        showTextContent()
+        // Keep bitmap until configure replaces it (avoids blank frame on local→remote handoff).
+        boundImageFileId = nil
         mediaIcon.image = nil
         bodyLabel.text = nil
         statusLabel.text = nil
@@ -175,6 +215,8 @@ final class MessageBubbleCell: UITableViewCell {
         metaLabel.text = nil
         openURL = nil
         onOpenURL = nil
+        onRetry = nil
+        hideSendAccessory()
     }
 
     func configure(message: Message, fileURL: ((String, Bool) -> URL?)?, onOpen: ((URL) -> Void)? = nil) {
@@ -201,7 +243,7 @@ final class MessageBubbleCell: UITableViewCell {
             : "\(message.fromUID) · \(GOIMFormat.messageTime(message.timestampMs))"
         metaLabel.textAlignment = outgoing ? .right : .left
 
-        applyStatus(message.status)
+        applyStatus(message.status, outgoing: outgoing)
 
         switch message.msgType {
         case .image:
@@ -246,34 +288,46 @@ final class MessageBubbleCell: UITableViewCell {
             imageTrailingConstraint,
         ])
         imageViewBubble.isHidden = true
-        imageViewBubble.image = nil
-
+        // Don't nil image here during mode switch mid-configure; clear when leaving image msgs.
         contentStack.isHidden = false
         NSLayoutConstraint.activate(textStackConstraints)
     }
 
-    private func applyStatus(_ status: MessageStatus) {
-        switch status {
-        case .failed:
-            statusLabel.isHidden = false
-            statusLabel.textColor = .systemRed
-            statusLabel.text = "发送失败"
-        case .sending:
-            statusLabel.isHidden = false
-            statusLabel.textColor = .secondaryLabel
-            statusLabel.text = "发送中…"
-        case .recalled:
-            statusLabel.isHidden = false
-            statusLabel.textColor = .secondaryLabel
-            statusLabel.text = "已撤回"
-        default:
-            statusLabel.isHidden = true
+    private func applyStatus(_ status: MessageStatus, outgoing: Bool) {
+        statusLabel.isHidden = true
+        statusLabel.text = nil
+        guard outgoing else {
+            hideSendAccessory()
+            return
         }
+        switch status {
+        case .sending:
+            statusAccessory.isHidden = false
+            failButton.isHidden = true
+            activityView.startAnimating()
+        case .failed:
+            statusAccessory.isHidden = false
+            activityView.stopAnimating()
+            failButton.isHidden = false
+        case .recalled:
+            hideSendAccessory()
+            statusLabel.isHidden = false
+            statusLabel.text = "已撤回"
+        case .sent:
+            hideSendAccessory()
+        }
+    }
+
+    private func hideSendAccessory() {
+        activityView.stopAnimating()
+        failButton.isHidden = true
+        statusAccessory.isHidden = true
     }
 
     private func configureSystemNotice(_ text: String, outgoing: Bool) {
         metaLabel.isHidden = true
         statusLabel.isHidden = true
+        hideSendAccessory()
         showTextContent()
         mediaIcon.isHidden = true
         mediaIcon.image = nil
@@ -288,6 +342,8 @@ final class MessageBubbleCell: UITableViewCell {
     }
 
     private func configureText(_ text: String) {
+        imageViewBubble.image = nil
+        boundImageFileId = nil
         showTextContent()
         mediaIcon.isHidden = true
         mediaIcon.image = nil
@@ -299,6 +355,8 @@ final class MessageBubbleCell: UITableViewCell {
 
     private func configureImage(_ content: String, fileURL: ((String, Bool) -> URL?)?) {
         guard let meta = parseFileMeta(content) else {
+            imageViewBubble.image = nil
+            boundImageFileId = nil
             configureText("[图片]")
             return
         }
@@ -308,8 +366,34 @@ final class MessageBubbleCell: UITableViewCell {
         let thumb = fileURL?(meta.fileId, true)
         let full = fileURL?(meta.fileId, false)
         openURL = full
-        if let url = thumb ?? full {
-            imageViewBubble.kf.setImage(with: url, options: [.transition(.fade(0.2))])
+
+        // Same file already on screen (e.g. status-only refresh) — skip reload.
+        if boundImageFileId == meta.fileId, imageViewBubble.image != nil {
+            return
+        }
+
+        let url = thumb ?? full
+        if let url {
+            // Sync paint from memory cache / local file before any async fetch.
+            if let cached = ImageCache.default.retrieveImageInMemoryCache(forKey: url.cacheKey) {
+                imageViewBubble.image = cached
+            } else if url.isFileURL, let data = try? Data(contentsOf: url), let img = UIImage(data: data) {
+                imageViewBubble.image = img
+            } else if boundImageFileId != nil {
+                // Different remote image while scrolling — clear stale bitmap.
+                imageViewBubble.image = nil
+            }
+            imageViewBubble.kf.setImage(
+                with: url,
+                options: [
+                    .keepCurrentImageWhileLoading,
+                    .transition(.none),
+                ]
+            )
+            boundImageFileId = meta.fileId
+        } else {
+            imageViewBubble.image = nil
+            boundImageFileId = nil
         }
     }
 
@@ -364,6 +448,10 @@ final class MessageBubbleCell: UITableViewCell {
     @objc private func bubbleTapped() {
         guard let openURL else { return }
         onOpenURL?(openURL)
+    }
+
+    @objc private func retryTapped() {
+        onRetry?()
     }
 
     /// Display size from message `width`/`height` (pixels), fitted into max box.

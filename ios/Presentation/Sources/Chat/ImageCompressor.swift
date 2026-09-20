@@ -19,6 +19,15 @@ enum ImageCompressor {
         let height: Int
     }
 
+    /// Fast single-pass JPEG for immediate list preview (before full upload compress).
+    static func quickPreviewJPEG(from image: UIImage, maxPixel: CGFloat = 1280, quality: CGFloat = 0.7) -> Result? {
+        let working = resizedImage(image, maxPixel: maxPixel)
+        guard let jpeg = working.jpegData(compressionQuality: quality), !jpeg.isEmpty else { return nil }
+        let dims = pixelSize(of: jpeg) ?? pixelSize(of: working) ?? (0, 0)
+        guard dims.0 > 0, dims.1 > 0 else { return nil }
+        return Result(data: jpeg, width: dims.0, height: dims.1)
+    }
+
     /// Always returns scale=1 JPEG with positive pixel dimensions (never HEIC/raw fallback).
     static func jpegDataForUpload(
         from image: UIImage,

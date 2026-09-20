@@ -28,6 +28,7 @@
 		C90700C26F0875992A5BA96E /* LocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FC4C475EDCDECD69B01BEFA /* LocalStore.swift */; };
 		CC70E752D35EA11FA6DE16F2 /* ConnectionRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD590228B067BC87A4C9919C /* ConnectionRepositoryImpl.swift */; };
 		EBE6C36E01ABE04C44EB87AC /* AuthRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B08B8D885C7C6BDA4B019E0 /* AuthRepositoryImpl.swift */; };
+		FB7F20DD366454280CF8944D /* LocalMediaStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7BF14A481FD8FB0ACB69801 /* LocalMediaStore.swift */; };
 		FBBD2738F6E3357C3C2D47C5 /* SearchRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48D2D31071F86E13EC090F4E /* SearchRepositoryImpl.swift */; };
 /* End PBXBuildFile section */
 
@@ -86,6 +87,7 @@
 		BB6519955ECB01AC1E70E60E /* GroupRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupRepositoryImpl.swift; sourceTree = "<group>"; };
 		BF2E0DA0E3876515148029B2 /* ProtobufCodecTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtobufCodecTests.swift; sourceTree = "<group>"; };
 		C487F5D2277BCC8A01F51AE0 /* DataTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DataTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C7BF14A481FD8FB0ACB69801 /* LocalMediaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMediaStore.swift; sourceTree = "<group>"; };
 		D51833C430F8B21E1181C18D /* Kingfisher.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Kingfisher.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		DD590228B067BC87A4C9919C /* ConnectionRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionRepositoryImpl.swift; sourceTree = "<group>"; };
 		E38D43CEE696BFEF020903BE /* Moya.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Moya.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -207,6 +209,7 @@
 			isa = PBXGroup;
 			children = (
 				4631D310A8CDE0930697872D /* KeychainStore.swift */,
+				C7BF14A481FD8FB0ACB69801 /* LocalMediaStore.swift */,
 			);
 			path = Storage;
 			sourceTree = "<group>";
@@ -361,6 +364,7 @@
 				5C595053BE68FA4B0B220779 /* MessageRepositoryImpl.swift in Sources */,
 				FBBD2738F6E3357C3C2D47C5 /* SearchRepositoryImpl.swift in Sources */,
 				80D128765A3E8C4910DA98F8 /* KeychainStore.swift in Sources */,
+				FB7F20DD366454280CF8944D /* LocalMediaStore.swift in Sources */,
 				81D3CA8E3F8EB8BBCCD4A2DA /* NWTransports.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
