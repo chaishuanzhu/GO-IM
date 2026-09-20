@@ -1,0 +1,16 @@
+# Xcode / Tuist
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+Graph.json
+graph.png
+
+# SPM / Tuist
+Tuist/.build/
+.swiftpm/
+SourcePackages/
+
+# Misc
+.DS_Store
+.derivedData
