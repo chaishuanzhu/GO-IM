@@ -5,14 +5,22 @@ import Domain
 
 @MainActor
 public final class ChatViewModel {
+    public static let historyPageSize = 30
+
     public let conversation: Conversation
     public private(set) var messages: [Message] = []
     public var draft: String = ""
     public var onChange: (() -> Void)?
+    /// True when the latest reload prepended older rows (preserve scroll offset).
+    public private(set) var didPrependHistory = false
     public var errorMessage: String?
+
+    public private(set) var isLoadingHistory = false
+    public private(set) var hasMoreHistory = true
 
     private let env: AppEnvironment
     private var observeTask: Task<Void, Never>?
+    private var didRequestInitialHistory = false
 
     public init(env: AppEnvironment, conversation: Conversation) {
         self.env = env
@@ -23,8 +31,14 @@ public final class ChatViewModel {
         observeTask?.cancel()
         observeTask = Task {
             for await list in env.observeMessages.execute(conversationId: conversation.id) {
+                let previousFirstId = messages.first?.id
+                let previousCount = messages.count
                 messages = list
+                didPrependHistory = previousCount > 0
+                    && list.count > previousCount
+                    && list.first?.id != previousFirstId
                 onChange?()
+                didPrependHistory = false
             }
         }
         Task {
@@ -34,11 +48,52 @@ public final class ChatViewModel {
                 chatType: conversation.chatType
             )
         }
+        if !didRequestInitialHistory {
+            didRequestInitialHistory = true
+            Task { await fetchHistory(before: nil) }
+        }
     }
 
     public func stop() {
         observeTask?.cancel()
         observeTask = nil
+    }
+
+    /// Pull older page when the user scrolls to the top.
+    public func loadOlderIfNeeded() async {
+        guard hasMoreHistory, !isLoadingHistory else { return }
+        guard let oldest = messages.first?.timestampMs else {
+            await fetchHistory(before: nil)
+            return
+        }
+        await fetchHistory(before: oldest)
+    }
+
+    private func fetchHistory(before: Int64?) async {
+        guard !isLoadingHistory else { return }
+        isLoadingHistory = true
+        onChange?()
+        defer {
+            isLoadingHistory = false
+            onChange?()
+        }
+        do {
+            let delivered = try await env.messages.loadHistory(
+                conversationId: conversation.id,
+                peer: conversation.peerOrGroupId,
+                before: before,
+                limit: Self.historyPageSize,
+                chatType: conversation.chatType
+            )
+            if delivered < Self.historyPageSize {
+                hasMoreHistory = false
+            }
+        } catch {
+            // Soft-fail: keep local cache visible.
+            #if DEBUG
+            print("[Chat] history load failed:", error)
+            #endif
+        }
     }
 
     public func sendText() async {

@@ -5,6 +5,9 @@ public actor MessageRepositoryImpl: MessageRepository {
     private let store: LocalStore
     private let connection: ConnectionRepository
     private var messageContinuations: [String: [UUID: AsyncStream<[Message]>.Continuation]] = [:]
+    private var ackTracker: OutboundAckTracker?
+    private var historyContinuation: CheckedContinuation<Int, Never>?
+    private var historyTimeoutTask: Task<Void, Never>?
 
     public init(store: LocalStore, connection: ConnectionRepository) {
         self.store = store
@@ -44,9 +47,11 @@ public actor MessageRepositoryImpl: MessageRepository {
     }
 
     public func markStatus(clientSeq: Int64, status: MessageStatus, serverMsgId: Int64?) async throws {
+        if status == .sent || status == .failed {
+            await ackTracker?.acknowledge(seq: clientSeq)
+        }
         do {
             try await store.markStatus(clientSeq: clientSeq, status: status, serverMsgId: serverMsgId)
-            // Refresh any open conversation observers.
             for conversationId in messageContinuations.keys {
                 await notify(conversationId: conversationId)
             }
@@ -75,8 +80,7 @@ public actor MessageRepositoryImpl: MessageRepository {
         try await upsert(message)
         do {
             try await connection.send(OutboundEnvelope(kind: .chat(message)))
-            message.status = .sent
-            try await upsert(message)
+            await trackAck(message)
         } catch {
             message.status = .failed
             try await upsert(message)
@@ -119,16 +123,15 @@ public actor MessageRepositoryImpl: MessageRepository {
     }
 
     public func deliverOutgoingFile(_ message: Message, meta: FileMeta) async throws -> Message {
-        // Build the wire payload with final meta, but don't upsert yet — keeps the
-        // local preview on screen until send succeeds (avoids local→remote flash).
         var pending = message
         pending.content = try Self.encodeFileContent(meta)
         pending.msgType = MsgType.from(mime: meta.mime)
         pending.status = .sending
         do {
             try await connection.send(OutboundEnvelope(kind: .file(pending)))
-            pending.status = .sent
+            // Persist final remote meta while waiting for CmdAck (status stays sending).
             try await upsert(pending)
+            await trackAck(pending)
             return pending
         } catch {
             var failed = message
@@ -146,14 +149,8 @@ public actor MessageRepositoryImpl: MessageRepository {
         pending.status = .sending
         try await upsert(pending)
         do {
-            switch message.msgType {
-            case .text:
-                try await connection.send(OutboundEnvelope(kind: .chat(pending)))
-            case .image, .voice, .video, .file:
-                try await connection.send(OutboundEnvelope(kind: .file(pending)))
-            }
-            pending.status = .sent
-            try await upsert(pending)
+            try await sendWire(pending)
+            await trackAck(pending)
         } catch {
             pending.status = .failed
             try await upsert(pending)
@@ -180,8 +177,54 @@ public actor MessageRepositoryImpl: MessageRepository {
         return content
     }
 
-    public func loadHistory(conversationId: String, peer: String, before: Int64?, limit: Int) async throws {
-        try await connection.send(OutboundEnvelope(kind: .history(peer: peer, before: before, limit: limit)))
+    public func loadHistory(
+        conversationId: String,
+        peer: String,
+        before: Int64?,
+        limit: Int,
+        chatType: ChatType
+    ) async throws -> Int {
+        _ = conversationId
+        historyTimeoutTask?.cancel()
+        if let pending = historyContinuation {
+            historyContinuation = nil
+            pending.resume(returning: 0)
+        }
+
+        // Arm waiter before send so a fast finish frame cannot be missed.
+        return await withCheckedContinuation { (cont: CheckedContinuation<Int, Never>) in
+            historyContinuation = cont
+            historyTimeoutTask = Task {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                await self.finishHistoryWait(delivered: 0)
+            }
+            Task {
+                do {
+                    try await self.connection.send(
+                        OutboundEnvelope(kind: .history(
+                            peer: peer,
+                            before: before,
+                            limit: limit,
+                            chatType: chatType
+                        ))
+                    )
+                } catch {
+                    await self.finishHistoryWait(delivered: 0)
+                }
+            }
+        }
+    }
+
+    public func completeHistory(delivered: Int) async {
+        await finishHistoryWait(delivered: delivered)
+    }
+
+    private func finishHistoryWait(delivered: Int) {
+        historyTimeoutTask?.cancel()
+        historyTimeoutTask = nil
+        guard let cont = historyContinuation else { return }
+        historyContinuation = nil
+        cont.resume(returning: delivered)
     }
 
     public func syncOffline() async throws {
@@ -191,6 +234,43 @@ public actor MessageRepositoryImpl: MessageRepository {
     public func markRead(conversationId: String, peer: String, chatType: ChatType) async throws {
         try await store.setUnread(conversationId: conversationId, count: 0)
         try await connection.send(OutboundEnvelope(kind: .readReceipt(to: peer, chatType: chatType)))
+    }
+
+    // MARK: - ACK tracking
+
+    private func trackAck(_ message: Message) async {
+        let tracker = makeAckTrackerIfNeeded()
+        await tracker.register(message)
+    }
+
+    private func makeAckTrackerIfNeeded() -> OutboundAckTracker {
+        if let ackTracker { return ackTracker }
+        let tracker = OutboundAckTracker(
+            onRetry: { [weak self] message in
+                guard let self else { return false }
+                do {
+                    try await self.sendWire(message)
+                    return true
+                } catch {
+                    return false
+                }
+            },
+            onFail: { [weak self] seq in
+                guard let self else { return }
+                try? await self.markStatus(clientSeq: seq, status: .failed, serverMsgId: nil)
+            }
+        )
+        ackTracker = tracker
+        return tracker
+    }
+
+    private func sendWire(_ message: Message) async throws {
+        switch message.msgType {
+        case .text:
+            try await connection.send(OutboundEnvelope(kind: .chat(message)))
+        case .image, .voice, .video, .file:
+            try await connection.send(OutboundEnvelope(kind: .file(message)))
+        }
     }
 
     // MARK: - Observers

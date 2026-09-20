@@ -47,6 +47,8 @@ public enum InboundEvent: Sendable {
     case groupUpdated(Group)
     case searchHits([SearchHit], finished: Bool)
     case unread([String: Int])
+    /// CmdHistory completion frame; `delivered` is the page size returned by the server.
+    case historyFinished(delivered: Int)
 }
 
 public struct OutboundEnvelope: Sendable {
@@ -54,7 +56,7 @@ public struct OutboundEnvelope: Sendable {
         case chat(Message)
         case file(Message)
         case offline
-        case history(peer: String, before: Int64?, limit: Int)
+        case history(peer: String, before: Int64?, limit: Int, chatType: ChatType)
         case readReceipt(to: String, chatType: ChatType)
         case unreadCount
         case heartbeat
@@ -86,7 +88,16 @@ public protocol MessageRepository: Sendable {
     func deliverOutgoingFile(_ message: Message, meta: FileMeta) async throws -> Message
     /// Resend a locally failed outgoing message (same clientSeq / content).
     func retry(_ message: Message) async throws
-    func loadHistory(conversationId: String, peer: String, before: Int64?, limit: Int) async throws
+    /// Request a page of history; returns server `delivered` count when the finish frame arrives.
+    func loadHistory(
+        conversationId: String,
+        peer: String,
+        before: Int64?,
+        limit: Int,
+        chatType: ChatType
+    ) async throws -> Int
+    /// Called when the gateway emits the CmdHistory completion signal.
+    func completeHistory(delivered: Int) async
     func syncOffline() async throws
     func markRead(conversationId: String, peer: String, chatType: ChatType) async throws
 }

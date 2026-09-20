@@ -183,16 +183,75 @@ public actor LocalStore {
 
     public func upsertMessage(_ message: Message) throws {
         try db.dbQueue.write { db in
-            try MessageRecord.from(message).save(db)
+            var record = MessageRecord.from(message)
+
+            // 1) Merge by server_msg_id when present.
+            if let sid = message.serverMsgId {
+                if let existing = try MessageRecord
+                    .filter(Column("server_msg_id") == sid)
+                    .fetchOne(db)
+                {
+                    record.id = existing.id
+                    if existing.isOutgoing {
+                        record.isOutgoing = true
+                        if existing.clientSeq != 0 {
+                            record.clientSeq = existing.clientSeq
+                        }
+                    }
+                    try record.save(db) // update by primary key
+                    return
+                }
+            }
+
+            // 2) Outgoing: merge onto the local sending/failed row with same client_seq.
+            if message.isOutgoing, message.clientSeq != 0 {
+                if let existing = try MessageRecord
+                    .filter(Column("client_seq") == message.clientSeq)
+                    .filter(Column("is_outgoing") == true)
+                    .fetchOne(db)
+                {
+                    record.id = existing.id
+                    if record.serverMsgId == nil {
+                        record.serverMsgId = existing.serverMsgId
+                    }
+                    try record.save(db)
+                    return
+                }
+            }
+
+            // 3) Same local id → update; otherwise insert.
+            try record.save(db)
+        }
+    }
+
+    public func message(byClientSeq clientSeq: Int64) throws -> Message? {
+        try db.dbQueue.read { db in
+            try MessageRecord
+                .filter(Column("client_seq") == clientSeq)
+                .filter(Column("is_outgoing") == true)
+                .fetchOne(db)?
+                .toDomain()
         }
     }
 
     public func markStatus(clientSeq: Int64, status: MessageStatus, serverMsgId: Int64?) throws {
         try db.dbQueue.write { db in
+            // If ACK brings a server_msg_id that already exists on another row, merge into that row.
+            if let sid = serverMsgId,
+               let byServer = try MessageRecord.filter(Column("server_msg_id") == sid).fetchOne(db),
+               let bySeq = try MessageRecord
+                   .filter(Column("client_seq") == clientSeq)
+                   .filter(Column("is_outgoing") == true)
+                   .fetchOne(db),
+               byServer.id != bySeq.id
+            {
+                // Keep the outgoing row; drop the duplicate inbound row.
+                try byServer.delete(db)
+            }
             try db.execute(
                 sql: """
                 UPDATE messages SET status = ?, server_msg_id = COALESCE(?, server_msg_id)
-                WHERE client_seq = ?
+                WHERE client_seq = ? AND is_outgoing = 1
                 """,
                 arguments: [status.rawValue, serverMsgId, clientSeq]
             )

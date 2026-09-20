@@ -60,9 +60,18 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
             guard let self else { return }
             let previousCount = self.tableView.numberOfRows(inSection: 0)
             let newCount = self.viewModel.messages.count
+            let prepended = self.viewModel.didPrependHistory
+            let oldOffset = self.tableView.contentOffset.y
+            let oldHeight = self.tableView.contentSize.height
+
             self.tableView.reloadData()
-            // Only animate scroll when a new row appears — status handoffs shouldn't jump.
-            if newCount > previousCount {
+
+            if prepended, newCount > previousCount {
+                self.tableView.layoutIfNeeded()
+                let delta = self.tableView.contentSize.height - oldHeight
+                self.tableView.contentOffset.y = max(0, oldOffset + delta)
+            } else if newCount > previousCount {
+                // Only animate scroll when a new row appears — status handoffs shouldn't jump.
                 self.scrollToBottom(animated: true)
             } else if self.isNearBottom {
                 self.scrollToBottom(animated: false)
@@ -185,6 +194,13 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
             Task { await self?.viewModel.retryMessage(id: messageId) }
         }
         return cell
+    }
+
+    public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === tableView else { return }
+        if scrollView.contentOffset.y < 48 {
+            Task { await viewModel.loadOlderIfNeeded() }
+        }
     }
 
     // MARK: - ChatComposerBarDelegate

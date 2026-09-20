@@ -189,13 +189,13 @@ public actor ConnectionRepositoryImpl: ConnectionRepository {
         case .offline:
             msg.cmd = Cmd.offline.rawValue
             msg.seq = nextSeq()
-        case let .history(peer, before, limit):
+        case let .history(peer, before, limit, chatType):
+            // Server reads seq=limit, timestamp=before, chatType for group vs DM.
             msg.cmd = Cmd.history.rawValue
-            msg.seq = nextSeq()
+            msg.seq = Int64(limit)
             msg.to = peer
-            var payload: [String: Any] = ["limit": limit]
-            if let before { payload["before"] = before }
-            msg.content = (try? String(data: JSONSerialization.data(withJSONObject: payload), encoding: .utf8)) ?? ""
+            msg.chatType = chatType.rawValue
+            msg.timestamp = before ?? Int64(Date().timeIntervalSince1970 * 1000)
         case let .readReceipt(to, chatType):
             msg.cmd = Cmd.readReceipt.rawValue
             msg.seq = nextSeq()

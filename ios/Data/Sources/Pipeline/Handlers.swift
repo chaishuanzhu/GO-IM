@@ -7,18 +7,61 @@ public final class LoggingHandler: IMInboundHandler, IMOutboundHandler, @uncheck
 
     public func channelRead(ctx: IMHandlerContext, msg: sending Any) async throws {
         #if DEBUG
-        print("[IM][IN]", type(of: msg))
+        print("[IM][IN]", Self.describe(msg))
         #endif
         try await ctx.fireChannelRead(msg)
     }
 
     public func write(ctx: IMHandlerContext, msg: sending Any) async throws {
         #if DEBUG
-        print("[IM][OUT]", type(of: msg))
+        print("[IM][OUT]", Self.describe(msg))
         #endif
         try await ctx.write(msg)
     }
+
+    private static func describe(_ msg: Any) -> String {
+        if let wire = msg as? WireMessage {
+            return format(wire)
+        }
+        if let data = msg as? Data {
+            // Pipeline logs raw bytes around encode/decode; try to surface the protobuf payload.
+            if let wire = try? ProtobufCodec.decode(data) {
+                return "Data(\(data.count)B) → \(format(wire))"
+            }
+            // TCP length-prefixed frame: skip 4-byte header and decode body.
+            if data.count > 4,
+               let wire = try? ProtobufCodec.decode(Data(data.dropFirst(4)))
+            {
+                return "Frame(\(data.count)B) → \(format(wire))"
+            }
+            return "Data(\(data.count)B)"
+        }
+        return String(describing: type(of: msg))
+    }
+
+    private static func format(_ wire: WireMessage) -> String {
+        let cmdName = Cmd(rawValue: wire.cmd).map { String(describing: $0) } ?? "cmd=\(wire.cmd)"
+        var parts: [String] = [cmdName]
+        if wire.seq != 0 { parts.append("seq=\(wire.seq)") }
+        if wire.msgId != 0 { parts.append("msgId=\(wire.msgId)") }
+        if !wire.from.isEmpty { parts.append("from=\(wire.from)") }
+        if !wire.to.isEmpty { parts.append("to=\(wire.to)") }
+        if wire.chatType != 0 { parts.append("chatType=\(wire.chatType)") }
+        if wire.msgType != 0 { parts.append("msgType=\(wire.msgType)") }
+        if wire.needAck { parts.append("needAck") }
+        if wire.timestamp != 0 { parts.append("ts=\(wire.timestamp)") }
+        if !wire.content.isEmpty {
+            parts.append("content=\(truncate(wire.content, max: 200))")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    private static func truncate(_ text: String, max: Int) -> String {
+        guard text.count > max else { return text }
+        return String(text.prefix(max)) + "…"
+    }
 }
+
 
 public final class LengthFrameInboundHandler: IMInboundHandler, @unchecked Sendable {
     public let name = "length-frame-in"
@@ -106,6 +149,9 @@ public final class CmdDispatchHandler: IMInboundHandler, @unchecked Sendable {
             onEvent(.kick)
         case .chat, .file:
             onEvent(.message(mapMessage(wire)))
+        case .history:
+            // Completion frame only (history rows arrive as CmdChat/CmdFile).
+            onEvent(.historyFinished(delivered: Int(wire.seq)))
         case .friendRequest:
             onEvent(.friendRequest(FriendRequest(
                 fromUID: wire.from,

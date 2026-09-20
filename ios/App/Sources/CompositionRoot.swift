@@ -117,6 +117,8 @@ public enum CompositionRoot {
                 try? await conversations.upsertConversation(from: msg, title: nil)
             case let .ack(seq, msgId):
                 try? await messages.markStatus(clientSeq: seq, status: .sent, serverMsgId: msgId)
+            case let .historyFinished(delivered):
+                await messages.completeHistory(delivered: delivered)
             case .kick:
                 await MainActor.run {
                     _Concurrency.Task {

@@ -28,6 +28,7 @@
 		C90700C26F0875992A5BA96E /* LocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FC4C475EDCDECD69B01BEFA /* LocalStore.swift */; };
 		CC70E752D35EA11FA6DE16F2 /* ConnectionRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD590228B067BC87A4C9919C /* ConnectionRepositoryImpl.swift */; };
 		EBE6C36E01ABE04C44EB87AC /* AuthRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B08B8D885C7C6BDA4B019E0 /* AuthRepositoryImpl.swift */; };
+		EFB08C110A8EB156A8ADA1D6 /* OutboundAckTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80CC866E25F01A300396865B /* OutboundAckTracker.swift */; };
 		FB7F20DD366454280CF8944D /* LocalMediaStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7BF14A481FD8FB0ACB69801 /* LocalMediaStore.swift */; };
 		FBBD2738F6E3357C3C2D47C5 /* SearchRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48D2D31071F86E13EC090F4E /* SearchRepositoryImpl.swift */; };
 /* End PBXBuildFile section */
@@ -80,6 +81,7 @@
 		6C017B4AAE4174F2EE77BD72 /* GRDB.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = GRDB.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B08B8D885C7C6BDA4B019E0 /* AuthRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthRepositoryImpl.swift; sourceTree = "<group>"; };
 		7FC4C475EDCDECD69B01BEFA /* LocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStore.swift; sourceTree = "<group>"; };
+		80CC866E25F01A300396865B /* OutboundAckTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboundAckTracker.swift; sourceTree = "<group>"; };
 		8F8F2D8535167882EE6052BF /* DataTests-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "DataTests-Info.plist"; sourceTree = "<group>"; };
 		999C4C2747B53CB9BC055C31 /* ConversationRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationRepositoryImpl.swift; sourceTree = "<group>"; };
 		B44348FF4DAE158391FC0E59 /* FileRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileRepositoryImpl.swift; sourceTree = "<group>"; };
@@ -137,6 +139,7 @@
 			children = (
 				173D4A5815C84A0EF12C3796 /* Handlers.swift */,
 				B4F7038A8B7BE1ABB442FF98 /* IMPipeline.swift */,
+				80CC866E25F01A300396865B /* OutboundAckTracker.swift */,
 			);
 			path = Pipeline;
 			sourceTree = "<group>";
@@ -354,6 +357,7 @@
 				C90700C26F0875992A5BA96E /* LocalStore.swift in Sources */,
 				300E4F4EB259178CD8889158 /* Handlers.swift in Sources */,
 				5DCD0493603594A750688C87 /* IMPipeline.swift in Sources */,
+				EFB08C110A8EB156A8ADA1D6 /* OutboundAckTracker.swift in Sources */,
 				7E132AF0ED57DB0EDC2243D9 /* ProtobufCodec.swift in Sources */,
 				EBE6C36E01ABE04C44EB87AC /* AuthRepositoryImpl.swift in Sources */,
 				CC70E752D35EA11FA6DE16F2 /* ConnectionRepositoryImpl.swift in Sources */,
