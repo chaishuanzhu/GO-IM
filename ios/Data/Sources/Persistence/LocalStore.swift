@@ -274,6 +274,17 @@ public actor LocalStore {
         }
     }
 
+    public func messages(status: MessageStatus) throws -> [Message] {
+        try db.dbQueue.read { db in
+            try MessageRecord
+                .filter(Column("status") == status.rawValue)
+                .filter(Column("is_outgoing") == true)
+                .order(Column("timestamp_ms"))
+                .fetchAll(db)
+                .map { $0.toDomain() }
+        }
+    }
+
     public func upsertConversation(_ c: Conversation) throws {
         try db.dbQueue.write { db in
             try ConversationRecord(

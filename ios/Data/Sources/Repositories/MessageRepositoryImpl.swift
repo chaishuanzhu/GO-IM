@@ -161,6 +161,14 @@ public actor MessageRepositoryImpl: MessageRepository {
         }
     }
 
+    public func messages(status: MessageStatus) async throws -> [Message] {
+        do {
+            return try await store.messages(status: status)
+        } catch {
+            throw DomainError.persistence(error.localizedDescription)
+        }
+    }
+
     private static func encodeFileContent(_ meta: FileMeta) throws -> String {
         var payload: [String: Any] = [
             "file_id": meta.fileId,

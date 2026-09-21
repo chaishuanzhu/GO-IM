@@ -29,10 +29,14 @@ public protocol AuthRepository: Sendable {
 }
 
 public protocol ConnectionRepository: Sendable {
-    var state: AsyncStream<ConnectionState> { get }
+    /// Multicasts connection state; each call returns a new stream seeded with the current state.
+    func observeState() -> AsyncStream<ConnectionState>
     var inboundEvents: AsyncStream<InboundEvent> { get }
     func connect(user: User, transport: TransportKind) async throws
     func disconnect() async
+    /// Foreground / path-restore entry: reconnect if logged in and not already healthy.
+    func ensureConnected() async
+    func currentConnectionState() async -> ConnectionState
     func send(_ envelope: OutboundEnvelope) async throws
     func preferredTransport() -> TransportKind
     func setPreferredTransport(_ kind: TransportKind) async
@@ -88,6 +92,8 @@ public protocol MessageRepository: Sendable {
     func deliverOutgoingFile(_ message: Message, meta: FileMeta) async throws -> Message
     /// Resend a locally failed outgoing message (same clientSeq / content).
     func retry(_ message: Message) async throws
+    /// Outgoing messages still in `.sending` (e.g. after a drop); used for post-reconnect resend.
+    func messages(status: MessageStatus) async throws -> [Message]
     /// Request a page of history; returns server `delivered` count when the finish frame arrives.
     func loadHistory(
         conversationId: String,

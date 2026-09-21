@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		01309DA478AC22159D054601 /* Moya.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E38D43CEE696BFEF020903BE /* Moya.framework */; };
+		1FD0F8CD70F1FEBBD4799DF3 /* ReconnectPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D03DF525056DFC188494358B /* ReconnectPolicyTests.swift */; };
+		294070257EE90EB242DD2C4D /* ReconnectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9526DDC1267ECCAA83A4EF /* ReconnectPolicy.swift */; };
 		300E4F4EB259178CD8889158 /* Handlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 173D4A5815C84A0EF12C3796 /* Handlers.swift */; };
 		385AF37CFC09728522432EC2 /* ConversationRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 999C4C2747B53CB9BC055C31 /* ConversationRepositoryImpl.swift */; };
 		4C79417A06A432A70F69EDD8 /* StickerRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D3772BB4B14FBF6391757E3 /* StickerRepositoryImpl.swift */; };
@@ -82,6 +84,7 @@
 		5E686E31A7BB571385831946 /* SwiftProtobuf.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = SwiftProtobuf.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		6C017B4AAE4174F2EE77BD72 /* GRDB.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = GRDB.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B08B8D885C7C6BDA4B019E0 /* AuthRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthRepositoryImpl.swift; sourceTree = "<group>"; };
+		7C9526DDC1267ECCAA83A4EF /* ReconnectPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconnectPolicy.swift; sourceTree = "<group>"; };
 		7FC4C475EDCDECD69B01BEFA /* LocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStore.swift; sourceTree = "<group>"; };
 		80CC866E25F01A300396865B /* OutboundAckTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboundAckTracker.swift; sourceTree = "<group>"; };
 		8F8F2D8535167882EE6052BF /* DataTests-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "DataTests-Info.plist"; sourceTree = "<group>"; };
@@ -92,6 +95,7 @@
 		BF2E0DA0E3876515148029B2 /* ProtobufCodecTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtobufCodecTests.swift; sourceTree = "<group>"; };
 		C487F5D2277BCC8A01F51AE0 /* DataTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DataTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C7BF14A481FD8FB0ACB69801 /* LocalMediaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMediaStore.swift; sourceTree = "<group>"; };
+		D03DF525056DFC188494358B /* ReconnectPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconnectPolicyTests.swift; sourceTree = "<group>"; };
 		D51833C430F8B21E1181C18D /* Kingfisher.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Kingfisher.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		DD590228B067BC87A4C9919C /* ConnectionRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionRepositoryImpl.swift; sourceTree = "<group>"; };
 		E38D43CEE696BFEF020903BE /* Moya.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Moya.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -150,6 +154,7 @@
 			isa = PBXGroup;
 			children = (
 				FAC3BA46688B57B1B1E7CD2B /* NWTransports.swift */,
+				7C9526DDC1267ECCAA83A4EF /* ReconnectPolicy.swift */,
 			);
 			path = Transport;
 			sourceTree = "<group>";
@@ -254,6 +259,7 @@
 			isa = PBXGroup;
 			children = (
 				BF2E0DA0E3876515148029B2 /* ProtobufCodecTests.swift */,
+				D03DF525056DFC188494358B /* ReconnectPolicyTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -382,6 +388,7 @@
 				80D128765A3E8C4910DA98F8 /* KeychainStore.swift in Sources */,
 				FB7F20DD366454280CF8944D /* LocalMediaStore.swift in Sources */,
 				81D3CA8E3F8EB8BBCCD4A2DA /* NWTransports.swift in Sources */,
+				294070257EE90EB242DD2C4D /* ReconnectPolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -390,6 +397,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				57E95D172ED3AE58F994A4AF /* ProtobufCodecTests.swift in Sources */,
+				1FD0F8CD70F1FEBBD4799DF3 /* ReconnectPolicyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

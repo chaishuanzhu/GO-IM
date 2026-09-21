@@ -13,4 +13,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.window = window
         CompositionRoot.bootstrap(window: window)
     }
+
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        _Concurrency.Task {
+            await CompositionRoot.environment?.connection.ensureConnected()
+        }
+    }
 }

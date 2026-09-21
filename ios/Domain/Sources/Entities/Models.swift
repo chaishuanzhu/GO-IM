@@ -68,6 +68,8 @@ public enum ConnectionState: Sendable, Equatable {
     case connecting
     case connected
     case reconnecting
+    /// Token rejected; stop reconnecting and force re-login.
+    case authExpired
 }
 
 public struct User: Sendable, Equatable, Identifiable {

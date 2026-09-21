@@ -130,11 +130,20 @@ public final class ProtobufEncodeHandler: IMOutboundHandler, @unchecked Sendable
 public final class CmdDispatchHandler: IMInboundHandler, @unchecked Sendable {
     public let name = "cmd-dispatch"
     private let onEvent: @Sendable (InboundEvent) -> Void
+    private let onLoginResp: (@Sendable () -> Void)?
+    private let onHeartbeat: (@Sendable () -> Void)?
     private let selfUID: String
 
-    public init(selfUID: String, onEvent: @escaping @Sendable (InboundEvent) -> Void) {
+    public init(
+        selfUID: String,
+        onEvent: @escaping @Sendable (InboundEvent) -> Void,
+        onLoginResp: (@Sendable () -> Void)? = nil,
+        onHeartbeat: (@Sendable () -> Void)? = nil
+    ) {
         self.selfUID = selfUID
         self.onEvent = onEvent
+        self.onLoginResp = onLoginResp
+        self.onHeartbeat = onHeartbeat
     }
 
     public func channelRead(ctx: IMHandlerContext, msg: sending Any) async throws {
@@ -183,11 +192,39 @@ public final class CmdDispatchHandler: IMInboundHandler, @unchecked Sendable {
                     ),
                 ], finished: false))
             }
-        case .heartbeat, .loginResp:
-            break
+        case .unreadCount:
+            if let map = Self.parseUnreadCounts(wire.content) {
+                onEvent(.unread(map))
+            }
+        case .heartbeat:
+            onHeartbeat?()
+        case .loginResp:
+            onLoginResp?()
         default:
             try await ctx.fireChannelRead(wire)
         }
+    }
+
+    /// Server payload: `{"uid":"...","counts":{"peer":1}}`.
+    static func parseUnreadCounts(_ content: String) -> [String: Int]? {
+        guard let data = content.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let counts = json["counts"] as? [String: Any] else {
+            return nil
+        }
+        var map: [String: Int] = [:]
+        for (key, value) in counts {
+            if let n = value as? Int {
+                map[key] = n
+            } else if let n = value as? Int64 {
+                map[key] = Int(n)
+            } else if let n = value as? Double {
+                map[key] = Int(n)
+            } else if let n = value as? NSNumber {
+                map[key] = n.intValue
+            }
+        }
+        return map
     }
 
     private func mapMessage(_ wire: WireMessage) -> Message {

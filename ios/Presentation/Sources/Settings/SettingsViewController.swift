@@ -5,6 +5,8 @@ import Domain
 public final class SettingsViewController: UITableViewController {
     private let env: AppEnvironment
     public var onLoggedOut: (() -> Void)?
+    private var connectionState: ConnectionState = .disconnected
+    private var stateTask: Task<Void, Never>?
 
     private enum Section: Int, CaseIterable {
         case account
@@ -26,6 +28,21 @@ public final class SettingsViewController: UITableViewController {
         navigationController?.navigationBar.prefersLargeTitles = true
         navigationItem.largeTitleDisplayMode = .always
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        Task {
+            connectionState = await env.connection.currentConnectionState()
+            tableView.reloadSections(IndexSet(integer: Section.connection.rawValue), with: .none)
+        }
+        stateTask = Task { [weak self] in
+            guard let self else { return }
+            for await state in self.env.connection.observeState() {
+                self.connectionState = state
+                self.tableView.reloadSections(IndexSet(integer: Section.connection.rawValue), with: .none)
+            }
+        }
+    }
+
+    deinit {
+        stateTask?.cancel()
     }
 
     public override func numberOfSections(in tableView: UITableView) -> Int {
@@ -35,7 +52,7 @@ public final class SettingsViewController: UITableViewController {
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
         case .account: return 1
-        case .connection: return 2
+        case .connection: return 3
         case .session: return 1
         }
     }
@@ -74,12 +91,18 @@ public final class SettingsViewController: UITableViewController {
             config.imageProperties.cornerRadius = 20
             cell.selectionStyle = .none
         case .connection:
-            if indexPath.row == 0 {
+            switch indexPath.row {
+            case 0:
+                config.text = "连接状态"
+                config.secondaryText = connectionStateTitle(connectionState)
+                config.image = UIImage(systemName: connectionStateIcon(connectionState))
+                cell.selectionStyle = .none
+            case 1:
                 config.text = "API 地址"
                 config.secondaryText = env.apiBaseURL.absoluteString
                 config.image = UIImage(systemName: "link")
                 cell.accessoryType = .disclosureIndicator
-            } else {
+            default:
                 config.text = "传输方式"
                 config.secondaryText = transportTitle(env.connection.preferredTransport())
                 config.image = UIImage(systemName: "antenna.radiowaves.left.and.right")
@@ -101,13 +124,32 @@ public final class SettingsViewController: UITableViewController {
         case .account:
             break
         case .connection:
-            if indexPath.row == 0 {
+            if indexPath.row == 1 {
                 editBaseURL()
-            } else {
+            } else if indexPath.row == 2 {
                 pickTransport(source: tableView.cellForRow(at: indexPath))
             }
         case .session:
             confirmLogout(source: tableView.cellForRow(at: indexPath))
+        }
+    }
+
+    private func connectionStateTitle(_ state: ConnectionState) -> String {
+        switch state {
+        case .disconnected: return "已断开"
+        case .connecting: return "连接中…"
+        case .connected: return "已连接"
+        case .reconnecting: return "重连中…"
+        case .authExpired: return "登录已失效"
+        }
+    }
+
+    private func connectionStateIcon(_ state: ConnectionState) -> String {
+        switch state {
+        case .disconnected: return "wifi.slash"
+        case .connecting, .reconnecting: return "arrow.triangle.2.circlepath"
+        case .connected: return "wifi"
+        case .authExpired: return "exclamationmark.triangle"
         }
     }
 

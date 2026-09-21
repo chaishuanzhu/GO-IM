@@ -82,6 +82,14 @@ public enum CompositionRoot {
             )
         }
 
+        _Concurrency.Task {
+            await pumpConnectionState(
+                connection: connection,
+                messages: messages,
+                conversations: conversations
+            )
+        }
+
         if let user = auth.currentUser() {
             showMain()
             _Concurrency.Task {
@@ -109,6 +117,58 @@ public enum CompositionRoot {
         }
         window.rootViewController = tabs
         window.makeKeyAndVisible()
+    }
+
+    private static func pumpConnectionState(
+        connection: ConnectionRepository,
+        messages: MessageRepository,
+        conversations: ConversationRepository
+    ) async {
+        for await state in connection.observeState() {
+            switch state {
+            case .connected:
+                await postReconnectCatchup(
+                    connection: connection,
+                    messages: messages,
+                    conversations: conversations
+                )
+            case .authExpired:
+                await MainActor.run {
+                    _Concurrency.Task {
+                        await environment.logoutUseCase.execute()
+                        showLogin()
+                    }
+                }
+            default:
+                break
+            }
+        }
+    }
+
+    /// Unread + active-chat history + resend `.sending` (CmdOffline already sent in connect).
+    private static func postReconnectCatchup(
+        connection: ConnectionRepository,
+        messages: MessageRepository,
+        conversations: ConversationRepository
+    ) async {
+        try? await connection.send(OutboundEnvelope(kind: .unreadCount))
+
+        if let activeId = await conversations.activeConversationId(),
+           let conv = try? await conversations.conversations().first(where: { $0.id == activeId }) {
+            _ = try? await messages.loadHistory(
+                conversationId: activeId,
+                peer: conv.peerOrGroupId,
+                before: nil,
+                limit: 50,
+                chatType: conv.chatType
+            )
+        }
+
+        if let pending = try? await messages.messages(status: .sending) {
+            for msg in pending {
+                try? await messages.retry(msg)
+            }
+        }
     }
 
     private static func pumpInboundEvents(
@@ -150,7 +210,13 @@ public enum CompositionRoot {
             case let .unread(map):
                 let selfUID = await MainActor.run { environment.auth.currentUser()?.uid ?? "" }
                 for (peer, count) in map {
-                    let cid = ConversationID.dm(uidA: selfUID, uidB: peer)
+                    let cid: String
+                    if peer.hasPrefix("g_") || peer.hasPrefix("group:") {
+                        let gid = peer.hasPrefix("group:") ? String(peer.dropFirst("group:".count)) : peer
+                        cid = ConversationID.group(gid)
+                    } else {
+                        cid = ConversationID.dm(uidA: selfUID, uidB: peer)
+                    }
                     try? await conversations.setUnread(conversationId: cid, count: count)
                 }
             default:

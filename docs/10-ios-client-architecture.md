@@ -55,7 +55,7 @@ sequenceDiagram
 - **TCP（gnet）**：`{host}:8081`，帧格式 = **`[4-byte BE uint32 length][protobuf]`**；**首包必须** `CmdLogin` + JWT（见架构说明）。
 - `msg.From` 服务端覆盖；客户端填 `to/chat_type/msg_type/content/seq/need_ack`。
 - `CmdKick=7`：清会话并回登录页。
-- 心跳：WS 可用协议层 ping；TCP / 通用路径统一走应用层 `CmdHeartbeat=6`（Pipeline 内 HeartbeatHandler）。
+- 心跳：统一走应用层 `CmdHeartbeat=6`（`ConnectionRepositoryImpl` 定时发送；连续无响应则拆链重连）。WS 传输层仍可开启 `autoReplyPing`，但不替代应用层心跳。
 
 ### 2.2 核心命令字（一期必接，含群）
 
@@ -293,8 +293,11 @@ protocol IMTransport: AnyObject {
 | `NWWebSocketTransport` | `NWConnection` + `NWProtocolWebSocket.Options`；URL `/ws?token=` | 每条 WS binary message = 一个 protobuf |
 | `NWTCPTransport` | `NWConnection`（TCP）；port 默认 `8081` | 粘包拆包由 Pipeline `LengthFrameCodec` 处理 |
 
-- 重连：指数退避；网络路径更新监听 `NWPathMonitor`。
-- 设置页可切换 `preferredTransport`；切换时停旧连接、重建 Pipeline（Handler 配置可因 WS/TCP 略有不同）。
+- 重连：指数退避（`1s → 2s → 4s → …` 封顶 30s，±20% jitter）；`NWPathMonitor` 路径恢复与 `sceneDidBecomeActive` → `ensureConnected()` 触发重连；`connect()` 失败也会重新调度，禁止静默停住。
+- 鉴权熔断：TCP 缺 `CmdLoginResp` / WS 握手 401 类失败 → `ConnectionState.authExpired`，停止重连并强制回登录页。`CmdKick` 仍登出、不重连。
+- 应用层心跳：连上后每 25s 发 `CmdHeartbeat`；连续 3 次无 pong（或写失败）→ teardown 走重连。
+- 重连后补齐：`CmdOffline`（connect 内）+ `CmdUnreadCount` + 活动会话 `CmdHistory` + 本地 `status=.sending` 补发。
+- 设置页可切换 `preferredTransport`；切换时停旧连接、重建 Pipeline（Handler 配置可因 WS/TCP 略有不同）；设置页展示 `ConnectionState`。
 - **尽量不用** `URLSessionWebSocketTask` / 裸 `Socket`；HTTP 仍走 Moya（短连接），长链专用 Network。
 
 ---
