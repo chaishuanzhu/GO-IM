@@ -131,7 +131,8 @@ final class MessageBubbleCell: UITableViewCell {
         mediaRow.spacing = 10
         mediaRow.alignment = .center
         mediaRow.addArrangedSubview(mediaIcon)
-        mediaRow.addArrangedSubview(voiceWaveform)
+        // voiceWaveform is installed only for voice bubbles — keeping it in the
+        // stack while hidden still triggers UIStackView temporary 0-size conflicts.
         mediaRow.addArrangedSubview(bodyLabel)
 
         contentStack.axis = .vertical
@@ -516,7 +517,7 @@ final class MessageBubbleCell: UITableViewCell {
         // Idle: exact SF Symbol look. Playing: matched bar geometry animation.
         mediaIcon.isHidden = false
         mediaIcon.image = UIImage(systemName: "waveform")
-        voiceWaveform.isHidden = true
+        detachVoiceWaveform()
         voiceWaveform.barColor = outgoing ? .white : .label
         voiceWaveform.isAnimating = false
         bodyLabel.font = .preferredFont(forTextStyle: .body)
@@ -625,14 +626,14 @@ final class MessageBubbleCell: UITableViewCell {
         guard !isVoiceWaveAnimating else { return }
         isVoiceWaveAnimating = true
         mediaIcon.isHidden = true
-        voiceWaveform.isHidden = false
+        attachVoiceWaveform()
         voiceWaveform.isAnimating = true
     }
 
     private func stopVoiceWaveAnimation() {
         isVoiceWaveAnimating = false
         voiceWaveform.isAnimating = false
-        voiceWaveform.isHidden = true
+        detachVoiceWaveform()
         if openAsVoice {
             mediaIcon.isHidden = false
             mediaIcon.image = UIImage(systemName: "waveform")
@@ -641,8 +642,25 @@ final class MessageBubbleCell: UITableViewCell {
 
     private func hideVoiceWaveform() {
         stopVoiceWaveAnimation()
+    }
+
+    private func attachVoiceWaveform() {
+        guard voiceWaveform.superview !== mediaRow else {
+            voiceWaveform.isHidden = false
+            return
+        }
+        // Insert between icon and body label.
+        let bodyIndex = mediaRow.arrangedSubviews.firstIndex(of: bodyLabel) ?? mediaRow.arrangedSubviews.count
+        mediaRow.insertArrangedSubview(voiceWaveform, at: bodyIndex)
+        voiceWaveform.isHidden = false
+    }
+
+    private func detachVoiceWaveform() {
+        voiceWaveform.isAnimating = false
         voiceWaveform.isHidden = true
-        // openAsVoice is false for non-voice; don't force mediaIcon visible here.
+        guard voiceWaveform.superview != nil else { return }
+        mediaRow.removeArrangedSubview(voiceWaveform)
+        voiceWaveform.removeFromSuperview()
     }
 
     @objc private func retryTapped() {

@@ -55,6 +55,8 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
     private var accessoryHeightConstraint: NSLayoutConstraint!
     private var topStackBottomToSafe: NSLayoutConstraint!
     private var accessoryTopToTools: NSLayoutConstraint!
+    /// Vertical fill inside accessoryHost — deactivated while height == 0 to avoid conflicts.
+    private var accessoryContentConstraints: [NSLayoutConstraint] = []
     private let minTextH: CGFloat = 36
     private let maxTextH: CGFloat = 110
 
@@ -126,12 +128,17 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
                 self.delegate?.composerBar(self, didSelectSticker: ref)
             }
             accessoryHost.addSubview(panel)
-            NSLayoutConstraint.activate([
-                panel.topAnchor.constraint(equalTo: emojiModeControl.bottomAnchor, constant: 4),
+            let stickerTop = panel.topAnchor.constraint(equalTo: emojiModeControl.bottomAnchor, constant: 4)
+            let stickerBottom = panel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor)
+            let stickerConstraints = [
+                stickerTop,
                 panel.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
                 panel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
-                panel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
-            ])
+                stickerBottom,
+            ]
+            // Keep inactive while the host is collapsed (height == 0).
+            stickerConstraints.forEach { $0.isActive = accessory != .none }
+            accessoryContentConstraints.append(contentsOf: [stickerTop, stickerBottom])
             stickerPanel = panel
             accessoryHost.bringSubviewToFront(emojiSendButton)
             updateEmojiCollectionInsets()
@@ -354,53 +361,74 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         morePanel.addSubview(moreStack)
         accessoryHost.addSubview(morePanel)
 
+        let emojiTop = emojiModeControl.topAnchor.constraint(equalTo: accessoryHost.topAnchor, constant: 8)
+        let emojiCollectionTop = emojiCollection.topAnchor.constraint(
+            equalTo: emojiModeControl.bottomAnchor,
+            constant: 4
+        )
+        let emojiCollectionBottom = emojiCollection.bottomAnchor.constraint(
+            equalTo: accessoryHost.bottomAnchor
+        )
+
+        let voiceTop = voicePanel.topAnchor.constraint(equalTo: accessoryHost.topAnchor)
+        let voiceBottom = voicePanel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor)
+        let recordTop = recordTime.topAnchor.constraint(
+            equalTo: voicePanel.safeAreaLayoutGuide.topAnchor,
+            constant: 28
+        )
+        let holdCenterY = hold.centerYAnchor.constraint(
+            equalTo: voicePanel.safeAreaLayoutGuide.centerYAnchor,
+            constant: 8
+        )
+        let hintBottom = recordHint.bottomAnchor.constraint(
+            lessThanOrEqualTo: voicePanel.safeAreaLayoutGuide.bottomAnchor,
+            constant: -12
+        )
+
+        let imageTop = imagePanel.topAnchor.constraint(equalTo: accessoryHost.topAnchor)
+        let imageBottom = imagePanel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor)
+
+        let moreTop = morePanel.topAnchor.constraint(equalTo: accessoryHost.topAnchor)
+        let moreBottom = morePanel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor)
+        let moreStackCenterY = moreStack.centerYAnchor.constraint(
+            equalTo: morePanel.safeAreaLayoutGuide.centerYAnchor
+        )
+
+        // Collapsed host height is 0 — keep vertical fill off until the panel expands.
+        accessoryContentConstraints = [
+            emojiTop, emojiCollectionTop, emojiCollectionBottom,
+            voiceTop, voiceBottom, recordTop, holdCenterY, hintBottom,
+            imageTop, imageBottom,
+            moreTop, moreBottom, moreStackCenterY,
+        ]
+        accessoryContentConstraints.forEach { $0.isActive = false }
+
         NSLayoutConstraint.activate([
-            emojiModeControl.topAnchor.constraint(equalTo: accessoryHost.topAnchor, constant: 8),
             emojiModeControl.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor, constant: 16),
             emojiModeControl.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor, constant: -16),
 
-            emojiCollection.topAnchor.constraint(equalTo: emojiModeControl.bottomAnchor, constant: 4),
             emojiCollection.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
             emojiCollection.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
-            // Fill the home-indicator strip; contentInset keeps last rows tappable.
-            emojiCollection.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
 
             emojiSendButton.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor, constant: -16),
             emojiSendButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -10),
             emojiSendButton.heightAnchor.constraint(equalToConstant: 36),
 
-            voicePanel.topAnchor.constraint(equalTo: accessoryHost.topAnchor),
             voicePanel.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
             voicePanel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
-            voicePanel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
             recordTime.centerXAnchor.constraint(equalTo: voicePanel.centerXAnchor),
-            recordTime.topAnchor.constraint(equalTo: voicePanel.safeAreaLayoutGuide.topAnchor, constant: 28),
             hold.centerXAnchor.constraint(equalTo: voicePanel.centerXAnchor),
-            hold.centerYAnchor.constraint(equalTo: voicePanel.safeAreaLayoutGuide.centerYAnchor, constant: 8),
             recordHint.centerXAnchor.constraint(equalTo: voicePanel.centerXAnchor),
             recordHint.topAnchor.constraint(equalTo: hold.bottomAnchor, constant: 8),
-            recordHint.bottomAnchor.constraint(
-                lessThanOrEqualTo: voicePanel.safeAreaLayoutGuide.bottomAnchor,
-                constant: -12
-            ),
 
-            imagePanel.topAnchor.constraint(equalTo: accessoryHost.topAnchor),
             imagePanel.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
             imagePanel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
-            imagePanel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
 
-            morePanel.topAnchor.constraint(equalTo: accessoryHost.topAnchor),
             morePanel.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
             morePanel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
-            morePanel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
             moreStack.centerXAnchor.constraint(equalTo: morePanel.centerXAnchor),
-            moreStack.centerYAnchor.constraint(equalTo: morePanel.safeAreaLayoutGuide.centerYAnchor),
             moreStack.leadingAnchor.constraint(greaterThanOrEqualTo: morePanel.leadingAnchor, constant: 24),
             moreStack.trailingAnchor.constraint(lessThanOrEqualTo: morePanel.trailingAnchor, constant: -24),
-            moreStack.bottomAnchor.constraint(
-                lessThanOrEqualTo: morePanel.safeAreaLayoutGuide.bottomAnchor,
-                constant: -16
-            ),
         ])
     }
 
@@ -558,10 +586,18 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         let targetH: CGFloat = expanding ? expandedAccessoryHeight() : 0
         let updates = {
             self.accessoryHost.isHidden = !expanding
-            self.topStackBottomToSafe.isActive = !expanding
-            self.accessoryTopToTools.isActive = expanding
-            self.accessoryHeightConstraint.constant = targetH
-            if !expanding {
+            if expanding {
+                // Mutually exclusive bottom pins — never both active.
+                self.topStackBottomToSafe.isActive = false
+                self.accessoryTopToTools.isActive = true
+                self.accessoryHeightConstraint.constant = targetH
+                self.accessoryContentConstraints.forEach { $0.isActive = true }
+            } else {
+                // Tear down panel fill first, then swap pins (avoids a short host + safe-area fight).
+                self.accessoryContentConstraints.forEach { $0.isActive = false }
+                self.accessoryTopToTools.isActive = false
+                self.accessoryHeightConstraint.constant = 0
+                self.topStackBottomToSafe.isActive = true
                 self.updateCollapsedBottomInset()
             }
             self.layoutIfNeeded()

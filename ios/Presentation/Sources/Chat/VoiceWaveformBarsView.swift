@@ -1,7 +1,10 @@
 import UIKit
 
-/// Vertical-bar waveform matched to SF Symbol `waveform` @22pt/.medium:
-/// 6 bars, ~2pt wide, ~1.7pt gaps, idle height profile from the glyph.
+/// Vertical-bar waveform matched to SF Symbol `waveform` @22pt/.medium.
+///
+/// Sized via `intrinsicContentSize` only. Bars are centered on `centerX` and are
+/// **not** pinned to leading/trailing — UIStackView installs temporary width/height
+/// of 0 while measuring arranged subviews; an edge-to-edge chain would conflict.
 final class VoiceWaveformBarsView: UIView {
     private let barCount = 6
     private var bars: [UIView] = []
@@ -9,13 +12,11 @@ final class VoiceWaveformBarsView: UIView {
     private var displayLink: CADisplayLink?
     private var phase: CGFloat = 0
 
-    /// Measured from SF Symbol `waveform` (pointSize 22, weight medium).
     private let maxBarHeight: CGFloat = 22
     private let minBarHeight: CGFloat = 5.5
     private let barWidth: CGFloat = 2
-    private let barSpacing: CGFloat = 1.7
+    private let barSpacing: CGFloat = 1.5
 
-    /// Idle height profile of SF Symbol `waveform` (relative 0…1).
     private let idleLevels: [CGFloat] = [0.25, 0.64, 1.00, 0.52, 0.79, 0.33]
 
     var barColor: UIColor = .label {
@@ -35,8 +36,11 @@ final class VoiceWaveformBarsView: UIView {
     }
 
     override var intrinsicContentSize: CGSize {
-        let width = CGFloat(barCount) * barWidth + CGFloat(max(0, barCount - 1)) * barSpacing
-        return CGSize(width: width, height: maxBarHeight)
+        CGSize(width: contentWidth, height: maxBarHeight)
+    }
+
+    private var contentWidth: CGFloat {
+        CGFloat(barCount) * barWidth + CGFloat(max(0, barCount - 1)) * barSpacing
     }
 
     override init(frame: CGRect) {
@@ -44,39 +48,41 @@ final class VoiceWaveformBarsView: UIView {
         isUserInteractionEnabled = false
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .vertical)
+        setContentCompressionResistancePriority(.required, for: .vertical)
 
-        let row = UIStackView()
-        row.axis = .horizontal
-        row.alignment = .center
-        row.distribution = .fill
-        row.spacing = barSpacing
-        row.setContentHuggingPriority(.required, for: .horizontal)
-        row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
-
+        var previous: UIView?
         for _ in 0..<barCount {
             let bar = UIView()
             bar.backgroundColor = barColor
             bar.layer.cornerRadius = barWidth / 2
             bar.translatesAutoresizingMaskIntoConstraints = false
-            bar.setContentHuggingPriority(.required, for: .horizontal)
-            bar.setContentCompressionResistancePriority(.required, for: .horizontal)
-            let w = bar.widthAnchor.constraint(equalToConstant: barWidth)
+            addSubview(bar)
+
             let h = bar.heightAnchor.constraint(equalToConstant: minBarHeight)
-            NSLayoutConstraint.activate([w, h])
             heightConstraints.append(h)
             bars.append(bar)
-            row.addArrangedSubview(bar)
+
+            var constraints: [NSLayoutConstraint] = [
+                bar.widthAnchor.constraint(equalToConstant: barWidth),
+                h,
+                bar.centerYAnchor.constraint(equalTo: centerYAnchor),
+            ]
+            if let previous {
+                constraints.append(
+                    bar.leadingAnchor.constraint(equalTo: previous.trailingAnchor, constant: barSpacing)
+                )
+            }
+            NSLayoutConstraint.activate(constraints)
+            previous = bar
         }
 
-        let contentWidth = intrinsicContentSize.width
-        NSLayoutConstraint.activate([
-            row.centerXAnchor.constraint(equalTo: centerXAnchor),
-            row.centerYAnchor.constraint(equalTo: centerYAnchor),
-            row.widthAnchor.constraint(equalToConstant: contentWidth),
-            heightAnchor.constraint(equalToConstant: maxBarHeight),
-            widthAnchor.constraint(equalToConstant: contentWidth),
-        ])
+        if let first = bars.first {
+            // Center the strip; do not pin to leading/trailing (avoids vs temporary width == 0).
+            NSLayoutConstraint.activate([
+                first.leadingAnchor.constraint(equalTo: centerXAnchor, constant: -contentWidth / 2),
+            ])
+        }
 
         applyIdleHeights(animated: false)
     }
@@ -120,7 +126,6 @@ final class VoiceWaveformBarsView: UIView {
     @objc private func tick(_ link: CADisplayLink) {
         phase += CGFloat(link.duration) * 6.5
         for (i, c) in heightConstraints.enumerated() {
-            // Oscillate around each bar's idle level so the silhouette stays familiar.
             let base = idleLevels[i % idleLevels.count]
             let wave = sin(phase + CGFloat(i) * 0.9)
             let level = min(1, max(0.15, base + 0.28 * wave))
