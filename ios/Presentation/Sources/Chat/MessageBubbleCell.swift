@@ -9,7 +9,8 @@ final class MessageBubbleCell: UITableViewCell {
     private let bubbleView = UIView()
     private let bodyLabel = UILabel()
     private let metaLabel = UILabel()
-    private let imageViewBubble = UIImageView()
+    /// AnimatedImageView so sticker GIFs play; still works for static photos via Kingfisher.
+    private let imageViewBubble = AnimatedImageView()
     private let mediaIcon = UIImageView()
     private let statusLabel = UILabel()
     private let stack = UIStackView()
@@ -108,6 +109,7 @@ final class MessageBubbleCell: UITableViewCell {
         imageViewBubble.layer.cornerRadius = 0
         imageViewBubble.isHidden = true
         imageViewBubble.backgroundColor = .tertiarySystemFill
+        imageViewBubble.autoPlayAnimatedImage = true
         imageViewBubble.translatesAutoresizingMaskIntoConstraints = false
 
         mediaIcon.contentMode = .scaleAspectFit
@@ -206,6 +208,7 @@ final class MessageBubbleCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         imageViewBubble.kf.cancelDownloadTask()
+        imageViewBubble.stopAnimating()
         // Keep bitmap until configure replaces it (avoids blank frame on local→remote handoff).
         boundImageFileId = nil
         mediaIcon.image = nil
@@ -219,7 +222,12 @@ final class MessageBubbleCell: UITableViewCell {
         hideSendAccessory()
     }
 
-    func configure(message: Message, fileURL: ((String, Bool) -> URL?)?, onOpen: ((URL) -> Void)? = nil) {
+    func configure(
+        message: Message,
+        fileURL: ((String, Bool) -> URL?)?,
+        stickerImage: ((StickerRef) async -> Data?)? = nil,
+        onOpen: ((URL) -> Void)? = nil
+    ) {
         onOpenURL = onOpen
         openURL = nil
         let outgoing = message.isOutgoing
@@ -254,6 +262,8 @@ final class MessageBubbleCell: UITableViewCell {
             configureVideo(message.content, fileURL: fileURL, outgoing: outgoing)
         case .file:
             configureFile(message.content, fileURL: fileURL, outgoing: outgoing)
+        case .sticker:
+            configureSticker(message.content, outgoing: outgoing, loadImage: stickerImage)
         case .text:
             configureText(message.content)
         case .unsupported:
@@ -365,6 +375,8 @@ final class MessageBubbleCell: UITableViewCell {
         // Prefer message JSON width/height; scale into bubble box.
         let size = bubbleImageSize(width: meta.width, height: meta.height)
         showImageContent(size: size)
+        imageViewBubble.contentMode = .scaleAspectFill
+        imageViewBubble.backgroundColor = .tertiarySystemFill
         let thumb = fileURL?(meta.fileId, true)
         let full = fileURL?(meta.fileId, false)
         openURL = full
@@ -396,6 +408,39 @@ final class MessageBubbleCell: UITableViewCell {
         } else {
             imageViewBubble.image = nil
             boundImageFileId = nil
+        }
+    }
+
+    private func configureSticker(_ content: String, outgoing: Bool, loadImage: ((StickerRef) async -> Data?)?) {
+        guard let ref = StickerRef.decode(from: content) else {
+            configureText("[表情]")
+            return
+        }
+        let side: CGFloat = 140
+        showImageContent(size: CGSize(width: side, height: side))
+        imageViewBubble.contentMode = .scaleAspectFit
+        imageViewBubble.backgroundColor = .clear
+        bubbleView.backgroundColor = .clear
+        openURL = nil
+        let bindKey = "\(ref.packId)/\(ref.stickerId)"
+        if boundImageFileId == bindKey, imageViewBubble.image != nil {
+            return
+        }
+        boundImageFileId = bindKey
+        imageViewBubble.image = nil
+        guard let loadImage else { return }
+        Task {
+            let data = await loadImage(ref)
+            await MainActor.run {
+                guard self.boundImageFileId == bindKey else { return }
+                if let data, let image = KingfisherWrapper<UIImage>.image(data: data, options: ImageCreatingOptions()) {
+                    self.imageViewBubble.image = image
+                    self.imageViewBubble.startAnimating()
+                } else {
+                    self.bubbleView.backgroundColor = outgoing ? GOIMStyle.outgoingBubble : GOIMStyle.incomingBubble
+                    self.configureText("[表情]")
+                }
+            }
         }
     }
 

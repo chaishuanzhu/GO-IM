@@ -1,6 +1,7 @@
 import UIKit
 import AVFoundation
 import Photos
+import Domain
 
 /// Accessory mode for the iOS-26 style chat dock.
 enum ChatComposerAccessory: Equatable {
@@ -28,6 +29,7 @@ protocol ChatComposerBarDelegate: AnyObject {
     )
     func composerBar(_ bar: ChatComposerBar, voiceFailed message: String)
     func composerBar(_ bar: ChatComposerBar, accessoryChanged mode: ChatComposerAccessory)
+    func composerBar(_ bar: ChatComposerBar, didSelectSticker sticker: StickerRef)
 }
 
 /// iOS 26–style floating dock: rounded top, input row + tool row, expandable accessory.
@@ -64,7 +66,9 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
     private var recordTimer: Timer?
 
     // Accessory subviews
+    private let emojiModeControl = UISegmentedControl(items: ["表情", "贴纸"])
     private let emojiCollection: UICollectionView
+    private var stickerPanel: StickerAccessoryPanel?
     private let voicePanel = UIView()
     private let imagePanel = ChatImageAccessoryPanel()
     private let morePanel = UIView()
@@ -102,6 +106,28 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         placeholder.isHidden = true
         updateTextHeight()
         textView.becomeFirstResponder()
+    }
+
+    /// Wire sticker repository into the emoji accessory (贴纸 tab).
+    func configureStickers(_ repository: StickerRepository) {
+        if stickerPanel == nil {
+            let panel = StickerAccessoryPanel(stickers: repository)
+            panel.translatesAutoresizingMaskIntoConstraints = false
+            panel.isHidden = true
+            panel.onSelect = { [weak self] ref in
+                guard let self else { return }
+                self.delegate?.composerBar(self, didSelectSticker: ref)
+            }
+            accessoryHost.addSubview(panel)
+            NSLayoutConstraint.activate([
+                panel.topAnchor.constraint(equalTo: emojiModeControl.bottomAnchor, constant: 4),
+                panel.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
+                panel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
+                panel.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+            ])
+            stickerPanel = panel
+        }
+        stickerPanel?.reload()
     }
 
     func dismissAccessory() {
@@ -232,6 +258,11 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
     }
 
     private func setupAccessoryPanels() {
+        emojiModeControl.selectedSegmentIndex = 0
+        emojiModeControl.translatesAutoresizingMaskIntoConstraints = false
+        emojiModeControl.addTarget(self, action: #selector(emojiModeChanged), for: .valueChanged)
+        accessoryHost.addSubview(emojiModeControl)
+
         emojiCollection.backgroundColor = .clear
         emojiCollection.dataSource = self
         emojiCollection.delegate = self
@@ -289,7 +320,11 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         accessoryHost.addSubview(morePanel)
 
         NSLayoutConstraint.activate([
-            emojiCollection.topAnchor.constraint(equalTo: accessoryHost.topAnchor),
+            emojiModeControl.topAnchor.constraint(equalTo: accessoryHost.topAnchor, constant: 8),
+            emojiModeControl.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor, constant: 16),
+            emojiModeControl.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor, constant: -16),
+
+            emojiCollection.topAnchor.constraint(equalTo: emojiModeControl.bottomAnchor, constant: 4),
             emojiCollection.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
             emojiCollection.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
             // Keep controls above home indicator; host background still bleeds below.
@@ -376,12 +411,18 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
             textView.resignFirstResponder()
         }
 
-        emojiCollection.isHidden = next != .emoji
+        emojiModeControl.isHidden = next != .emoji
+        emojiCollection.isHidden = next != .emoji || emojiModeControl.selectedSegmentIndex != 0
+        stickerPanel?.isHidden = next != .emoji || emojiModeControl.selectedSegmentIndex != 1
         voicePanel.isHidden = next != .voice
         imagePanel.isHidden = next != .image
         morePanel.isHidden = next != .more
         if next == .image {
             imagePanel.reloadLibrary()
+        }
+        if next == .emoji {
+            stickerPanel?.reload()
+            updateEmojiStickerVisibility()
         }
         if next != .image {
             imagePanel.clearSelection()
@@ -430,6 +471,20 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
     // MARK: - Actions
 
     @objc private func emojiTapped() { setAccessory(.emoji, animated: true) }
+
+    @objc private func emojiModeChanged() {
+        updateEmojiStickerVisibility()
+        if emojiModeControl.selectedSegmentIndex == 1 {
+            stickerPanel?.reload()
+        }
+    }
+
+    private func updateEmojiStickerVisibility() {
+        guard accessory == .emoji else { return }
+        let showStickers = emojiModeControl.selectedSegmentIndex == 1
+        emojiCollection.isHidden = showStickers
+        stickerPanel?.isHidden = !showStickers
+    }
     @objc private func voiceTapped() { setAccessory(.voice, animated: true) }
     @objc private func photoTapped() { setAccessory(.image, animated: true) }
     @objc private func moreTapped() { setAccessory(.more, animated: true) }

@@ -102,6 +102,23 @@ public protocol MessageRepository: Sendable {
     func isHistoryInFlight() async -> Bool
     func syncOffline() async throws
     func markRead(conversationId: String, peer: String, chatType: ChatType) async throws
+    /// Send a sticker by pack reference (CmdFile + msg_type=6); no upload.
+    func sendSticker(to: String, chatType: ChatType, sticker: StickerRef, from: User) async throws -> Message
+}
+
+public protocol StickerRepository: Sendable {
+    /// Installed / catalog packs available in the sticker panel.
+    func installedPacks() async -> [StickerPack]
+    func stickers(in packId: String) async -> [StickerItem]
+    /// Resolve image bytes for display (local pack first, then url / CDN fallback).
+    func imageData(for ref: StickerRef) async -> Data?
+    func localFileURL(packId: String, stickerId: String) async -> URL?
+    func recordRecent(_ ref: StickerRef) async
+    func recentStickers(limit: Int) async -> [StickerRef]
+    /// Pull remote catalog and ensure pack manifests are available.
+    func syncCatalog(from catalogURL: URL?) async throws
+    /// Build a sendable ref with absolute CDN `url` for receivers without the pack.
+    func enrichedRef(_ item: StickerItem) async -> StickerRef
 }
 
 public protocol ConversationRepository: Sendable {

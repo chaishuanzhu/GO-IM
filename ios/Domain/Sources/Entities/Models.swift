@@ -16,6 +16,7 @@ public enum MsgType: Sendable, Codable, Equatable {
     case voice
     case video
     case file
+    case sticker
     /// Wire value not recognized by this client build; keep original code for round-trip.
     case unsupported(Int32)
 
@@ -28,6 +29,7 @@ public enum MsgType: Sendable, Codable, Equatable {
         case .voice: return 3
         case .video: return 4
         case .file: return 5
+        case .sticker: return 6
         case let .unsupported(code): return code
         }
     }
@@ -39,6 +41,7 @@ public enum MsgType: Sendable, Codable, Equatable {
         case 3: self = .voice
         case 4: self = .video
         case 5: self = .file
+        case 6: self = .sticker
         default: self = .unsupported(rawValue)
         }
     }
@@ -251,6 +254,106 @@ public struct FileMeta: Sendable, Equatable {
         self.thumbWidth = thumbWidth
         self.thumbHeight = thumbHeight
         self.duration = duration
+    }
+}
+
+/// Sticker wire payload (`msg_type=6`); authority is pack_id + sticker_id.
+public struct StickerRef: Sendable, Equatable, Codable {
+    public var packId: String
+    public var stickerId: String
+    public var format: String
+    public var width: Int
+    public var height: Int
+    /// Optional CDN / custom-scheme fallback when the pack is not installed locally.
+    public var url: String?
+
+    public enum CodingKeys: String, CodingKey {
+        case packId = "pack_id"
+        case stickerId = "sticker_id"
+        case format, width, height, url
+    }
+
+    public init(
+        packId: String,
+        stickerId: String,
+        format: String = "png",
+        width: Int = 240,
+        height: Int = 240,
+        url: String? = nil
+    ) {
+        self.packId = packId
+        self.stickerId = stickerId
+        self.format = format
+        self.width = width
+        self.height = height
+        self.url = url
+    }
+
+    public func encodeContent() throws -> String {
+        let data = try JSONEncoder().encode(self)
+        guard let s = String(data: data, encoding: .utf8) else {
+            throw DomainError.invalidState("sticker json encode failed")
+        }
+        return s
+    }
+
+    public static func decode(from content: String) -> StickerRef? {
+        guard let data = content.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(StickerRef.self, from: data)
+    }
+}
+
+public struct StickerItem: Sendable, Equatable, Identifiable {
+    public var id: String { stickerId }
+    public let packId: String
+    public let stickerId: String
+    public let fileName: String
+    public let width: Int
+    public let height: Int
+
+    public init(packId: String, stickerId: String, fileName: String, width: Int = 240, height: Int = 240) {
+        self.packId = packId
+        self.stickerId = stickerId
+        self.fileName = fileName
+        self.width = width
+        self.height = height
+    }
+
+    public func asRef(url: String? = nil) -> StickerRef {
+        let ext = fileName.split(separator: ".").last.map(String.init)?.lowercased() ?? "png"
+        return StickerRef(
+            packId: packId,
+            stickerId: stickerId,
+            format: ext.isEmpty ? "png" : ext,
+            width: width,
+            height: height,
+            url: url
+        )
+    }
+}
+public struct StickerPack: Sendable, Equatable, Identifiable {
+    public var id: String { packId }
+    public let packId: String
+    public let name: String
+    public let version: Int
+    public let coverFileName: String?
+    public let stickers: [StickerItem]
+    public let baseURL: String?
+
+    public init(
+        packId: String,
+        name: String,
+        version: Int,
+        coverFileName: String? = nil,
+        stickers: [StickerItem],
+        baseURL: String? = nil
+    ) {
+        self.packId = packId
+        self.name = name
+        self.version = version
+        self.coverFileName = coverFileName
+        self.stickers = stickers
+        self.baseURL = baseURL
     }
 }
 

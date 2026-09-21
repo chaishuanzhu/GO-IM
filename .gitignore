@@ -36,6 +36,8 @@ docker-compose.override.yml
 # Build output
 web/dist/
 web/node_modules/
+stickers-dist/
+.tmp/
 
 # Deployment generated files
 deploy/nginx.prod.generated.conf

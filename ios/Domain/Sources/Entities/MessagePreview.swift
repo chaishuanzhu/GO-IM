@@ -23,6 +23,8 @@ public extension Message {
                 return "[文件] \(name)"
             }
             return "[文件]"
+        case .sticker:
+            return "[表情]"
         case .unsupported:
             return MsgType.unsupportedPlaceholder
         }

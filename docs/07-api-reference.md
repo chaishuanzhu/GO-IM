@@ -439,7 +439,7 @@ GET /search?uid=alice&token=eyJhbG...&q=hello&peer=bob&chat_type=1&limit=20
 | `q` | 是 | 搜索关键词 |
 | `peer` | 否 | 限定与某人的对话 |
 | `chat_type` | 否 | `1`=单聊 `2`=群聊 |
-| `msg_type` | 否 | `1`=文本 `2`=图片 `3`=语音 `4`=视频 `5`=文件 |
+| `msg_type` | 否 | `1`=文本 `2`=图片 `3`=语音 `4`=视频 `5`=文件 `6`=表情包 |
 | `before` | 否 | 时间戳上限（毫秒） |
 | `after` | 否 | 时间戳下限（毫秒） |
 | `cursor` | 否 | 分页游标（上一页的 `next_cursor`） |
@@ -621,7 +621,7 @@ TCP 连接建立后，**第一条消息必须是登录**：
 | `from` | string | 4 | **发送者 UID**（服务端覆写，不可伪造） |
 | `to` | string | 5 | 接收者 UID 或群组 ID |
 | `chat_type` | int32 | 6 | 聊天类型：1=单聊, 2=群聊 |
-| `msg_type` | int32 | 7 | 消息类型：1=文本, 2=图片, 3=语音, 4=视频, 5=文件 |
+| `msg_type` | int32 | 7 | 消息类型：1=文本, 2=图片, 3=语音, 4=视频, 5=文件, 6=表情包 |
 | `content` | string | 8 | 消息内容（文本 / JSON 字符串） |
 | `timestamp` | int64 | 9 | Unix 毫秒时间戳 |
 | `need_ack` | bool | 10 | 是否需要服务端 ACK 确认 |
@@ -643,7 +643,7 @@ TCP 连接建立后，**第一条消息必须是登录**：
 | CmdGroupLeave | `to`=group_id | — | |
 | CmdGroupInfo | `to`=group_id | — | |
 | CmdGroupList | — | — | |
-| CmdFile | 同 CmdChat，`content` 为文件元数据 JSON | 同 CmdChat | `msg_type` 建议为 2/3/4/5 |
+| CmdFile | 同 CmdChat，`content` 为文件元数据 JSON；表情包为 `pack_id`/`sticker_id` JSON | 同 CmdChat | `msg_type` 建议为 2/3/4/5/6 |
 | CmdRecall | `to`, `seq`(=原始MsgId) | `msg_id`, `timestamp` | 撤回通知，`seq` 携带原始消息ID |
 
 ### 6.3 多平台注意事项

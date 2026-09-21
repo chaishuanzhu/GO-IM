@@ -42,6 +42,7 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         view.backgroundColor = .systemGroupedBackground
         configureLayout()
         configureBindings()
+        composer.configureStickers(env.stickers)
     }
 
     public override func viewWillAppear(_ animated: Bool) {
@@ -208,6 +209,8 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         let m = viewModel.messages[indexPath.row]
         cell.configure(message: m, fileURL: { [weak self] fileId, thumb in
             self?.env.files.fileURL(fileId: fileId, thumb: thumb)
+        }, stickerImage: { [weak self] ref in
+            await self?.env.stickers.imageData(for: ref)
         }, onOpen: { [weak self] url in
             UIApplication.shared.open(url)
         })
@@ -230,6 +233,10 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
     func composerBar(_ bar: ChatComposerBar, didSendText text: String) {
         viewModel.draft = text
         Task { await viewModel.sendText() }
+    }
+
+    func composerBar(_ bar: ChatComposerBar, didSelectSticker sticker: StickerRef) {
+        Task { await viewModel.sendSticker(sticker) }
     }
 
     func composerBarDidTapMention(_ bar: ChatComposerBar) {

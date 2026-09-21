@@ -12,7 +12,9 @@
 		34626E6CBE864E43AA8ACE59 /* GRDB.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = C1EC7374D29E1B83621B08DC /* GRDB.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		461B74F2960713CD86FD4D54 /* Data.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8AF7E105F5FEC83A7A47F2E7 /* Data.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		52AC0E541487E1188A1409EB /* Moya.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 97590F8716CD862F585CC863 /* Moya.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		7D603464C7D5AEA3C6DC2E42 /* catalog.json in Resources */ = {isa = PBXBuildFile; fileRef = A4ACC3F98DA7DB0360A62771 /* catalog.json */; };
 		826F47A48E93DD41D425562A /* CompositionRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61F5D036D59E757A40E04AE1 /* CompositionRoot.swift */; };
+		849B6AF1819F7B094B7C3A76 /* TuistBundle+GOIM.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30089DED98B258ED36ED38B /* TuistBundle+GOIM.swift */; };
 		8B37755CD15FFCE08FEA31EA /* Domain.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 6BEB75E9463ACE494A73BD36 /* Domain.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		98D89A19B1BAC5EE832A2C8E /* SwiftProtobuf.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 541FE82E8C6C564BE5B96C87 /* SwiftProtobuf.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		ADA517B7189D8772AE766E88 /* Moya.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 97590F8716CD862F585CC863 /* Moya.framework */; };
@@ -59,9 +61,11 @@
 		77D69EAF942AA87F8A9468BF /* Kingfisher.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Kingfisher.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		8AF7E105F5FEC83A7A47F2E7 /* Data.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Data.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		97590F8716CD862F585CC863 /* Moya.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Moya.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		A4ACC3F98DA7DB0360A62771 /* catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = catalog.json; sourceTree = "<group>"; };
 		AB538E13C7E2A55299D9089E /* GRDBSQLite.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = GRDBSQLite.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1EC7374D29E1B83621B08DC /* GRDB.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = GRDB.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		C86E6E6BCDFAB61BBD09E06F /* Alamofire.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Alamofire.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		E30089DED98B258ED36ED38B /* TuistBundle+GOIM.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TuistBundle+GOIM.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -91,9 +95,18 @@
 			isa = PBXGroup;
 			children = (
 				B3BCDE38B26B330C9A04FADE /* Derived */,
+				62EFB15EC88C1D2636544B42 /* Resources */,
 				858C4E433DBF0294DFED1B0C /* Sources */,
 			);
 			name = Project;
+			sourceTree = "<group>";
+		};
+		62EFB15EC88C1D2636544B42 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				D6DF2DB0E59BB5554A016BB0 /* Stickers */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		66EB57D721CBB7D427955C21 /* InfoPlists */ = {
@@ -114,12 +127,29 @@
 			path = Sources;
 			sourceTree = "<group>";
 		};
+		8919B428B639C6AF4BBFE002 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				E30089DED98B258ED36ED38B /* TuistBundle+GOIM.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
 		B3BCDE38B26B330C9A04FADE /* Derived */ = {
 			isa = PBXGroup;
 			children = (
 				66EB57D721CBB7D427955C21 /* InfoPlists */,
+				8919B428B639C6AF4BBFE002 /* Sources */,
 			);
 			path = Derived;
+			sourceTree = "<group>";
+		};
+		D6DF2DB0E59BB5554A016BB0 /* Stickers */ = {
+			isa = PBXGroup;
+			children = (
+				A4ACC3F98DA7DB0360A62771 /* catalog.json */,
+			);
+			path = Stickers;
 			sourceTree = "<group>";
 		};
 		E9C3DB3EC6D7655028A9C0D3 /* Products */ = {
@@ -196,6 +226,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7D603464C7D5AEA3C6DC2E42 /* catalog.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -206,6 +237,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				849B6AF1819F7B094B7C3A76 /* TuistBundle+GOIM.swift in Sources */,
 				27E73AE713B242832015055B /* AppDelegate.swift in Sources */,
 				826F47A48E93DD41D425562A /* CompositionRoot.swift in Sources */,
 				EAAEDBD52862F66B35F25205 /* SceneDelegate.swift in Sources */,

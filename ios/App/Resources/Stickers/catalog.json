@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "cdn_base": "https://oss.chaisz.com/im-sticker-pack",
+  "packs": [
+    {
+      "pack_id": "tuzi",
+      "name": "兔子",
+      "version": 1,
+      "base_url": "https://oss.chaisz.com/im-sticker-pack/tuzi/",
+      "zip_url": "https://oss.chaisz.com/im-sticker-pack/tuzi.zip",
+      "cover": "001.jpg",
+      "count": 29
+    },
+    {
+      "pack_id": "doge",
+      "name": "Doge",
+      "version": 1,
+      "base_url": "https://oss.chaisz.com/im-sticker-pack/doge/",
+      "zip_url": "https://oss.chaisz.com/im-sticker-pack/doge.zip",
+      "cover": "001.png",
+      "count": 42
+    },
+    {
+      "pack_id": "lengtu",
+      "name": "冷兔",
+      "version": 1,
+      "base_url": "https://oss.chaisz.com/im-sticker-pack/lengtu/",
+      "zip_url": "https://oss.chaisz.com/im-sticker-pack/lengtu.zip",
+      "cover": "001.png",
+      "count": 48
+    },
+    {
+      "pack_id": "capoo",
+      "name": "咖波",
+      "version": 1,
+      "base_url": "https://oss.chaisz.com/im-sticker-pack/capoo/",
+      "zip_url": "https://oss.chaisz.com/im-sticker-pack/capoo.zip",
+      "cover": "001-file_1437.gif",
+      "count": 50
+    },
+    {
+      "pack_id": "capoo_hyper",
+      "name": "咖波 Hyper",
+      "version": 1,
+      "base_url": "https://oss.chaisz.com/im-sticker-pack/capoo_hyper/",
+      "zip_url": "https://oss.chaisz.com/im-sticker-pack/capoo_hyper.zip",
+      "cover": "001-file_1300.gif",
+      "count": 50
+    },
+    {
+      "pack_id": "capoo_sp",
+      "name": "咖波 SP",
+      "version": 1,
+      "base_url": "https://oss.chaisz.com/im-sticker-pack/capoo_sp/",
+      "zip_url": "https://oss.chaisz.com/im-sticker-pack/capoo_sp.zip",
+      "cover": "001-file_452.gif",
+      "count": 18
+    }
+  ]
+}

@@ -57,11 +57,12 @@ const (
 
 // 消息类型。
 const (
-	MsgTypeText  int32 = 1
-	MsgTypeImage int32 = 2
-	MsgTypeVoice int32 = 3
-	MsgTypeVideo int32 = 4
-	MsgTypeFile  int32 = 5
+	MsgTypeText    int32 = 1
+	MsgTypeImage   int32 = 2
+	MsgTypeVoice   int32 = 3
+	MsgTypeVideo   int32 = 4
+	MsgTypeFile    int32 = 5
+	MsgTypeSticker int32 = 6 // 表情包（pack_id + sticker_id 引用）
 )
 
 // 校验错误。

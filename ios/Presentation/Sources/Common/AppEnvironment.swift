@@ -11,6 +11,7 @@ public final class AppEnvironment {
     public let friends: FriendRepository
     public let files: FileRepository
     public let search: SearchRepository
+    public let stickers: StickerRepository
 
     public let loginUseCase: LoginUseCase
     public let logoutUseCase: LogoutUseCase
@@ -38,6 +39,7 @@ public final class AppEnvironment {
         friends: FriendRepository,
         files: FileRepository,
         search: SearchRepository,
+        stickers: StickerRepository,
         apiBaseURL: URL
     ) {
         self.auth = auth
@@ -48,6 +50,7 @@ public final class AppEnvironment {
         self.friends = friends
         self.files = files
         self.search = search
+        self.stickers = stickers
         self.apiBaseURL = apiBaseURL
 
         loginUseCase = LoginUseCase(auth: auth, connection: connection)
@@ -68,5 +71,10 @@ public final class AppEnvironment {
     public func updateAPIBaseURL(_ url: URL) {
         apiBaseURL = url
         onAPIBaseURLChange?(url)
+    }
+
+    /// Remote sticker catalog on OSS (assets hosted separately from the app).
+    public var stickerCatalogURL: URL? {
+        URL(string: "https://oss.chaisz.com/im-sticker-pack/catalog.json")
     }
 }

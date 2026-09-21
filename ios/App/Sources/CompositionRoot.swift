@@ -44,6 +44,7 @@ public enum CompositionRoot {
         )
         let files = FileRepositoryImpl(provider: sharedProvider, serverConfig: serverConfig, auth: auth)
         let search = SearchRepositoryImpl(provider: sharedProvider, auth: auth)
+        let stickers = StickerRepositoryImpl()
 
         environment = AppEnvironment(
             auth: auth,
@@ -54,6 +55,7 @@ public enum CompositionRoot {
             friends: friends,
             files: files,
             search: search,
+            stickers: stickers,
             apiBaseURL: baseURL
         )
         environment.onAPIBaseURLChange = { url in
@@ -64,6 +66,11 @@ public enum CompositionRoot {
         if let saved = UserDefaults.standard.string(forKey: "goim.apiBaseURL"),
            let savedURL = URL(string: saved), savedURL.host != nil {
             environment.updateAPIBaseURL(savedURL)
+        }
+
+        _Concurrency.Task {
+            await stickers.loadPresetCatalog()
+            try? await stickers.syncCatalog(from: environment.stickerCatalogURL)
         }
 
         _Concurrency.Task {

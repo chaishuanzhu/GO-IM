@@ -137,6 +137,31 @@ public final class ChatViewModel {
         }
     }
 
+    public func sendSticker(_ sticker: StickerRef) async {
+        guard let user = env.auth.currentUser() else {
+            errorMessage = "未登录"
+            onChange?()
+            return
+        }
+        do {
+            await env.stickers.recordRecent(sticker)
+            let sent = try await env.messages.sendSticker(
+                to: conversation.peerOrGroupId,
+                chatType: conversation.chatType,
+                sticker: sticker,
+                from: user
+            )
+            try? await env.conversations.upsertConversation(
+                from: sent,
+                title: conversation.title,
+                incrementUnread: false
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+            onChange?()
+        }
+    }
+
     public func sendImage(data: Data, fileName: String, width: Int = 0, height: Int = 0) async {
         await sendAttachment(
             data: data,
@@ -288,8 +313,8 @@ public final class ChatViewModel {
             switch message.msgType {
             case .text:
                 try await env.messages.retry(message)
-            case .image, .voice, .video, .file:
-                _ = try await env.sendFile.retry(message)
+            case .image, .voice, .video, .file, .sticker:
+                try await env.messages.retry(message)
             case .unsupported:
                 errorMessage = MsgType.unsupportedPlaceholder
                 onChange?()

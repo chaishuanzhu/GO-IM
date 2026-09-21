@@ -241,6 +241,36 @@ public actor MessageRepositoryImpl: MessageRepository {
         try await connection.send(OutboundEnvelope(kind: .readReceipt(to: peer, chatType: chatType)))
     }
 
+    public func sendSticker(to: String, chatType: ChatType, sticker: StickerRef, from: User) async throws -> Message {
+        let conversationId = chatType == .group
+            ? ConversationID.group(to)
+            : ConversationID.dm(uidA: from.uid, uidB: to)
+        let content = try sticker.encodeContent()
+        let seq = Int64(Date().timeIntervalSince1970 * 1000) % 1_000_000_000_000
+        var message = Message(
+            clientSeq: seq,
+            conversationId: conversationId,
+            fromUID: from.uid,
+            toUID: to,
+            chatType: chatType,
+            msgType: .sticker,
+            content: content,
+            timestampMs: Int64(Date().timeIntervalSince1970 * 1000),
+            status: .sending,
+            isOutgoing: true
+        )
+        try await upsert(message)
+        do {
+            try await connection.send(OutboundEnvelope(kind: .file(message)))
+            await trackAck(message)
+        } catch {
+            message.status = .failed
+            try await upsert(message)
+            throw error
+        }
+        return message
+    }
+
     // MARK: - ACK tracking
 
     private func trackAck(_ message: Message) async {
@@ -273,7 +303,7 @@ public actor MessageRepositoryImpl: MessageRepository {
         switch message.msgType {
         case .text:
             try await connection.send(OutboundEnvelope(kind: .chat(message)))
-        case .image, .voice, .video, .file:
+        case .image, .voice, .video, .file, .sticker:
             try await connection.send(OutboundEnvelope(kind: .file(message)))
         case .unsupported:
             throw DomainError.invalidState(MsgType.unsupportedPlaceholder)

@@ -10,6 +10,7 @@
 		01309DA478AC22159D054601 /* Moya.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E38D43CEE696BFEF020903BE /* Moya.framework */; };
 		300E4F4EB259178CD8889158 /* Handlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 173D4A5815C84A0EF12C3796 /* Handlers.swift */; };
 		385AF37CFC09728522432EC2 /* ConversationRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 999C4C2747B53CB9BC055C31 /* ConversationRepositoryImpl.swift */; };
+		4C79417A06A432A70F69EDD8 /* StickerRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D3772BB4B14FBF6391757E3 /* StickerRepositoryImpl.swift */; };
 		4E973B4DD8B7DCA508F70D6B /* SwiftProtobuf.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5E686E31A7BB571385831946 /* SwiftProtobuf.framework */; };
 		5282E1A81ABE3FADF8B70552 /* FriendRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32227617B04813597B875901 /* FriendRepositoryImpl.swift */; };
 		57E95D172ED3AE58F994A4AF /* ProtobufCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF2E0DA0E3876515148029B2 /* ProtobufCodecTests.swift */; };
@@ -72,6 +73,7 @@
 		0FEED37EF208A1EEE0CA3E94 /* ProtobufCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtobufCodec.swift; sourceTree = "<group>"; };
 		173D4A5815C84A0EF12C3796 /* Handlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Handlers.swift; sourceTree = "<group>"; };
 		29E4719BB8B24E079512BFF3 /* MessageRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRepositoryImpl.swift; sourceTree = "<group>"; };
+		2D3772BB4B14FBF6391757E3 /* StickerRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerRepositoryImpl.swift; sourceTree = "<group>"; };
 		32227617B04813597B875901 /* FriendRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendRepositoryImpl.swift; sourceTree = "<group>"; };
 		3299738DE1347588B203280F /* GOIMAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GOIMAPI.swift; sourceTree = "<group>"; };
 		4631D310A8CDE0930697872D /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
@@ -150,6 +152,14 @@
 				FAC3BA46688B57B1B1E7CD2B /* NWTransports.swift */,
 			);
 			path = Transport;
+			sourceTree = "<group>";
+		};
+		4E761B5BB77C8AAE896BA85D /* Stickers */ = {
+			isa = PBXGroup;
+			children = (
+				2D3772BB4B14FBF6391757E3 /* StickerRepositoryImpl.swift */,
+			);
+			path = Stickers;
 			sourceTree = "<group>";
 		};
 		53C06246A9E4472B0D3E594C /* Repositories */ = {
@@ -233,6 +243,7 @@
 				20E5B330B30FF2C7A0991FAC /* Pipeline */,
 				9CF59D4D56E1EEE3335101CC /* Proto */,
 				53C06246A9E4472B0D3E594C /* Repositories */,
+				4E761B5BB77C8AAE896BA85D /* Stickers */,
 				AF0AD5DE6CE9133C56EAB37C /* Storage */,
 				403C90D735E5FFF4A18ACBE7 /* Transport */,
 			);
@@ -367,6 +378,7 @@
 				B2F6EEE5296926D8D6E4EB28 /* GroupRepositoryImpl.swift in Sources */,
 				5C595053BE68FA4B0B220779 /* MessageRepositoryImpl.swift in Sources */,
 				FBBD2738F6E3357C3C2D47C5 /* SearchRepositoryImpl.swift in Sources */,
+				4C79417A06A432A70F69EDD8 /* StickerRepositoryImpl.swift in Sources */,
 				80D128765A3E8C4910DA98F8 /* KeychainStore.swift in Sources */,
 				FB7F20DD366454280CF8944D /* LocalMediaStore.swift in Sources */,
 				81D3CA8E3F8EB8BBCCD4A2DA /* NWTransports.swift in Sources */,
