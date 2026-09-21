@@ -15,6 +15,8 @@ let project = Project(
                 .project(target: "Domain", path: "../Domain"),
                 .external(name: "Kingfisher"),
                 .sdk(name: "QuickLook", type: .framework),
+                .sdk(name: "AVKit", type: .framework),
+                .sdk(name: "AVFoundation", type: .framework),
             ],
             settings: .settings(
                 base: [

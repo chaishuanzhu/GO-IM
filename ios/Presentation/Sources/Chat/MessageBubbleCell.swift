@@ -12,6 +12,7 @@ final class MessageBubbleCell: UITableViewCell {
     /// AnimatedImageView so sticker GIFs play; still works for static photos via Kingfisher.
     private let imageViewBubble = AnimatedImageView()
     private let mediaIcon = UIImageView()
+    private let voiceWaveform = VoiceWaveformBarsView()
     private let statusLabel = UILabel()
     private let stack = UIStackView()
     private let bubbleRow = UIStackView()
@@ -37,9 +38,13 @@ final class MessageBubbleCell: UITableViewCell {
     private var textStackConstraints: [NSLayoutConstraint] = []
 
     private var openURL: URL?
+    private var openAsVoice = false
+    private var voiceDuration = 0
+    private var isVoiceWaveAnimating = false
     private var previewItem: MediaPreviewItem?
     private var boundImageFileId: String?
     var onOpenURL: ((URL) -> Void)?
+    var onPlayVoice: ((URL, Int) -> Void)?
     var onPreview: ((MediaPreviewItem) -> Void)?
     var onRetry: (() -> Void)?
 
@@ -118,10 +123,15 @@ final class MessageBubbleCell: UITableViewCell {
         mediaIcon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
         mediaIcon.setContentHuggingPriority(.required, for: .horizontal)
 
+        voiceWaveform.isHidden = true
+        voiceWaveform.translatesAutoresizingMaskIntoConstraints = false
+        voiceWaveform.setContentHuggingPriority(.required, for: .horizontal)
+
         mediaRow.axis = .horizontal
         mediaRow.spacing = 10
         mediaRow.alignment = .center
         mediaRow.addArrangedSubview(mediaIcon)
+        mediaRow.addArrangedSubview(voiceWaveform)
         mediaRow.addArrangedSubview(bodyLabel)
 
         contentStack.axis = .vertical
@@ -191,6 +201,23 @@ final class MessageBubbleCell: UITableViewCell {
             mediaIcon.widthAnchor.constraint(equalToConstant: 28),
             mediaIcon.heightAnchor.constraint(equalToConstant: 28),
         ])
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(voicePlayerDidChange),
+            name: VoicePlayer.didChangeNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(voicePlayerProgress),
+            name: VoicePlayer.progressNotification,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     @available(*, unavailable)
@@ -212,13 +239,18 @@ final class MessageBubbleCell: UITableViewCell {
         imageViewBubble.kf.cancelDownloadTask()
         // Keep bitmap + bind key until configure replaces them (avoids sticker GIF flash on reloadData).
         mediaIcon.image = nil
+        hideVoiceWaveform()
         bodyLabel.text = nil
         statusLabel.text = nil
         statusLabel.isHidden = true
         metaLabel.text = nil
         openURL = nil
+        openAsVoice = false
+        voiceDuration = 0
+        stopVoiceWaveAnimation()
         previewItem = nil
         onOpenURL = nil
+        onPlayVoice = nil
         onPreview = nil
         onRetry = nil
         hideSendAccessory()
@@ -229,11 +261,16 @@ final class MessageBubbleCell: UITableViewCell {
         fileURL: ((String, Bool) -> URL?)?,
         stickerImage: ((StickerRef) async -> Data?)? = nil,
         onOpen: ((URL) -> Void)? = nil,
+        onPlayVoice: ((URL, Int) -> Void)? = nil,
         onPreview: ((MediaPreviewItem) -> Void)? = nil
     ) {
         onOpenURL = onOpen
+        self.onPlayVoice = onPlayVoice
         self.onPreview = onPreview
         openURL = nil
+        openAsVoice = false
+        voiceDuration = 0
+        stopVoiceWaveAnimation()
         previewItem = nil
         let outgoing = message.isOutgoing
 
@@ -249,6 +286,7 @@ final class MessageBubbleCell: UITableViewCell {
         bubbleView.backgroundColor = outgoing ? GOIMStyle.outgoingBubble : GOIMStyle.incomingBubble
         bodyLabel.textColor = outgoing ? GOIMStyle.outgoingText : GOIMStyle.incomingText
         mediaIcon.tintColor = outgoing ? .white : .label
+        voiceWaveform.barColor = outgoing ? .white : .label
 
         metaLabel.isHidden = false
         metaLabel.text = outgoing
@@ -347,6 +385,7 @@ final class MessageBubbleCell: UITableViewCell {
         statusLabel.isHidden = true
         hideSendAccessory()
         showTextContent()
+        hideVoiceWaveform()
         mediaIcon.isHidden = true
         mediaIcon.image = nil
         bodyLabel.text = text
@@ -363,6 +402,7 @@ final class MessageBubbleCell: UITableViewCell {
         imageViewBubble.image = nil
         boundImageFileId = nil
         showTextContent()
+        hideVoiceWaveform()
         mediaIcon.isHidden = true
         mediaIcon.image = nil
         bodyLabel.isHidden = false
@@ -473,17 +513,24 @@ final class MessageBubbleCell: UITableViewCell {
     private func configureVoice(_ content: String, fileURL: ((String, Bool) -> URL?)?, outgoing: Bool) {
         let meta = parseFileMeta(content)
         showTextContent()
+        // Idle: exact SF Symbol look. Playing: matched bar geometry animation.
         mediaIcon.isHidden = false
         mediaIcon.image = UIImage(systemName: "waveform")
+        voiceWaveform.isHidden = true
+        voiceWaveform.barColor = outgoing ? .white : .label
+        voiceWaveform.isAnimating = false
         bodyLabel.font = .preferredFont(forTextStyle: .body)
-        let sec = meta?.duration ?? 0
-        bodyLabel.text = sec > 0 ? "语音 \(sec)\"" : "语音消息"
+        voiceDuration = meta?.duration ?? 0
         openURL = meta.flatMap { fileURL?($0.fileId, false) }
+        openAsVoice = openURL != nil
+        previewItem = nil
+        refreshVoicePlaybackUI()
     }
 
     private func configureVideo(_ content: String, fileURL: ((String, Bool) -> URL?)?, outgoing: Bool) {
         let meta = parseFileMeta(content)
         showTextContent()
+        hideVoiceWaveform()
         mediaIcon.isHidden = false
         mediaIcon.image = UIImage(systemName: "play.rectangle.fill")
         bodyLabel.font = .preferredFont(forTextStyle: .body)
@@ -491,7 +538,9 @@ final class MessageBubbleCell: UITableViewCell {
         if let d = meta?.duration, d > 0 { parts.append("\(d)\"") }
         if let name = meta?.name, !name.isEmpty { parts.append(name) }
         bodyLabel.text = parts.joined(separator: " · ")
-        openURL = meta.flatMap { fileURL?($0.fileId, false) }
+        let url = meta.flatMap { fileURL?($0.fileId, false) }
+        previewItem = .video(url: url, name: meta?.name, duration: meta?.duration)
+        openURL = nil
     }
 
     private func configureFile(_ content: String, fileURL: ((String, Bool) -> URL?)?, outgoing: Bool) {
@@ -509,6 +558,7 @@ final class MessageBubbleCell: UITableViewCell {
             return
         }
         showTextContent()
+        hideVoiceWaveform()
         mediaIcon.isHidden = false
         mediaIcon.image = UIImage(systemName: "doc.fill")
         bodyLabel.font = .preferredFont(forTextStyle: .body)
@@ -527,13 +577,72 @@ final class MessageBubbleCell: UITableViewCell {
                 onPreview?(.image(fullURL: fullURL, placeholder: imageViewBubble.image))
             case let .sticker(ref, _):
                 onPreview?(.sticker(ref: ref, placeholder: imageViewBubble.image))
+            case .video:
+                onPreview?(previewItem)
             case .file:
                 onPreview?(previewItem)
             }
             return
         }
         guard let openURL else { return }
+        if openAsVoice {
+            onPlayVoice?(openURL, voiceDuration)
+            return
+        }
         onOpenURL?(openURL)
+    }
+
+    @objc private func voicePlayerDidChange() {
+        refreshVoicePlaybackUI()
+    }
+
+    @objc private func voicePlayerProgress() {
+        guard openAsVoice, let openURL, VoicePlayer.shared.isPlaying(openURL) else { return }
+        let rem = VoicePlayer.shared.remainingSeconds
+        bodyLabel.text = rem > 0 ? "语音 \(rem)\"" : voiceIdleLabelText()
+    }
+
+    private func refreshVoicePlaybackUI() {
+        guard openAsVoice, let openURL else {
+            stopVoiceWaveAnimation()
+            return
+        }
+        if VoicePlayer.shared.isPlaying(openURL) {
+            startVoiceWaveAnimation()
+            let rem = VoicePlayer.shared.remainingSeconds
+            bodyLabel.text = rem > 0 ? "语音 \(rem)\"" : voiceIdleLabelText()
+        } else {
+            stopVoiceWaveAnimation()
+            bodyLabel.text = voiceIdleLabelText()
+        }
+    }
+
+    private func voiceIdleLabelText() -> String {
+        voiceDuration > 0 ? "语音 \(voiceDuration)\"" : "语音消息"
+    }
+
+    private func startVoiceWaveAnimation() {
+        guard !isVoiceWaveAnimating else { return }
+        isVoiceWaveAnimating = true
+        mediaIcon.isHidden = true
+        voiceWaveform.isHidden = false
+        voiceWaveform.isAnimating = true
+    }
+
+    private func stopVoiceWaveAnimation() {
+        isVoiceWaveAnimating = false
+        voiceWaveform.isAnimating = false
+        voiceWaveform.isHidden = true
+        if openAsVoice {
+            mediaIcon.isHidden = false
+            mediaIcon.image = UIImage(systemName: "waveform")
+        }
+    }
+
+    private func hideVoiceWaveform() {
+        stopVoiceWaveAnimation()
+        voiceWaveform.isHidden = true
+        // openAsVoice is false for non-voice; don't force mediaIcon visible here.
     }
 
     @objc private func retryTapped() {

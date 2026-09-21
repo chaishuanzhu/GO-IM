@@ -1,5 +1,6 @@
 import UIKit
 import QuickLook
+import AVKit
 import Kingfisher
 import Domain
 
@@ -7,6 +8,7 @@ import Domain
 enum MediaPreviewItem {
     case image(fullURL: URL?, placeholder: UIImage?)
     case sticker(ref: StickerRef, placeholder: UIImage?)
+    case video(url: URL?, name: String?, duration: Int?)
     case file(name: String, mime: String?, url: URL?)
 }
 
@@ -107,7 +109,7 @@ final class ImagePreviewViewController: UIViewController, UIScrollViewDelegate {
     }
 
     private func loadContent() {
-            if let placeholder {
+        if let placeholder {
             imageView.image = placeholder
             imageView.startAnimating()
         }
@@ -119,14 +121,14 @@ final class ImagePreviewViewController: UIViewController, UIScrollViewDelegate {
                 await MainActor.run {
                     self.spinner.stopAnimating()
                     if let data,
-                   let img = KingfisherWrapper<UIImage>.image(data: data, options: ImageCreatingOptions())
-                    ?? UIImage(data: data)
-                {
-                    self.imageView.image = img
-                    self.imageView.startAnimating()
-                } else if self.imageView.image == nil {
-                    self.showLoadFailed()
-                }
+                       let img = KingfisherWrapper<UIImage>.image(data: data, options: ImageCreatingOptions())
+                        ?? UIImage(data: data)
+                    {
+                        self.imageView.image = img
+                        self.imageView.startAnimating()
+                    } else if self.imageView.image == nil {
+                        self.showLoadFailed()
+                    }
                 }
             }
             return
@@ -199,6 +201,175 @@ final class ImagePreviewViewController: UIViewController, UIScrollViewDelegate {
     }
 }
 
+// MARK: - Video (AVPlayer)
+
+@MainActor
+final class VideoPreviewViewController: UIViewController {
+    private let url: URL
+    private let titleName: String?
+    private let playerVC = AVPlayerViewController()
+    private var player: AVPlayer?
+
+    init(url: URL, name: String?) {
+        self.url = url
+        self.titleName = name
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .fullScreen
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        title = titleName
+
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback)
+        try? session.setActive(true)
+
+        let p = AVPlayer(url: url)
+        player = p
+        playerVC.player = p
+        playerVC.showsPlaybackControls = true
+
+        addChild(playerVC)
+        playerVC.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(playerVC.view)
+        playerVC.didMove(toParent: self)
+
+        var closeCfg = UIButton.Configuration.plain()
+        closeCfg.image = UIImage(systemName: "xmark.circle.fill")
+        closeCfg.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 28, weight: .medium)
+        closeCfg.baseForegroundColor = UIColor.white.withAlphaComponent(0.9)
+        let closeButton = UIButton(type: .system)
+        closeButton.configuration = closeCfg
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.addTarget(self, action: #selector(close), for: .touchUpInside)
+        closeButton.accessibilityLabel = "关闭"
+        view.addSubview(closeButton)
+
+        NSLayoutConstraint.activate([
+            playerVC.view.topAnchor.constraint(equalTo: view.topAnchor),
+            playerVC.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            playerVC.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            playerVC.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            closeButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
+        ])
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        player?.play()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        player?.pause()
+    }
+
+    @objc private func close() {
+        player?.pause()
+        dismiss(animated: true)
+    }
+}
+
+// MARK: - Unsupported file page
+
+@MainActor
+final class UnsupportedFileViewController: UIViewController {
+    private let fileName: String
+    private let mime: String?
+    private let localURL: URL?
+
+    init(fileName: String, mime: String?, localURL: URL?) {
+        self.fileName = fileName
+        self.mime = mime
+        self.localURL = localURL
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .pageSheet
+        if let sheet = sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        title = "文件"
+
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            systemItem: .close,
+            primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) }
+        )
+
+        let icon = UIImageView(image: UIImage(systemName: "doc.fill"))
+        icon.tintColor = .secondaryLabel
+        icon.contentMode = .scaleAspectFit
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 56, weight: .medium)
+
+        let titleLabel = UILabel()
+        titleLabel.text = fileName.isEmpty ? "未知文件" : fileName
+        titleLabel.font = .preferredFont(forTextStyle: .title3)
+        titleLabel.textAlignment = .center
+        titleLabel.numberOfLines = 3
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let hint = UILabel()
+        hint.text = "不支持应用内打开"
+        hint.font = .preferredFont(forTextStyle: .subheadline)
+        hint.textColor = .secondaryLabel
+        hint.textAlignment = .center
+        hint.translatesAutoresizingMaskIntoConstraints = false
+
+        var shareCfg = UIButton.Configuration.filled()
+        shareCfg.title = "用其他应用打开"
+        shareCfg.image = UIImage(systemName: "square.and.arrow.up")
+        shareCfg.imagePadding = 8
+        shareCfg.cornerStyle = .large
+        let shareButton = UIButton(configuration: shareCfg)
+        shareButton.translatesAutoresizingMaskIntoConstraints = false
+        shareButton.isEnabled = localURL != nil
+        shareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [icon, titleLabel, hint, shareButton])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 16
+        stack.setCustomSpacing(8, after: titleLabel)
+        stack.setCustomSpacing(28, after: hint)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: 72),
+            icon.heightAnchor.constraint(equalToConstant: 72),
+            shareButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
+            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -24),
+        ])
+    }
+
+    @objc private func shareTapped() {
+        guard let localURL else { return }
+        let share = UIActivityViewController(activityItems: [localURL], applicationActivities: nil)
+        if let pop = share.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+        }
+        present(share, animated: true)
+    }
+}
+
 // MARK: - File Quick Look
 
 final class FilePreviewPresenter: NSObject, QLPreviewControllerDataSource {
@@ -256,58 +427,40 @@ enum MediaPreview {
             )
             host.present(vc, animated: true)
 
-        case let .file(name, _, url):
+        case let .video(url, name, _):
             guard let url else {
-                let alert = UIAlertController(title: "无法预览", message: "文件地址无效", preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "好", style: .default))
-                host.present(alert, animated: true)
+                presentUnsupported(name: name ?? "视频", mime: "video/*", localURL: nil, from: host)
                 return
             }
-            Task { await presentFile(name: name, url: url, from: host) }
+            let vc = VideoPreviewViewController(url: url, name: name)
+            host.present(vc, animated: true)
+
+        case let .file(name, mime, url):
+            guard let url else {
+                presentUnsupported(name: name, mime: mime, localURL: nil, from: host)
+                return
+            }
+            Task { await presentFile(name: name, mime: mime, url: url, from: host) }
         }
     }
 
-    private static func presentFile(name: String, url: URL, from host: UIViewController) async {
+    private static func presentFile(name: String, mime: String?, url: URL, from host: UIViewController) async {
         let safeName = name.isEmpty ? "file" : name
         do {
-            let local: URL
-            if url.isFileURL {
-                local = url
-            } else {
-                let overlay = BlockingOverlay(message: "正在加载…")
-                await MainActor.run { overlay.show(on: host.view) }
-                defer { Task { @MainActor in overlay.hide() } }
-
-                let (temp, response) = try await URLSession.shared.download(from: url)
-                let status = (response as? HTTPURLResponse)?.statusCode ?? 200
-                guard (200..<300).contains(status) else {
-                    throw DomainError.server(status, "download failed")
-                }
-                let dest = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("goim-preview-\(UUID().uuidString)-\(safeName)")
-                try? FileManager.default.removeItem(at: dest)
-                try FileManager.default.moveItem(at: temp, to: dest)
-                local = dest
-            }
-
+            let local = try await resolveLocalFile(url: url, safeName: safeName, on: host)
             await MainActor.run {
                 if QLPreviewController.canPreview(local as NSURL) {
                     let presenter = FilePreviewPresenter(fileURL: local, titleName: safeName)
                     activeFilePresenter = presenter
                     presenter.present(from: host)
                 } else {
-                    let share = UIActivityViewController(activityItems: [local], applicationActivities: nil)
-                    if let pop = share.popoverPresentationController {
-                        pop.sourceView = host.view
-                        pop.sourceRect = CGRect(x: host.view.bounds.midX, y: host.view.bounds.midY, width: 1, height: 1)
-                    }
-                    host.present(share, animated: true)
+                    presentUnsupported(name: safeName, mime: mime, localURL: local, from: host)
                 }
             }
         } catch {
             await MainActor.run {
                 let alert = UIAlertController(
-                    title: "预览失败",
+                    title: "加载失败",
                     message: error.localizedDescription,
                     preferredStyle: .alert
                 )
@@ -315,6 +468,31 @@ enum MediaPreview {
                 host.present(alert, animated: true)
             }
         }
+    }
+
+    private static func presentUnsupported(name: String, mime: String?, localURL: URL?, from host: UIViewController) {
+        let page = UnsupportedFileViewController(fileName: name, mime: mime, localURL: localURL)
+        let nav = UINavigationController(rootViewController: page)
+        host.present(nav, animated: true)
+    }
+
+    private static func resolveLocalFile(url: URL, safeName: String, on host: UIViewController) async throws -> URL {
+        if url.isFileURL { return url }
+
+        let overlay = BlockingOverlay(message: "正在加载…")
+        await MainActor.run { overlay.show(on: host.view) }
+        defer { Task { @MainActor in overlay.hide() } }
+
+        let (temp, response) = try await URLSession.shared.download(from: url)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 200
+        guard (200..<300).contains(status) else {
+            throw DomainError.server(status, "download failed")
+        }
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("goim-preview-\(UUID().uuidString)-\(safeName)")
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.moveItem(at: temp, to: dest)
+        return dest
     }
 }
 

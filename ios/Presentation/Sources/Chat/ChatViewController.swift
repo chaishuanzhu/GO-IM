@@ -63,6 +63,7 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         super.viewWillDisappear(animated)
         viewModel.stop()
         composer.dismissAccessory()
+        VoicePlayer.shared.stop()
     }
 
     deinit {
@@ -232,8 +233,9 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         }, stickerImage: { [weak self] ref in
             await self?.env.stickers.imageData(for: ref)
         }, onOpen: { [weak self] url in
-            // Voice / video fallback (system open).
             self?.openExternal(url)
+        }, onPlayVoice: { url, duration in
+            VoicePlayer.shared.toggle(url: url, estimatedDuration: duration)
         }, onPreview: { [weak self] item in
             guard let self else { return }
             MediaPreview.present(

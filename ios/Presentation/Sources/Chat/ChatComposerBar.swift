@@ -64,6 +64,12 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
     private let voiceRecorder = VoiceRecorder()
     private var recordSeconds = 0
     private var recordTimer: Timer?
+    /// True while the finger is down on the record control.
+    private var voiceFingerDown = false
+    /// Bumps on every touch-up so an in-flight async start is abandoned.
+    private var voicePressGeneration = 0
+    private var voiceDidStartThisPress = false
+    private var holdButton: UIButton!
 
     // Accessory subviews
     private let emojiModeControl = UISegmentedControl(items: ["表情", "贴纸"])
@@ -315,12 +321,15 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         hold.configuration = {
             var c = UIButton.Configuration.plain()
             c.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 64, weight: .regular)
+            c.contentInsets = NSDirectionalEdgeInsets(top: 24, leading: 40, bottom: 24, trailing: 40)
             return c
         }()
         hold.addTarget(self, action: #selector(voiceHoldDown), for: .touchDown)
-        hold.addTarget(self, action: #selector(voiceHoldUp), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+        hold.addTarget(self, action: #selector(voiceHoldUp), for: [.touchUpInside])
+        hold.addTarget(self, action: #selector(voiceHoldCancel), for: [.touchUpOutside, .touchCancel, .touchDragExit])
         hold.translatesAutoresizingMaskIntoConstraints = false
         hold.accessibilityLabel = "按住录音"
+        holdButton = hold
         voicePanel.addSubview(recordTime)
         voicePanel.addSubview(hold)
         voicePanel.addSubview(recordHint)
@@ -521,6 +530,16 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         voicePanel.isHidden = next != .voice
         imagePanel.isHidden = next != .image
         morePanel.isHidden = next != .more
+        if next == .voice {
+            // Warm mic permission so the first press can start recording promptly.
+            Task { _ = await VoiceRecorder.requestPermission() }
+            recordHint.text = "按住说话"
+            recordHint.textColor = .label
+            recordTime.text = "0:00"
+        }
+        if next != .voice {
+            abortVoiceRecording(send: false)
+        }
         if next == .image {
             imagePanel.reloadLibrary()
         }
@@ -638,41 +657,94 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
     @objc private func requestFile() { delegate?.composerBarDidRequestFile(self) }
 
     @objc private func voiceHoldDown() {
-        Task {
-            let ok = await VoiceRecorder.requestPermission()
-            guard ok else {
-                delegate?.composerBar(self, voiceFailed: "请在设置中允许麦克风权限")
-                return
+        voiceFingerDown = true
+        voiceDidStartThisPress = false
+        let generation = voicePressGeneration
+        recordHint.text = "准备中…"
+        recordHint.textColor = .secondaryLabel
+
+        Task { @MainActor in
+            if !VoiceRecorder.hasPermission {
+                let ok = await VoiceRecorder.requestPermission()
+                guard ok else {
+                    self.recordHint.text = "按住说话"
+                    self.recordHint.textColor = .label
+                    self.delegate?.composerBar(self, voiceFailed: "请在设置中允许麦克风权限")
+                    return
+                }
             }
+            // Finger already lifted (or a newer press superseded this one).
+            guard self.voiceFingerDown, generation == self.voicePressGeneration else { return }
+
             do {
-                try voiceRecorder.start()
-                recordSeconds = 0
-                recordTime.text = "0:00"
-                recordHint.text = "松开发送"
-                recordHint.textColor = .systemRed
-                recordTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-                    DispatchQueue.main.async {
-                        guard let self else { return }
+                try self.voiceRecorder.start()
+                self.voiceDidStartThisPress = true
+                self.recordSeconds = 0
+                self.recordTime.text = "0:00"
+                self.recordHint.text = "松开发送 · 滑出取消"
+                self.recordHint.textColor = .systemRed
+                self.recordTimer?.invalidate()
+                let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                    Task { @MainActor in
+                        guard let self, self.voiceRecorder.isRecording else { return }
                         self.recordSeconds += 1
-                        self.recordTime.text = String(format: "%d:%02d", self.recordSeconds / 60, self.recordSeconds % 60)
+                        self.recordTime.text = String(
+                            format: "%d:%02d",
+                            self.recordSeconds / 60,
+                            self.recordSeconds % 60
+                        )
                     }
                 }
+                RunLoop.main.add(timer, forMode: .common)
+                self.recordTimer = timer
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             } catch {
-                delegate?.composerBar(self, voiceFailed: error.localizedDescription)
+                self.recordHint.text = "按住说话"
+                self.recordHint.textColor = .label
+                self.delegate?.composerBar(self, voiceFailed: error.localizedDescription)
             }
         }
     }
 
     @objc private func voiceHoldUp() {
+        finishVoicePress(send: true)
+    }
+
+    @objc private func voiceHoldCancel() {
+        finishVoicePress(send: false)
+    }
+
+    private func finishVoicePress(send: Bool) {
+        guard voiceFingerDown || voiceRecorder.isRecording || voiceDidStartThisPress else { return }
+        voiceFingerDown = false
+        voicePressGeneration += 1
+        abortVoiceRecording(send: send)
+    }
+
+    private func abortVoiceRecording(send: Bool) {
         recordTimer?.invalidate()
         recordTimer = nil
         recordHint.text = "按住说话"
         recordHint.textColor = .label
+
+        if !send {
+            voiceRecorder.cancel()
+            voiceDidStartThisPress = false
+            return
+        }
+
+        guard voiceDidStartThisPress || voiceRecorder.isRecording else {
+            // Press ended before recording could start — treat as cancel, not "too short".
+            voiceRecorder.cancel()
+            return
+        }
+
         guard let (data, duration) = voiceRecorder.stop() else {
+            voiceDidStartThisPress = false
             delegate?.composerBar(self, voiceFailed: "录音太短，请按住再试")
             return
         }
+        voiceDidStartThisPress = false
         delegate?.composerBar(self, didFinishVoice: data, duration: duration)
         setAccessory(.none, animated: true)
     }

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0089F602C0C489499DFCA399 /* FriendPickerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6FBF1F27C6988B954C900D7 /* FriendPickerViewController.swift */; };
+		0E8E5F3631DB90192CF888E2 /* AVKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 037C51A6D1A30463E20A92AE /* AVKit.framework */; };
 		19F6577AD119ADE35B69E96B /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442030232CADED95A2ADC002 /* AppEnvironment.swift */; };
 		1F56588D2FB0547ECCFDB3E1 /* MainTabBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08D6A9E253693427557F2ED5 /* MainTabBarController.swift */; };
 		25DCBF77A852951FF33382FA /* LoginViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 717A82BE2EAB93D062C88993 /* LoginViewModel.swift */; };
@@ -18,6 +19,7 @@
 		5454FA743D4525ED16C648BC /* MentionPickerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD893B05F01C156FBF665F17 /* MentionPickerViewController.swift */; };
 		5EC0E2484256FFB20908E0DC /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 30AFFED66AE59FB40E7A4582 /* QuickLook.framework */; };
 		74AA705FEEC392C5CF875838 /* ContactsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10F46DDCC7E9E6A60133615A /* ContactsViewController.swift */; };
+		8085D88A48CB7AEDD1720E17 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D02F279F8F9C1D5C4CC79F36 /* AVFoundation.framework */; };
 		80CE6D2914596077C48AB136 /* MessageBubbleCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68689B30C7319E1DA9E1DC02 /* MessageBubbleCell.swift */; };
 		83B36C2A1C1D7A7DE515AD8D /* GroupsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4243DCD31C287817197D3D /* GroupsViewModel.swift */; };
 		94263ED0A63D1D8C40CE817E /* ChatViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA3DCCB5D0A480E9A77FE2E5 /* ChatViewController.swift */; };
@@ -27,6 +29,7 @@
 		9CFD3EE345CFE91037D288A1 /* GroupInfoViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3CA00D2DCE363E383E7AF6B /* GroupInfoViewController.swift */; };
 		A0F163665360ECB79214438C /* GOIMAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5622D9AE824EC95785795937 /* GOIMAppearance.swift */; };
 		A810B34C3896A142DDC1B7BD /* LoginViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D55380062BB92CC4207311E7 /* LoginViewController.swift */; };
+		AE322F873EB5CD81A4801A6B /* VoiceWaveformBarsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 867A4E507E0B31F9D3294FAC /* VoiceWaveformBarsView.swift */; };
 		B05E0B7F1F4C6ED42645E70E /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E0B8DA9BF42823545F7E95 /* VoiceRecorder.swift */; };
 		BD4FE566A822D9A4B2FB723F /* ChatImageAccessoryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99633DFBD4AF96E039CFB323 /* ChatImageAccessoryPanel.swift */; };
 		BF48BDBEC86F97BF5F097589 /* ChatComposerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01848853A32AA271747F65EF /* ChatComposerBar.swift */; };
@@ -55,6 +58,7 @@
 
 /* Begin PBXFileReference section */
 		01848853A32AA271747F65EF /* ChatComposerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerBar.swift; sourceTree = "<group>"; };
+		037C51A6D1A30463E20A92AE /* AVKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/AVKit.framework; sourceTree = DEVELOPER_DIR; };
 		08D6A9E253693427557F2ED5 /* MainTabBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabBarController.swift; sourceTree = "<group>"; };
 		0F8D5C3383EE89C50CE3D753 /* GroupsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsViewController.swift; sourceTree = "<group>"; };
 		10F46DDCC7E9E6A60133615A /* ContactsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsViewController.swift; sourceTree = "<group>"; };
@@ -74,6 +78,7 @@
 		763E3913D61CD2E64A0B3065 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		7E486F103CB6665A4BDB0BF5 /* ImageCompressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCompressor.swift; sourceTree = "<group>"; };
 		82F0720D9B464CF8F3E51AD1 /* Domain.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Domain.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		867A4E507E0B31F9D3294FAC /* VoiceWaveformBarsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWaveformBarsView.swift; sourceTree = "<group>"; };
 		8BC8F6336477FAD93635F6A2 /* ContactsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsViewModel.swift; sourceTree = "<group>"; };
 		8DCE11FBC8B59F5604125C75 /* StickerAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerAccessoryPanel.swift; sourceTree = "<group>"; };
 		99633DFBD4AF96E039CFB323 /* ChatImageAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImageAccessoryPanel.swift; sourceTree = "<group>"; };
@@ -85,6 +90,7 @@
 		B6FBF1F27C6988B954C900D7 /* FriendPickerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendPickerViewController.swift; sourceTree = "<group>"; };
 		BA3DCCB5D0A480E9A77FE2E5 /* ChatViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewController.swift; sourceTree = "<group>"; };
 		C4BD3454218BD49CC3D2CF30 /* MediaPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPreview.swift; sourceTree = "<group>"; };
+		D02F279F8F9C1D5C4CC79F36 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/AVFoundation.framework; sourceTree = DEVELOPER_DIR; };
 		D55380062BB92CC4207311E7 /* LoginViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewController.swift; sourceTree = "<group>"; };
 		DAF37120CD93338E2FDE8F39 /* Kingfisher.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Kingfisher.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -94,6 +100,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8085D88A48CB7AEDD1720E17 /* AVFoundation.framework in Frameworks */,
+				0E8E5F3631DB90192CF888E2 /* AVKit.framework in Frameworks */,
 				5EC0E2484256FFB20908E0DC /* QuickLook.framework in Frameworks */,
 				9A38F45616541E23B2BD7536 /* Domain.framework in Frameworks */,
 				3BA2ACAE80D538954FE53359 /* Kingfisher.framework in Frameworks */,
@@ -152,6 +160,7 @@
 				8DCE11FBC8B59F5604125C75 /* StickerAccessoryPanel.swift */,
 				A559335377136CB1082145AC /* StickerImageCache.swift */,
 				14E0B8DA9BF42823545F7E95 /* VoiceRecorder.swift */,
+				867A4E507E0B31F9D3294FAC /* VoiceWaveformBarsView.swift */,
 			);
 			path = Chat;
 			sourceTree = "<group>";
@@ -241,6 +250,8 @@
 		FB76764758DC2A9FA9FEE70B /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				D02F279F8F9C1D5C4CC79F36 /* AVFoundation.framework */,
+				037C51A6D1A30463E20A92AE /* AVKit.framework */,
 				30AFFED66AE59FB40E7A4582 /* QuickLook.framework */,
 			);
 			name = Frameworks;
@@ -324,6 +335,7 @@
 				C3F2EB3F55CF0822E9F9E4BB /* StickerAccessoryPanel.swift in Sources */,
 				46A53730561D5424215962D4 /* StickerImageCache.swift in Sources */,
 				B05E0B7F1F4C6ED42645E70E /* VoiceRecorder.swift in Sources */,
+				AE322F873EB5CD81A4801A6B /* VoiceWaveformBarsView.swift in Sources */,
 				19F6577AD119ADE35B69E96B /* AppEnvironment.swift in Sources */,
 				A0F163665360ECB79214438C /* GOIMAppearance.swift in Sources */,
 				1F56588D2FB0547ECCFDB3E1 /* MainTabBarController.swift in Sources */,

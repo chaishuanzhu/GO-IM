@@ -228,7 +228,7 @@ public struct FileMeta: Sendable, Equatable {
     public let fileId: String
     public let name: String
     public let size: Int64
-    public let mime: String
+    public var mime: String
     public var width: Int?
     public var height: Int?
     public var thumbWidth: Int?

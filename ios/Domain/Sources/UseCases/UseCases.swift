@@ -90,6 +90,12 @@ public struct SendFileMessageUseCase: Sendable {
         // 2) Upload, then deliver over the wire.
         do {
             var meta = try await files.upload(data: data, fileName: fileName, mime: mime)
+            // Server DetectContentType often labels AAC/M4A as video/mp4 — keep client audio type
+            // so msg_type stays .voice instead of .video.
+            if mime.lowercased().hasPrefix("audio/"),
+               !meta.mime.lowercased().hasPrefix("audio/") {
+                meta.mime = mime
+            }
             if (meta.width ?? 0) <= 0, let localWidth, localWidth > 0 {
                 meta.width = localWidth
             }
@@ -132,6 +138,10 @@ public struct SendFileMessageUseCase: Sendable {
             )
             do {
                 var uploaded = try await files.upload(data: data, fileName: meta.name, mime: meta.mime)
+                if meta.mime.lowercased().hasPrefix("audio/"),
+                   !uploaded.mime.lowercased().hasPrefix("audio/") {
+                    uploaded.mime = meta.mime
+                }
                 if (uploaded.width ?? 0) <= 0 { uploaded.width = meta.width }
                 if (uploaded.height ?? 0) <= 0 { uploaded.height = meta.height }
                 if (uploaded.duration ?? 0) <= 0 { uploaded.duration = meta.duration }
