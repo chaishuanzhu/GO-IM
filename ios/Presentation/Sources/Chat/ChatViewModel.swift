@@ -11,7 +11,7 @@ public final class ChatViewModel {
     public private(set) var messages: [Message] = []
     public var draft: String = ""
     public var onChange: (() -> Void)?
-    /// True when the latest reload prepended older rows (preserve scroll offset).
+    /// True when older pages were pulled from the top (preserve scroll offset).
     public private(set) var didPrependHistory = false
     public var errorMessage: String?
 
@@ -21,6 +21,8 @@ public final class ChatViewModel {
     private let env: AppEnvironment
     private var observeTask: Task<Void, Never>?
     private var didRequestInitialHistory = false
+    /// Set before pull-to-top history; consumed on the next message list update.
+    private var expectPrependOnNextUpdate = false
 
     public init(env: AppEnvironment, conversation: Conversation) {
         self.env = env
@@ -34,7 +36,10 @@ public final class ChatViewModel {
                 let previousFirstId = messages.first?.id
                 let previousCount = messages.count
                 messages = list
-                didPrependHistory = previousCount > 0
+                let expectingPrepend = expectPrependOnNextUpdate
+                expectPrependOnNextUpdate = false
+                didPrependHistory = expectingPrepend
+                    && previousCount > 0
                     && list.count > previousCount
                     && list.first?.id != previousFirstId
                 // Keep unread cleared while the chat is open (live arrivals included).
@@ -73,17 +78,14 @@ public final class ChatViewModel {
             await fetchHistory(before: nil)
             return
         }
+        expectPrependOnNextUpdate = true
         await fetchHistory(before: oldest)
     }
 
     private func fetchHistory(before: Int64?) async {
         guard !isLoadingHistory else { return }
         isLoadingHistory = true
-        onChange?()
-        defer {
-            isLoadingHistory = false
-            onChange?()
-        }
+        defer { isLoadingHistory = false }
         do {
             let delivered = try await env.messages.loadHistory(
                 conversationId: conversation.id,

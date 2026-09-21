@@ -7,8 +7,10 @@ import Domain
 final class StickerAccessoryPanel: UIView, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     var onSelect: ((StickerRef) -> Void)?
 
-    private let packControl = UISegmentedControl(items: [])
+    private let packTabs: UICollectionView
     private let collection: UICollectionView
+    private var tabTitles: [String] = []
+    private var selectedTabIndex = 0
     private var packs: [StickerPack] = []
     private var items: [StickerItem] = []
     private var recent: [StickerRef] = []
@@ -18,11 +20,20 @@ final class StickerAccessoryPanel: UIView, UICollectionViewDataSource, UICollect
 
     init(stickers: StickerRepository) {
         self.stickers = stickers
+
+        let tabLayout = UICollectionViewFlowLayout()
+        tabLayout.scrollDirection = .horizontal
+        tabLayout.minimumInteritemSpacing = 8
+        tabLayout.minimumLineSpacing = 8
+        tabLayout.sectionInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
+        packTabs = UICollectionView(frame: .zero, collectionViewLayout: tabLayout)
+
         let layout = UICollectionViewFlowLayout()
         layout.minimumInteritemSpacing = 8
         layout.minimumLineSpacing = 8
         layout.sectionInset = UIEdgeInsets(top: 8, left: 16, bottom: 12, right: 16)
         collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
+
         super.init(frame: .zero)
         setup()
     }
@@ -34,16 +45,28 @@ final class StickerAccessoryPanel: UIView, UICollectionViewDataSource, UICollect
         Task { await reloadAsync() }
     }
 
+    func setBottomContentInset(_ inset: CGFloat) {
+        collection.contentInset = UIEdgeInsets(top: 0, left: 0, bottom: inset, right: 0)
+        collection.scrollIndicatorInsets = collection.contentInset
+    }
+
     private func setup() {
         backgroundColor = .clear
-        packControl.translatesAutoresizingMaskIntoConstraints = false
-        packControl.addTarget(self, action: #selector(packChanged), for: .valueChanged)
+
+        packTabs.backgroundColor = .clear
+        packTabs.showsHorizontalScrollIndicator = false
+        packTabs.alwaysBounceHorizontal = true
+        packTabs.dataSource = self
+        packTabs.delegate = self
+        packTabs.register(PackTabCell.self, forCellWithReuseIdentifier: PackTabCell.reuseID)
+        packTabs.translatesAutoresizingMaskIntoConstraints = false
 
         collection.backgroundColor = .clear
         collection.dataSource = self
         collection.delegate = self
         collection.register(StickerCell.self, forCellWithReuseIdentifier: StickerCell.reuseID)
         collection.translatesAutoresizingMaskIntoConstraints = false
+        collection.contentInsetAdjustmentBehavior = .never
 
         emptyLabel.text = "暂无表情包"
         emptyLabel.textColor = .secondaryLabel
@@ -52,15 +75,16 @@ final class StickerAccessoryPanel: UIView, UICollectionViewDataSource, UICollect
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
         emptyLabel.isHidden = true
 
-        addSubview(packControl)
+        addSubview(packTabs)
         addSubview(collection)
         addSubview(emptyLabel)
         NSLayoutConstraint.activate([
-            packControl.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            packControl.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            packControl.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            packTabs.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            packTabs.leadingAnchor.constraint(equalTo: leadingAnchor),
+            packTabs.trailingAnchor.constraint(equalTo: trailingAnchor),
+            packTabs.heightAnchor.constraint(equalToConstant: 36),
 
-            collection.topAnchor.constraint(equalTo: packControl.bottomAnchor, constant: 8),
+            collection.topAnchor.constraint(equalTo: packTabs.bottomAnchor, constant: 4),
             collection.leadingAnchor.constraint(equalTo: leadingAnchor),
             collection.trailingAnchor.constraint(equalTo: trailingAnchor),
             collection.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -74,29 +98,21 @@ final class StickerAccessoryPanel: UIView, UICollectionViewDataSource, UICollect
         packs = await stickers.installedPacks()
         recent = await stickers.recentStickers(limit: 20)
 
-        packControl.removeAllSegments()
-        var idx = 0
+        var titles: [String] = []
         if !recent.isEmpty {
-            packControl.insertSegment(withTitle: "最近", at: idx, animated: false)
-            idx += 1
+            titles.append("最近")
         }
-        for pack in packs {
-            packControl.insertSegment(withTitle: pack.name, at: idx, animated: false)
-            idx += 1
+        titles.append(contentsOf: packs.map(\.name))
+        tabTitles = titles
+        if selectedTabIndex >= tabTitles.count {
+            selectedTabIndex = 0
         }
-        if packControl.numberOfSegments > 0 {
-            packControl.selectedSegmentIndex = 0
-        }
+        packTabs.reloadData()
         await applySelection()
     }
 
-    @objc private func packChanged() {
-        Task { await applySelection() }
-    }
-
     private func applySelection() async {
-        let index = packControl.selectedSegmentIndex
-        guard index >= 0 else {
+        guard !tabTitles.isEmpty, selectedTabIndex >= 0, selectedTabIndex < tabTitles.count else {
             items = []
             showingRecent = false
             collection.reloadData()
@@ -104,12 +120,12 @@ final class StickerAccessoryPanel: UIView, UICollectionViewDataSource, UICollect
             return
         }
         let recentOffset = recent.isEmpty ? 0 : 1
-        if !recent.isEmpty, index == 0 {
+        if !recent.isEmpty, selectedTabIndex == 0 {
             showingRecent = true
             items = []
         } else {
             showingRecent = false
-            let packIndex = index - recentOffset
+            let packIndex = selectedTabIndex - recentOffset
             guard packIndex >= 0, packIndex < packs.count else {
                 items = []
                 collection.reloadData()
@@ -127,11 +143,22 @@ final class StickerAccessoryPanel: UIView, UICollectionViewDataSource, UICollect
         collection.reloadData()
     }
 
+    // MARK: - UICollectionView
+
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        showingRecent ? recent.count : items.count
+        if collectionView === packTabs {
+            return tabTitles.count
+        }
+        return showingRecent ? recent.count : items.count
     }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        if collectionView === packTabs {
+            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: PackTabCell.reuseID, for: indexPath) as! PackTabCell
+            cell.configure(title: tabTitles[indexPath.item], selected: indexPath.item == selectedTabIndex)
+            return cell
+        }
+
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: StickerCell.reuseID, for: indexPath) as! StickerCell
         let ref: StickerRef
         if showingRecent {
@@ -160,10 +187,24 @@ final class StickerAccessoryPanel: UIView, UICollectionViewDataSource, UICollect
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
-        CGSize(width: 64, height: 64)
+        if collectionView === packTabs {
+            let title = tabTitles[indexPath.item]
+            let font = UIFont.systemFont(ofSize: 14, weight: .medium)
+            let width = (title as NSString).size(withAttributes: [.font: font]).width
+            return CGSize(width: ceil(width) + 24, height: 32)
+        }
+        return CGSize(width: 64, height: 64)
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        if collectionView === packTabs {
+            guard indexPath.item != selectedTabIndex else { return }
+            selectedTabIndex = indexPath.item
+            packTabs.reloadData()
+            packTabs.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
+            Task { await applySelection() }
+            return
+        }
         if showingRecent {
             onSelect?(recent[indexPath.item])
             return
@@ -174,6 +215,37 @@ final class StickerAccessoryPanel: UIView, UICollectionViewDataSource, UICollect
             await MainActor.run { onSelect?(ref) }
         }
     }
+}
+
+private final class PackTabCell: UICollectionViewCell {
+    static let reuseID = "PackTabCell"
+    private let titleLabel = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        contentView.layer.cornerRadius = 16
+        contentView.layer.cornerCurve = .continuous
+        contentView.clipsToBounds = true
+
+        titleLabel.font = .systemFont(ofSize: 14, weight: .medium)
+        titleLabel.textAlignment = .center
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
+            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            titleLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+        ])
+    }
+
+    func configure(title: String, selected: Bool) {
+        titleLabel.text = title
+        titleLabel.textColor = selected ? .white : .label
+        contentView.backgroundColor = selected ? .systemBlue : UIColor.tertiarySystemFill
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
 }
 
 private final class StickerCell: UICollectionViewCell {

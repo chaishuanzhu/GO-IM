@@ -9,6 +9,8 @@ public actor MessageRepositoryImpl: MessageRepository {
     private var historyContinuation: CheckedContinuation<Int, Never>?
     private var historyTimeoutTask: Task<Void, Never>?
     private var historyInFlightCount = 0
+    /// Coalesce observer yields while history is streaming in (avoids N× table reloads).
+    private var deferredNotifyConversations: Set<String> = []
 
     public init(store: LocalStore, connection: ConnectionRepository) {
         self.store = store
@@ -41,7 +43,7 @@ public actor MessageRepositoryImpl: MessageRepository {
     public func upsert(_ message: Message) async throws {
         do {
             try await store.upsertMessage(message)
-            await notify(conversationId: message.conversationId)
+            await notifyOrDefer(conversationId: message.conversationId)
         } catch {
             throw DomainError.persistence(error.localizedDescription)
         }
@@ -54,7 +56,7 @@ public actor MessageRepositoryImpl: MessageRepository {
         do {
             try await store.markStatus(clientSeq: clientSeq, status: status, serverMsgId: serverMsgId)
             for conversationId in messageContinuations.keys {
-                await notify(conversationId: conversationId)
+                await notifyOrDefer(conversationId: conversationId)
             }
         } catch {
             throw DomainError.persistence(error.localizedDescription)
@@ -224,12 +226,16 @@ public actor MessageRepositoryImpl: MessageRepository {
     private func finishHistoryWait(delivered: Int) {
         historyTimeoutTask?.cancel()
         historyTimeoutTask = nil
-        guard let cont = historyContinuation else { return }
+        guard let cont = historyContinuation else {
+            Task { await self.flushDeferredNotifiesIfIdle() }
+            return
+        }
         historyContinuation = nil
         if historyInFlightCount > 0 {
             historyInFlightCount -= 1
         }
         cont.resume(returning: delivered)
+        Task { await self.flushDeferredNotifiesIfIdle() }
     }
 
     public func syncOffline() async throws {
@@ -326,6 +332,23 @@ public actor MessageRepositoryImpl: MessageRepository {
         messageContinuations[conversationId]?[id] = nil
         if messageContinuations[conversationId]?.isEmpty == true {
             messageContinuations[conversationId] = nil
+        }
+    }
+
+    private func notifyOrDefer(conversationId: String) async {
+        if historyInFlightCount > 0 {
+            deferredNotifyConversations.insert(conversationId)
+            return
+        }
+        await notify(conversationId: conversationId)
+    }
+
+    private func flushDeferredNotifiesIfIdle() async {
+        guard historyInFlightCount == 0 else { return }
+        let ids = deferredNotifyConversations
+        deferredNotifyConversations.removeAll()
+        for id in ids {
+            await notify(conversationId: id)
         }
     }
 

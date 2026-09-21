@@ -69,6 +69,7 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
     private let emojiModeControl = UISegmentedControl(items: ["表情", "贴纸"])
     private let emojiCollection: UICollectionView
     private var stickerPanel: StickerAccessoryPanel?
+    private let emojiSendButton = UIButton(type: .system)
     private let voicePanel = UIView()
     private let imagePanel = ChatImageAccessoryPanel()
     private let morePanel = UIView()
@@ -123,9 +124,11 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
                 panel.topAnchor.constraint(equalTo: emojiModeControl.bottomAnchor, constant: 4),
                 panel.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
                 panel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
-                panel.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+                panel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
             ])
             stickerPanel = panel
+            accessoryHost.bringSubviewToFront(emojiSendButton)
+            updateEmojiCollectionInsets()
         }
         stickerPanel?.reload()
     }
@@ -268,7 +271,27 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         emojiCollection.delegate = self
         emojiCollection.register(EmojiCell.self, forCellWithReuseIdentifier: EmojiCell.reuseID)
         emojiCollection.translatesAutoresizingMaskIntoConstraints = false
+        // We manage home-indicator padding ourselves — avoid double safe-area inset.
+        emojiCollection.contentInsetAdjustmentBehavior = .never
         accessoryHost.addSubview(emojiCollection)
+
+        var sendCfg = UIButton.Configuration.filled()
+        sendCfg.cornerStyle = .capsule
+        sendCfg.baseBackgroundColor = .systemBlue
+        sendCfg.baseForegroundColor = .white
+        sendCfg.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
+        sendCfg.title = "发送"
+        sendCfg.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var out = incoming
+            out.font = .systemFont(ofSize: 15, weight: .semibold)
+            return out
+        }
+        emojiSendButton.configuration = sendCfg
+        emojiSendButton.translatesAutoresizingMaskIntoConstraints = false
+        emojiSendButton.isHidden = true
+        emojiSendButton.isEnabled = false
+        emojiSendButton.addTarget(self, action: #selector(emojiSendTapped), for: .touchUpInside)
+        accessoryHost.addSubview(emojiSendButton)
 
         // Voice
         voicePanel.translatesAutoresizingMaskIntoConstraints = false
@@ -327,13 +350,17 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
             emojiCollection.topAnchor.constraint(equalTo: emojiModeControl.bottomAnchor, constant: 4),
             emojiCollection.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
             emojiCollection.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
-            // Keep controls above home indicator; host background still bleeds below.
-            emojiCollection.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+            // Fill the home-indicator strip; contentInset keeps last rows tappable.
+            emojiCollection.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
+
+            emojiSendButton.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor, constant: -16),
+            emojiSendButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            emojiSendButton.heightAnchor.constraint(equalToConstant: 36),
 
             voicePanel.topAnchor.constraint(equalTo: accessoryHost.topAnchor),
             voicePanel.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
             voicePanel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
-            voicePanel.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+            voicePanel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
             recordTime.centerXAnchor.constraint(equalTo: voicePanel.centerXAnchor),
             recordTime.topAnchor.constraint(equalTo: voicePanel.topAnchor, constant: 28),
             hold.centerXAnchor.constraint(equalTo: voicePanel.centerXAnchor),
@@ -344,12 +371,12 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
             imagePanel.topAnchor.constraint(equalTo: accessoryHost.topAnchor),
             imagePanel.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
             imagePanel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
-            imagePanel.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+            imagePanel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
 
             morePanel.topAnchor.constraint(equalTo: accessoryHost.topAnchor),
             morePanel.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
             morePanel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
-            morePanel.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+            morePanel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
             moreStack.centerXAnchor.constraint(equalTo: morePanel.centerXAnchor),
             moreStack.centerYAnchor.constraint(equalTo: morePanel.centerYAnchor),
             moreStack.leadingAnchor.constraint(greaterThanOrEqualTo: morePanel.leadingAnchor, constant: 24),
@@ -395,10 +422,37 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
 
     /// Panel content height + home-indicator strip (same background color).
     private func expandedAccessoryHeight() -> CGFloat {
-        let inset = safeAreaInsets.bottom > 0
-            ? safeAreaInsets.bottom
-            : (window?.safeAreaInsets.bottom ?? superview?.safeAreaInsets.bottom ?? 0)
+        let inset = resolvedBottomSafeInset()
         return keyboardHeight + inset
+    }
+
+    private func resolvedBottomSafeInset() -> CGFloat {
+        if safeAreaInsets.bottom > 0 { return safeAreaInsets.bottom }
+        return window?.safeAreaInsets.bottom ?? superview?.safeAreaInsets.bottom ?? 0
+    }
+
+    /// Scroll content under the send button / home indicator without leaving a blank strip.
+    private func updateEmojiCollectionInsets() {
+        let bottomSafe = resolvedBottomSafeInset()
+        // Send button sits just above the home indicator (36pt + 10pt margin).
+        let sendClearance: CGFloat = 46
+        let inset = bottomSafe + sendClearance
+        emojiCollection.contentInset = UIEdgeInsets(top: 0, left: 0, bottom: inset, right: 0)
+        emojiCollection.scrollIndicatorInsets = emojiCollection.contentInset
+        stickerPanel?.setBottomContentInset(bottomSafe + 8)
+    }
+
+    public override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        updateEmojiCollectionInsets()
+        if accessory != .none {
+            accessoryHeightConstraint.constant = expandedAccessoryHeight()
+        }
+    }
+
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+        updateEmojiCollectionInsets()
     }
 
     // MARK: - Accessory switching
@@ -414,6 +468,7 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         emojiModeControl.isHidden = next != .emoji
         emojiCollection.isHidden = next != .emoji || emojiModeControl.selectedSegmentIndex != 0
         stickerPanel?.isHidden = next != .emoji || emojiModeControl.selectedSegmentIndex != 1
+        updateEmojiSendButtonVisibility()
         voicePanel.isHidden = next != .voice
         imagePanel.isHidden = next != .image
         morePanel.isHidden = next != .more
@@ -423,6 +478,7 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         if next == .emoji {
             stickerPanel?.reload()
             updateEmojiStickerVisibility()
+            updateEmojiCollectionInsets()
         }
         if next != .image {
             imagePanel.clearSelection()
@@ -484,7 +540,28 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         let showStickers = emojiModeControl.selectedSegmentIndex == 1
         emojiCollection.isHidden = showStickers
         stickerPanel?.isHidden = !showStickers
+        updateEmojiSendButtonVisibility()
     }
+
+    private func updateEmojiSendButtonVisibility() {
+        let showEmojiTab = accessory == .emoji && emojiModeControl.selectedSegmentIndex == 0
+        emojiSendButton.isHidden = !showEmojiTab
+        if showEmojiTab {
+            updateEmojiSendButtonEnabled()
+        }
+    }
+
+    private func updateEmojiSendButtonEnabled() {
+        let hasText = !(textView.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        emojiSendButton.isEnabled = hasText
+        emojiSendButton.alpha = hasText ? 1 : 0.45
+    }
+
+    @objc private func emojiSendTapped() {
+        sendCurrentText()
+        updateEmojiSendButtonEnabled()
+    }
+
     @objc private func voiceTapped() { setAccessory(.voice, animated: true) }
     @objc private func photoTapped() { setAccessory(.image, animated: true) }
     @objc private func moreTapped() { setAccessory(.more, animated: true) }
@@ -500,6 +577,7 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         textView.text = ""
         placeholder.isHidden = false
         updateTextHeight()
+        updateEmojiSendButtonEnabled()
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         delegate?.composerBar(self, didSendText: text)
     }
@@ -558,6 +636,7 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
     func textViewDidChange(_ textView: UITextView) {
         placeholder.isHidden = !textView.text.isEmpty
         updateTextHeight()
+        updateEmojiSendButtonEnabled()
     }
 
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
@@ -618,6 +697,7 @@ extension ChatComposerBar: UICollectionViewDataSource, UICollectionViewDelegateF
         textView.text = (textView.text ?? "") + Self.emojis[indexPath.item]
         placeholder.isHidden = true
         updateTextHeight()
+        updateEmojiSendButtonEnabled()
         UISelectionFeedbackGenerator().selectionChanged()
     }
 

@@ -208,9 +208,7 @@ final class MessageBubbleCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         imageViewBubble.kf.cancelDownloadTask()
-        imageViewBubble.stopAnimating()
-        // Keep bitmap until configure replaces it (avoids blank frame on local→remote handoff).
-        boundImageFileId = nil
+        // Keep bitmap + bind key until configure replaces them (avoids sticker GIF flash on reloadData).
         mediaIcon.image = nil
         bodyLabel.text = nil
         statusLabel.text = nil
@@ -299,6 +297,7 @@ final class MessageBubbleCell: UITableViewCell {
             imageBottomConstraint,
             imageTrailingConstraint,
         ])
+        imageViewBubble.stopAnimating()
         imageViewBubble.isHidden = true
         // Don't nil image here during mode switch mid-configure; clear when leaving image msgs.
         contentStack.isHidden = false
@@ -423,20 +422,33 @@ final class MessageBubbleCell: UITableViewCell {
         bubbleView.backgroundColor = .clear
         openURL = nil
         let bindKey = "\(ref.packId)/\(ref.stickerId)"
+        // Same sticker already painted (common after history-driven reloadData) — keep playing.
         if boundImageFileId == bindKey, imageViewBubble.image != nil {
+            if !imageViewBubble.isAnimating {
+                imageViewBubble.startAnimating()
+            }
             return
         }
+        let switching = boundImageFileId != bindKey
         boundImageFileId = bindKey
-        imageViewBubble.image = nil
+        if switching {
+            imageViewBubble.image = nil
+        }
+        // Sync hit from decoded cache avoids blank frame while Data actor hop completes.
+        if let cached = StickerImageCache.shared.image(for: bindKey) {
+            imageViewBubble.image = cached
+            imageViewBubble.startAnimating()
+            return
+        }
         guard let loadImage else { return }
         Task {
             let data = await loadImage(ref)
             await MainActor.run {
                 guard self.boundImageFileId == bindKey else { return }
-                if let data, let image = KingfisherWrapper<UIImage>.image(data: data, options: ImageCreatingOptions()) {
+                if let data, let image = StickerImageCache.shared.image(for: bindKey, data: data) {
                     self.imageViewBubble.image = image
                     self.imageViewBubble.startAnimating()
-                } else {
+                } else if self.imageViewBubble.image == nil {
                     self.bubbleView.backgroundColor = outgoing ? GOIMStyle.outgoingBubble : GOIMStyle.incomingBubble
                     self.configureText("[表情]")
                 }

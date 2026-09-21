@@ -85,8 +85,8 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
                 self.tableView.layoutIfNeeded()
                 let delta = self.tableView.contentSize.height - oldHeight
                 self.tableView.contentOffset.y = max(0, oldOffset + delta)
-            } else if isInitialFill {
-                // Entering chat: always pin to latest once layout is ready.
+            } else if isInitialFill || !self.hasScrolledToBottomOnce {
+                // Entering chat (local cache and/or first history batch): pin to latest.
                 self.scrollToBottom(animated: false, force: true)
             } else if newCount > previousCount {
                 self.scrollToBottom(animated: true, force: false)
