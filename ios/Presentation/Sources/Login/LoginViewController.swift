@@ -2,6 +2,7 @@ import UIKit
 
 @MainActor
 public final class LoginViewController: UIViewController, UITextFieldDelegate {
+    private let env: AppEnvironment
     private let viewModel: LoginViewModel
     public var onLoggedIn: (() -> Void)?
 
@@ -18,6 +19,7 @@ public final class LoginViewController: UIViewController, UITextFieldDelegate {
     private let activity = UIActivityIndicatorView(style: .medium)
 
     public init(env: AppEnvironment) {
+        self.env = env
         viewModel = LoginViewModel(env: env)
         super.init(nibName: nil, bundle: nil)
     }
@@ -29,10 +31,23 @@ public final class LoginViewController: UIViewController, UITextFieldDelegate {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
         navigationItem.largeTitleDisplayMode = .never
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            image: UIImage(systemName: "gearshape"),
+            style: .plain,
+            target: self,
+            action: #selector(openServerSettings)
+        )
+        navigationItem.rightBarButtonItem?.accessibilityLabel = "服务器设置"
         configureUI()
         viewModel.onSuccess = { [weak self] _ in
             self?.onLoggedIn?()
         }
+    }
+
+    @objc private func openServerSettings() {
+        view.endEditing(true)
+        let settings = ServerSettingsViewController(env: env)
+        navigationController?.pushViewController(settings, animated: true)
     }
 
     private func configureUI() {

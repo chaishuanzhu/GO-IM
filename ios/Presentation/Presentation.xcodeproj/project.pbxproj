@@ -12,6 +12,7 @@
 		19F6577AD119ADE35B69E96B /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442030232CADED95A2ADC002 /* AppEnvironment.swift */; };
 		1F56588D2FB0547ECCFDB3E1 /* MainTabBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08D6A9E253693427557F2ED5 /* MainTabBarController.swift */; };
 		25DCBF77A852951FF33382FA /* LoginViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 717A82BE2EAB93D062C88993 /* LoginViewModel.swift */; };
+		292A48546F29BBD45AA90320 /* ServerSettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4FC7ECE2FF02F5A1BEEFE79 /* ServerSettingsViewController.swift */; };
 		3BA2ACAE80D538954FE53359 /* Kingfisher.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DAF37120CD93338E2FDE8F39 /* Kingfisher.framework */; };
 		3DC453B54A61FE2E77577F8E /* SearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B9568357761966FD16EC2DA /* SearchViewModel.swift */; };
 		43F14E58C64869B72E3DB2AC /* ConversationListViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56166CB8D8C19D64D6A2F2D5 /* ConversationListViewController.swift */; };
@@ -83,6 +84,7 @@
 		8DCE11FBC8B59F5604125C75 /* StickerAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerAccessoryPanel.swift; sourceTree = "<group>"; };
 		99633DFBD4AF96E039CFB323 /* ChatImageAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImageAccessoryPanel.swift; sourceTree = "<group>"; };
 		A3CA00D2DCE363E383E7AF6B /* GroupInfoViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupInfoViewController.swift; sourceTree = "<group>"; };
+		A4FC7ECE2FF02F5A1BEEFE79 /* ServerSettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettingsViewController.swift; sourceTree = "<group>"; };
 		A559335377136CB1082145AC /* StickerImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerImageCache.swift; sourceTree = "<group>"; };
 		AD893B05F01C156FBF665F17 /* MentionPickerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MentionPickerViewController.swift; sourceTree = "<group>"; };
 		AE4243DCD31C287817197D3D /* GroupsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsViewModel.swift; sourceTree = "<group>"; };
@@ -170,6 +172,7 @@
 			children = (
 				D55380062BB92CC4207311E7 /* LoginViewController.swift */,
 				717A82BE2EAB93D062C88993 /* LoginViewModel.swift */,
+				A4FC7ECE2FF02F5A1BEEFE79 /* ServerSettingsViewController.swift */,
 			);
 			path = Login;
 			sourceTree = "<group>";
@@ -350,6 +353,7 @@
 				C69F416DF07BCBEAD082D6E8 /* ConversationListViewModel.swift in Sources */,
 				A810B34C3896A142DDC1B7BD /* LoginViewController.swift in Sources */,
 				25DCBF77A852951FF33382FA /* LoginViewModel.swift in Sources */,
+				292A48546F29BBD45AA90320 /* ServerSettingsViewController.swift in Sources */,
 				CDF9107D5A660FC35D5D2D4D /* SearchViewController.swift in Sources */,
 				3DC453B54A61FE2E77577F8E /* SearchViewModel.swift in Sources */,
 				95DE84C90BC427AB16B28D5B /* SettingsViewController.swift in Sources */,
