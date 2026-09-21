@@ -14,6 +14,7 @@ let project = Project(
             dependencies: [
                 .project(target: "Domain", path: "../Domain"),
                 .external(name: "Kingfisher"),
+                .sdk(name: "QuickLook", type: .framework),
             ],
             settings: .settings(
                 base: [

@@ -205,7 +205,7 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         accessoryHost.isHidden = true
 
         topStack.axis = .vertical
-        topStack.spacing = 8
+        topStack.spacing = 6
         topStack.addArrangedSubview(inputRow)
         topStack.addArrangedSubview(toolRow)
         topStack.translatesAutoresizingMaskIntoConstraints = false
@@ -214,8 +214,10 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
 
         textHeightConstraint = textView.heightAnchor.constraint(equalToConstant: minTextH)
         accessoryHeightConstraint = accessoryHost.heightAnchor.constraint(equalToConstant: 0)
-        topStackBottomToSafe = topStack.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor)
-        accessoryTopToTools = accessoryHost.topAnchor.constraint(equalTo: topStack.bottomAnchor, constant: 8)
+        // Pin to physical bottom; constant is set from the window home-indicator inset
+        // (avoids tab-bar safe-area inflation on device after hidesBottomBarWhenPushed).
+        topStackBottomToSafe = topStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
+        accessoryTopToTools = accessoryHost.topAnchor.constraint(equalTo: topStack.bottomAnchor, constant: 6)
         accessoryTopToTools.isActive = false
 
         NSLayoutConstraint.activate([
@@ -229,7 +231,7 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
             glass.trailingAnchor.constraint(equalTo: chrome.trailingAnchor),
             glass.bottomAnchor.constraint(equalTo: chrome.bottomAnchor),
 
-            topStack.topAnchor.constraint(equalTo: chrome.topAnchor, constant: 10),
+            topStack.topAnchor.constraint(equalTo: chrome.topAnchor, constant: 8),
             topStack.leadingAnchor.constraint(equalTo: chrome.leadingAnchor),
             topStack.trailingAnchor.constraint(equalTo: chrome.trailingAnchor),
             topStackBottomToSafe,
@@ -241,13 +243,14 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
             accessoryHeightConstraint,
 
             textHeightConstraint,
-            toolRow.heightAnchor.constraint(equalToConstant: 44),
+            toolRow.heightAnchor.constraint(equalToConstant: 40),
 
             placeholder.leadingAnchor.constraint(equalTo: textView.leadingAnchor, constant: 14),
             placeholder.topAnchor.constraint(equalTo: textView.topAnchor, constant: 8),
         ])
 
         setupAccessoryPanels()
+        updateCollapsedBottomInset()
     }
 
     private func makeTool(_ systemName: String, action: Selector) -> UIButton {
@@ -434,9 +437,39 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
         return keyboardHeight + inset
     }
 
+    /// Home-indicator only — prefer the window inset so a hidden tab bar cannot inflate padding.
     private func resolvedBottomSafeInset() -> CGFloat {
+        if let windowInset = window?.safeAreaInsets.bottom, windowInset > 0 {
+            return windowInset
+        }
+        if let sceneInset = windowSceneHomeIndicatorInset(), sceneInset > 0 {
+            return sceneInset
+        }
         if safeAreaInsets.bottom > 0 { return safeAreaInsets.bottom }
-        return window?.safeAreaInsets.bottom ?? superview?.safeAreaInsets.bottom ?? 0
+        return superview?.safeAreaInsets.bottom ?? 0
+    }
+
+    private func windowSceneHomeIndicatorInset() -> CGFloat? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        for scene in scenes {
+            if let key = scene.windows.first(where: \.isKeyWindow) {
+                return key.safeAreaInsets.bottom
+            }
+            if let any = scene.windows.first {
+                return any.safeAreaInsets.bottom
+            }
+        }
+        return nil
+    }
+
+    /// Collapsed dock: sit just above the home indicator with a tight 4pt pad (not a tall empty band).
+    private func updateCollapsedBottomInset() {
+        guard accessory == .none else { return }
+        let inset = resolvedBottomSafeInset()
+        // Keep a small pad above the home indicator; pull slightly into the strip so it
+        // doesn't look like a second empty safe-area on device.
+        let pad: CGFloat = inset > 0 ? max(inset - 6, 8) : 8
+        topStackBottomToSafe.constant = -pad
     }
 
     /// Scroll content under the send button / home indicator without leaving a blank strip.
@@ -452,14 +485,22 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
 
     public override func safeAreaInsetsDidChange() {
         super.safeAreaInsetsDidChange()
+        updateCollapsedBottomInset()
         updateEmojiCollectionInsets()
         if accessory != .none {
             accessoryHeightConstraint.constant = expandedAccessoryHeight()
         }
     }
 
+    public override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateCollapsedBottomInset()
+        updateEmojiCollectionInsets()
+    }
+
     public override func layoutSubviews() {
         super.layoutSubviews()
+        updateCollapsedBottomInset()
         updateEmojiCollectionInsets()
     }
 
@@ -501,6 +542,9 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
             self.topStackBottomToSafe.isActive = !expanding
             self.accessoryTopToTools.isActive = expanding
             self.accessoryHeightConstraint.constant = targetH
+            if !expanding {
+                self.updateCollapsedBottomInset()
+            }
             self.layoutIfNeeded()
         }
         if animated {

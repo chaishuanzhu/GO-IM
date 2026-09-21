@@ -37,8 +37,10 @@ final class MessageBubbleCell: UITableViewCell {
     private var textStackConstraints: [NSLayoutConstraint] = []
 
     private var openURL: URL?
+    private var previewItem: MediaPreviewItem?
     private var boundImageFileId: String?
     var onOpenURL: ((URL) -> Void)?
+    var onPreview: ((MediaPreviewItem) -> Void)?
     var onRetry: (() -> Void)?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -215,7 +217,9 @@ final class MessageBubbleCell: UITableViewCell {
         statusLabel.isHidden = true
         metaLabel.text = nil
         openURL = nil
+        previewItem = nil
         onOpenURL = nil
+        onPreview = nil
         onRetry = nil
         hideSendAccessory()
     }
@@ -224,10 +228,13 @@ final class MessageBubbleCell: UITableViewCell {
         message: Message,
         fileURL: ((String, Bool) -> URL?)?,
         stickerImage: ((StickerRef) async -> Data?)? = nil,
-        onOpen: ((URL) -> Void)? = nil
+        onOpen: ((URL) -> Void)? = nil,
+        onPreview: ((MediaPreviewItem) -> Void)? = nil
     ) {
         onOpenURL = onOpen
+        self.onPreview = onPreview
         openURL = nil
+        previewItem = nil
         let outgoing = message.isOutgoing
 
         stack.alignment = outgoing ? .trailing : .leading
@@ -378,10 +385,11 @@ final class MessageBubbleCell: UITableViewCell {
         imageViewBubble.backgroundColor = .tertiarySystemFill
         let thumb = fileURL?(meta.fileId, true)
         let full = fileURL?(meta.fileId, false)
-        openURL = full
+        previewItem = .image(fullURL: full ?? thumb, placeholder: nil)
 
         // Same file already on screen (e.g. status-only refresh) — skip reload.
         if boundImageFileId == meta.fileId, imageViewBubble.image != nil {
+            previewItem = .image(fullURL: full ?? thumb, placeholder: imageViewBubble.image)
             return
         }
 
@@ -402,7 +410,10 @@ final class MessageBubbleCell: UITableViewCell {
                     .keepCurrentImageWhileLoading,
                     .transition(.none),
                 ]
-            )
+            ) { [weak self] _ in
+                guard let self else { return }
+                self.previewItem = .image(fullURL: full ?? thumb, placeholder: self.imageViewBubble.image)
+            }
             boundImageFileId = meta.fileId
         } else {
             imageViewBubble.image = nil
@@ -420,13 +431,14 @@ final class MessageBubbleCell: UITableViewCell {
         imageViewBubble.contentMode = .scaleAspectFit
         imageViewBubble.backgroundColor = .clear
         bubbleView.backgroundColor = .clear
-        openURL = nil
+        previewItem = .sticker(ref: ref, placeholder: nil)
         let bindKey = "\(ref.packId)/\(ref.stickerId)"
         // Same sticker already painted (common after history-driven reloadData) — keep playing.
         if boundImageFileId == bindKey, imageViewBubble.image != nil {
             if !imageViewBubble.isAnimating {
                 imageViewBubble.startAnimating()
             }
+            previewItem = .sticker(ref: ref, placeholder: imageViewBubble.image)
             return
         }
         let switching = boundImageFileId != bindKey
@@ -438,6 +450,7 @@ final class MessageBubbleCell: UITableViewCell {
         if let cached = StickerImageCache.shared.image(for: bindKey) {
             imageViewBubble.image = cached
             imageViewBubble.startAnimating()
+            previewItem = .sticker(ref: ref, placeholder: cached)
             return
         }
         guard let loadImage else { return }
@@ -448,6 +461,7 @@ final class MessageBubbleCell: UITableViewCell {
                 if let data, let image = StickerImageCache.shared.image(for: bindKey, data: data) {
                     self.imageViewBubble.image = image
                     self.imageViewBubble.startAnimating()
+                    self.previewItem = .sticker(ref: ref, placeholder: image)
                 } else if self.imageViewBubble.image == nil {
                     self.bubbleView.backgroundColor = outgoing ? GOIMStyle.outgoingBubble : GOIMStyle.incomingBubble
                     self.configureText("[表情]")
@@ -501,10 +515,23 @@ final class MessageBubbleCell: UITableViewCell {
         let name = meta?.name ?? "文件"
         let sizeText = meta?.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? ""
         bodyLabel.text = sizeText.isEmpty ? name : "\(name)\n\(sizeText)"
-        openURL = meta.flatMap { fileURL?($0.fileId, false) }
+        let url = meta.flatMap { fileURL?($0.fileId, false) }
+        previewItem = .file(name: name, mime: meta?.mime, url: url)
+        openURL = nil
     }
 
     @objc private func bubbleTapped() {
+        if let previewItem {
+            switch previewItem {
+            case let .image(fullURL, _):
+                onPreview?(.image(fullURL: fullURL, placeholder: imageViewBubble.image))
+            case let .sticker(ref, _):
+                onPreview?(.sticker(ref: ref, placeholder: imageViewBubble.image))
+            case .file:
+                onPreview?(previewItem)
+            }
+            return
+        }
         guard let openURL else { return }
         onOpenURL?(openURL)
     }

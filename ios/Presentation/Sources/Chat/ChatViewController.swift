@@ -232,13 +232,27 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         }, stickerImage: { [weak self] ref in
             await self?.env.stickers.imageData(for: ref)
         }, onOpen: { [weak self] url in
-            UIApplication.shared.open(url)
+            // Voice / video fallback (system open).
+            self?.openExternal(url)
+        }, onPreview: { [weak self] item in
+            guard let self else { return }
+            MediaPreview.present(
+                item,
+                from: self,
+                loadSticker: { [weak self] ref in
+                    await self?.env.stickers.imageData(for: ref)
+                }
+            )
         })
         cell.onRetry = { [weak self] in
             let messageId = m.id
             Task { await self?.viewModel.retryMessage(id: messageId) }
         }
         return cell
+    }
+
+    private func openExternal(_ url: URL) {
+        UIApplication.shared.open(url)
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
