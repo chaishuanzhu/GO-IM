@@ -362,11 +362,15 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
             voicePanel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
             voicePanel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
             recordTime.centerXAnchor.constraint(equalTo: voicePanel.centerXAnchor),
-            recordTime.topAnchor.constraint(equalTo: voicePanel.topAnchor, constant: 28),
+            recordTime.topAnchor.constraint(equalTo: voicePanel.safeAreaLayoutGuide.topAnchor, constant: 28),
             hold.centerXAnchor.constraint(equalTo: voicePanel.centerXAnchor),
-            hold.centerYAnchor.constraint(equalTo: voicePanel.centerYAnchor, constant: 8),
+            hold.centerYAnchor.constraint(equalTo: voicePanel.safeAreaLayoutGuide.centerYAnchor, constant: 8),
             recordHint.centerXAnchor.constraint(equalTo: voicePanel.centerXAnchor),
             recordHint.topAnchor.constraint(equalTo: hold.bottomAnchor, constant: 8),
+            recordHint.bottomAnchor.constraint(
+                lessThanOrEqualTo: voicePanel.safeAreaLayoutGuide.bottomAnchor,
+                constant: -12
+            ),
 
             imagePanel.topAnchor.constraint(equalTo: accessoryHost.topAnchor),
             imagePanel.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
@@ -378,9 +382,13 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
             morePanel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
             morePanel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor),
             moreStack.centerXAnchor.constraint(equalTo: morePanel.centerXAnchor),
-            moreStack.centerYAnchor.constraint(equalTo: morePanel.centerYAnchor),
+            moreStack.centerYAnchor.constraint(equalTo: morePanel.safeAreaLayoutGuide.centerYAnchor),
             moreStack.leadingAnchor.constraint(greaterThanOrEqualTo: morePanel.leadingAnchor, constant: 24),
             moreStack.trailingAnchor.constraint(lessThanOrEqualTo: morePanel.trailingAnchor, constant: -24),
+            moreStack.bottomAnchor.constraint(
+                lessThanOrEqualTo: morePanel.safeAreaLayoutGuide.bottomAnchor,
+                constant: -16
+            ),
         ])
     }
 

@@ -131,7 +131,8 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
 
             bottomBar.leadingAnchor.constraint(equalTo: leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: trailingAnchor),
-            bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor),
+            // Stay above the home indicator (panel fills accessoryHost into the unsafe strip).
+            bottomBar.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
             bottomBar.heightAnchor.constraint(equalToConstant: 48),
 
             originalButton.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 14),

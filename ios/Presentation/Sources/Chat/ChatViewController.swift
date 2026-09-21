@@ -40,6 +40,15 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         title = viewModel.conversation.title
         navigationItem.largeTitleDisplayMode = .never
         view.backgroundColor = .systemGroupedBackground
+        if viewModel.conversation.chatType == .group {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "ellipsis.circle"),
+                style: .plain,
+                target: self,
+                action: #selector(openGroupInfo)
+            )
+            navigationItem.rightBarButtonItem?.accessibilityLabel = "更多"
+        }
         configureLayout()
         configureBindings()
         composer.configureStickers(env.stickers)
@@ -193,6 +202,17 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         if hasScrolledToBottomOnce, isNearBottom || pendingScrollToBottom {
             pendingScrollToBottom = true
         }
+    }
+
+    @objc private func openGroupInfo() {
+        let conv = viewModel.conversation
+        guard conv.chatType == .group else { return }
+        let info = GroupInfoViewController(
+            env: env,
+            groupId: conv.peerOrGroupId,
+            groupName: conv.title
+        )
+        navigationController?.pushViewController(info, animated: true)
     }
 
     @objc private func dismissInputs() {

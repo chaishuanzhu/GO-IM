@@ -33,6 +33,7 @@
 		CDF9107D5A660FC35D5D2D4D /* SearchViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEF91866913359D01E3A5F57 /* SearchViewController.swift */; };
 		DACF659AC6AB0454ACB3FBE9 /* ContactsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BC8F6336477FAD93635F6A2 /* ContactsViewModel.swift */; };
 		EC9F0D69C275EDE13DC30E3A /* GroupsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F8D5C3383EE89C50CE3D753 /* GroupsViewController.swift */; };
+		F0A1B2C3D4E5F60718293A4B /* GroupInfoViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C /* GroupInfoViewController.swift */; };
 		F4A1E548002EA720F56AB739 /* ImageCompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E486F103CB6665A4BDB0BF5 /* ImageCompressor.swift */; };
 		F97087B6D910F774406793B2 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763E3913D61CD2E64A0B3065 /* ChatViewModel.swift */; };
 /* End PBXBuildFile section */
@@ -54,6 +55,7 @@
 		01848853A32AA271747F65EF /* ChatComposerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerBar.swift; sourceTree = "<group>"; };
 		08D6A9E253693427557F2ED5 /* MainTabBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabBarController.swift; sourceTree = "<group>"; };
 		0F8D5C3383EE89C50CE3D753 /* GroupsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsViewController.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5C /* GroupInfoViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupInfoViewController.swift; sourceTree = "<group>"; };
 		10F46DDCC7E9E6A60133615A /* ContactsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsViewController.swift; sourceTree = "<group>"; };
 		134AEE009D928C7E39EAF4CD /* Presentation-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Presentation-Info.plist"; sourceTree = "<group>"; };
 		14E0B8DA9BF42823545F7E95 /* VoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorder.swift; sourceTree = "<group>"; };
@@ -185,6 +187,7 @@
 				10F46DDCC7E9E6A60133615A /* ContactsViewController.swift */,
 				8BC8F6336477FAD93635F6A2 /* ContactsViewModel.swift */,
 				B6FBF1F27C6988B954C900D7 /* FriendPickerViewController.swift */,
+				A1B2C3D4E5F60718293A4B5C /* GroupInfoViewController.swift */,
 				0F8D5C3383EE89C50CE3D753 /* GroupsViewController.swift */,
 				AE4243DCD31C287817197D3D /* GroupsViewModel.swift */,
 				70F372A70C41BA652D2B7550 /* NewFriendsViewController.swift */,
@@ -312,6 +315,7 @@
 				DACF659AC6AB0454ACB3FBE9 /* ContactsViewModel.swift in Sources */,
 				0089F602C0C489499DFCA399 /* FriendPickerViewController.swift in Sources */,
 				EC9F0D69C275EDE13DC30E3A /* GroupsViewController.swift in Sources */,
+				F0A1B2C3D4E5F60718293A4B /* GroupInfoViewController.swift in Sources */,
 				83B36C2A1C1D7A7DE515AD8D /* GroupsViewModel.swift in Sources */,
 				9B7222A2BAA52BCB237DF9EE /* NewFriendsViewController.swift in Sources */,
 				43F14E58C64869B72E3DB2AC /* ConversationListViewController.swift in Sources */,
