@@ -15,17 +15,19 @@ protocol ChatImageAccessoryPanelDelegate: AnyObject {
 
 /// WeChat-style image dock: optional yellow photo-access tip, camera/album, photo strip, send.
 @MainActor
-final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, ChatComposerAccessoryPanel {
+    static var mode: ChatComposerAccessory { .image }
+
     weak var delegate: ChatImageAccessoryPanelDelegate?
+    private var actions = ChatComposerPanelActions()
 
     private let tipBanner = UIControl()
     private let tipLabel = UILabel()
     private let tipChevron = UIImageView()
     private var tipHeightConstraint: NSLayoutConstraint!
-    private var sideTopToTip: NSLayoutConstraint!
-    private var sideTopToSelf: NSLayoutConstraint!
-    private var collectionTopToTip: NSLayoutConstraint!
-    private var collectionTopToSelf: NSLayoutConstraint!
+    /// Always pins content under the tip; tip height 0 + spacing 10 == former top+10 inset.
+    private var tipContentSpacingConstraint: NSLayoutConstraint!
+    private var collectionTopConstraint: NSLayoutConstraint!
 
     private let sideStack = UIStackView()
     private let cameraButton = UIButton(type: .system)
@@ -42,6 +44,8 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
     private let maxSelection = 9
     private let imageManager = PHCachingImageManager()
     private var thumbSize = CGSize(width: 160, height: 160)
+    /// Fixed square side while the accessory host animates open (prevents size jump).
+    private var lockedStripSide: CGFloat?
     private nonisolated(unsafe) var becomeActiveObserver: NSObjectProtocol?
 
     override init(frame: CGRect) {
@@ -64,6 +68,11 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
         }
     }
 
+    convenience init(actions: ChatComposerPanelActions) {
+        self.init(frame: .zero)
+        self.actions = actions
+    }
+
     deinit {
         if let becomeActiveObserver {
             NotificationCenter.default.removeObserver(becomeActiveObserver)
@@ -72,6 +81,23 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    func prepareForDisplay() {
+        reloadLibrary()
+    }
+
+    func prepareForHide() {
+        lockedStripSide = nil
+        clearSelection()
+    }
+
+    /// Lock thumb size to the final strip height before the host expands, then load.
+    func prepareForDisplay(expectedStripHeight: CGFloat) {
+        let side = max(expectedStripHeight, 96)
+        lockedStripSide = side
+        thumbSize = CGSize(width: side, height: side)
+        reloadLibrary()
+    }
 
     func reloadLibrary() {
         requestAndFetch()
@@ -167,12 +193,8 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
         bottomBar.addSubview(sendButton)
 
         tipHeightConstraint = tipBanner.heightAnchor.constraint(equalToConstant: 0)
-        sideTopToTip = sideStack.topAnchor.constraint(equalTo: tipBanner.bottomAnchor, constant: 8)
-        sideTopToSelf = sideStack.topAnchor.constraint(equalTo: topAnchor, constant: 10)
-        collectionTopToTip = collectionView.topAnchor.constraint(equalTo: tipBanner.bottomAnchor, constant: 8)
-        collectionTopToSelf = collectionView.topAnchor.constraint(equalTo: topAnchor, constant: 10)
-        sideTopToTip.isActive = false
-        collectionTopToTip.isActive = false
+        tipContentSpacingConstraint = sideStack.topAnchor.constraint(equalTo: tipBanner.bottomAnchor, constant: 10)
+        collectionTopConstraint = collectionView.topAnchor.constraint(equalTo: tipBanner.bottomAnchor, constant: 10)
 
         NSLayoutConstraint.activate([
             tipBanner.topAnchor.constraint(equalTo: topAnchor),
@@ -190,13 +212,13 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
             tipChevron.heightAnchor.constraint(equalToConstant: 12),
 
             sideStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            sideTopToSelf,
+            tipContentSpacingConstraint,
             sideStack.bottomAnchor.constraint(equalTo: bottomBar.topAnchor, constant: -10),
             sideStack.widthAnchor.constraint(equalToConstant: 72),
 
             collectionView.leadingAnchor.constraint(equalTo: sideStack.trailingAnchor, constant: 8),
             collectionView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            collectionTopToSelf,
+            collectionTopConstraint,
             collectionView.bottomAnchor.constraint(equalTo: bottomBar.topAnchor, constant: -10),
 
             bottomBar.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -285,10 +307,9 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
         tipBanner.isAccessibilityElement = visible
         tipBanner.accessibilityLabel = text
         tipHeightConstraint.constant = visible ? 32 : 0
-        sideTopToTip.isActive = visible
-        sideTopToSelf.isActive = !visible
-        collectionTopToTip.isActive = visible
-        collectionTopToSelf.isActive = !visible
+        let spacing: CGFloat = visible ? 8 : 10
+        tipContentSpacingConstraint.constant = spacing
+        collectionTopConstraint.constant = spacing
         setNeedsLayout()
     }
 
@@ -312,8 +333,21 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
         UIApplication.shared.open(url)
     }
 
-    @objc private func cameraTapped() { delegate?.imagePanelDidTapCamera(self) }
-    @objc private func albumTapped() { delegate?.imagePanelDidTapAlbum(self) }
+    @objc private func cameraTapped() {
+        if let requestCamera = actions.requestCamera {
+            requestCamera()
+        } else {
+            delegate?.imagePanelDidTapCamera(self)
+        }
+    }
+
+    @objc private func albumTapped() {
+        if let requestAlbum = actions.requestAlbum {
+            requestAlbum()
+        } else {
+            delegate?.imagePanelDidTapAlbum(self)
+        }
+    }
 
     @objc private func originalTapped() {
         sendOriginal.toggle()
@@ -323,7 +357,11 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
     @objc private func sendTapped() {
         let selected = assets.filter { selectedIds.contains($0.localIdentifier) }
         guard !selected.isEmpty || !extraImages.isEmpty else { return }
-        delegate?.imagePanel(self, didConfirmAssets: selected, extraImages: extraImages, sendOriginal: sendOriginal)
+        if let confirmAssets = actions.confirmAssets {
+            confirmAssets(selected, extraImages, sendOriginal)
+        } else {
+            delegate?.imagePanel(self, didConfirmAssets: selected, extraImages: extraImages, sendOriginal: sendOriginal)
+        }
     }
 
     private func updateOriginalChrome() {
@@ -404,9 +442,48 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
-        let h = max(collectionView.bounds.height, 96)
+        if let locked = lockedStripSide {
+            return CGSize(width: locked, height: locked)
+        }
+        let h = collectionView.bounds.height
+        if h > 1 {
+            thumbSize = CGSize(width: h, height: h)
+            return thumbSize
+        }
+        if thumbSize.height > 1 {
+            return thumbSize
+        }
+        return CGSize(width: 160, height: 160)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // While locked, keep item size stable through the open animation.
+        guard lockedStripSide == nil else { return }
+        let h = collectionView.bounds.height
+        guard h > 1, abs(thumbSize.height - h) > 0.5 else { return }
         thumbSize = CGSize(width: h, height: h)
-        return thumbSize
+        collectionView.collectionViewLayout.invalidateLayout()
+    }
+
+    /// After host height settles, sync lock to measured strip without reloading if close.
+    func finalizeStripLayout() {
+        layoutIfNeeded()
+        let h = collectionView.bounds.height
+        guard h > 1 else {
+            lockedStripSide = nil
+            return
+        }
+        let previous = lockedStripSide ?? thumbSize.height
+        lockedStripSide = nil
+        thumbSize = CGSize(width: h, height: h)
+        // Only reload if estimate was meaningfully off (tip appeared, etc.).
+        if abs(previous - h) > 2 {
+            collectionView.collectionViewLayout.invalidateLayout()
+            collectionView.reloadData()
+        } else if abs(previous - h) > 0.5 {
+            collectionView.collectionViewLayout.invalidateLayout()
+        }
     }
 
     private func selectionOrder(for asset: PHAsset) -> Int? {
