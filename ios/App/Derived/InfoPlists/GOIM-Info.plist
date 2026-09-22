@@ -33,6 +33,8 @@
 	<string>录制语音消息发送到聊天</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>选择图片或视频发送到聊天</string>
+	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

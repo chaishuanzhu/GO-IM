@@ -28,6 +28,8 @@ let project = Project(
                         "NSAllowsLocalNetworking": true,
                     ],
                     "NSPhotoLibraryUsageDescription": "选择图片或视频发送到聊天",
+                    // Prefer in-panel yellow tip over the system limited-access Alert.
+                    "PHPhotoLibraryPreventAutomaticLimitedAccessAlert": true,
                     "NSCameraUsageDescription": "拍摄照片发送到聊天",
                     "NSMicrophoneUsageDescription": "录制语音消息发送到聊天",
                     "API_BASE_URL": "$(API_BASE_URL)",

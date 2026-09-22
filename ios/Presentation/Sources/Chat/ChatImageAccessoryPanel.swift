@@ -13,10 +13,19 @@ protocol ChatImageAccessoryPanelDelegate: AnyObject {
     )
 }
 
-/// WeChat-style image dock: left camera/album, right horizontal photo strip, bottom 原图 + 发送.
+/// WeChat-style image dock: optional yellow photo-access tip, camera/album, photo strip, send.
 @MainActor
 final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     weak var delegate: ChatImageAccessoryPanelDelegate?
+
+    private let tipBanner = UIControl()
+    private let tipLabel = UILabel()
+    private let tipChevron = UIImageView()
+    private var tipHeightConstraint: NSLayoutConstraint!
+    private var sideTopToTip: NSLayoutConstraint!
+    private var sideTopToSelf: NSLayoutConstraint!
+    private var collectionTopToTip: NSLayoutConstraint!
+    private var collectionTopToSelf: NSLayoutConstraint!
 
     private let sideStack = UIStackView()
     private let cameraButton = UIButton(type: .system)
@@ -28,12 +37,12 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
 
     private var assets: [PHAsset] = []
     private var selectedIds = Set<String>()
-    /// Photos captured / picked outside the strip (camera / system album).
     private var extraImages: [UIImage] = []
     private var sendOriginal = false
     private let maxSelection = 9
     private let imageManager = PHCachingImageManager()
     private var thumbSize = CGSize(width: 160, height: 160)
+    private nonisolated(unsafe) var becomeActiveObserver: NSObjectProtocol?
 
     override init(frame: CGRect) {
         let layout = UICollectionViewFlowLayout()
@@ -44,6 +53,21 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         super.init(frame: frame)
         setup()
+        becomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshTipAndLibrary()
+            }
+        }
+    }
+
+    deinit {
+        if let becomeActiveObserver {
+            NotificationCenter.default.removeObserver(becomeActiveObserver)
+        }
     }
 
     @available(*, unavailable)
@@ -73,6 +97,29 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
     // MARK: - Setup
 
     private func setup() {
+        tipBanner.backgroundColor = UIColor.systemYellow.withAlphaComponent(0.32)
+        tipBanner.isHidden = true
+        tipBanner.translatesAutoresizingMaskIntoConstraints = false
+        tipBanner.addTarget(self, action: #selector(tipBannerTapped), for: .touchUpInside)
+        tipBanner.accessibilityTraits = .button
+
+        tipLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        tipLabel.textColor = UIColor(red: 0.42, green: 0.30, blue: 0.02, alpha: 1)
+        tipLabel.numberOfLines = 1
+        tipLabel.lineBreakMode = .byTruncatingTail
+        tipLabel.translatesAutoresizingMaskIntoConstraints = false
+        tipLabel.isUserInteractionEnabled = false
+
+        tipChevron.image = UIImage(systemName: "chevron.right")
+        tipChevron.tintColor = tipLabel.textColor
+        tipChevron.contentMode = .scaleAspectFit
+        tipChevron.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        tipChevron.translatesAutoresizingMaskIntoConstraints = false
+        tipChevron.isUserInteractionEnabled = false
+
+        tipBanner.addSubview(tipLabel)
+        tipBanner.addSubview(tipChevron)
+
         configureSideButton(cameraButton, title: "拍照", symbol: "camera.fill", action: #selector(cameraTapped))
         configureSideButton(albumButton, title: "相册", symbol: "photo.on.rectangle", action: #selector(albumTapped))
 
@@ -112,26 +159,48 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
         sendButton.isEnabled = false
         sendButton.alpha = 0.4
 
+        addSubview(tipBanner)
         addSubview(sideStack)
         addSubview(collectionView)
         addSubview(bottomBar)
         bottomBar.addSubview(originalButton)
         bottomBar.addSubview(sendButton)
 
+        tipHeightConstraint = tipBanner.heightAnchor.constraint(equalToConstant: 0)
+        sideTopToTip = sideStack.topAnchor.constraint(equalTo: tipBanner.bottomAnchor, constant: 8)
+        sideTopToSelf = sideStack.topAnchor.constraint(equalTo: topAnchor, constant: 10)
+        collectionTopToTip = collectionView.topAnchor.constraint(equalTo: tipBanner.bottomAnchor, constant: 8)
+        collectionTopToSelf = collectionView.topAnchor.constraint(equalTo: topAnchor, constant: 10)
+        sideTopToTip.isActive = false
+        collectionTopToTip.isActive = false
+
         NSLayoutConstraint.activate([
+            tipBanner.topAnchor.constraint(equalTo: topAnchor),
+            tipBanner.leadingAnchor.constraint(equalTo: leadingAnchor),
+            tipBanner.trailingAnchor.constraint(equalTo: trailingAnchor),
+            tipHeightConstraint,
+
+            tipLabel.leadingAnchor.constraint(equalTo: tipBanner.leadingAnchor, constant: 12),
+            tipLabel.centerYAnchor.constraint(equalTo: tipBanner.centerYAnchor),
+            tipLabel.trailingAnchor.constraint(lessThanOrEqualTo: tipChevron.leadingAnchor, constant: -6),
+
+            tipChevron.trailingAnchor.constraint(equalTo: tipBanner.trailingAnchor, constant: -10),
+            tipChevron.centerYAnchor.constraint(equalTo: tipBanner.centerYAnchor),
+            tipChevron.widthAnchor.constraint(equalToConstant: 12),
+            tipChevron.heightAnchor.constraint(equalToConstant: 12),
+
             sideStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            sideStack.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            sideTopToSelf,
             sideStack.bottomAnchor.constraint(equalTo: bottomBar.topAnchor, constant: -10),
             sideStack.widthAnchor.constraint(equalToConstant: 72),
 
             collectionView.leadingAnchor.constraint(equalTo: sideStack.trailingAnchor, constant: 8),
             collectionView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            collectionView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            collectionTopToSelf,
             collectionView.bottomAnchor.constraint(equalTo: bottomBar.topAnchor, constant: -10),
 
             bottomBar.leadingAnchor.constraint(equalTo: leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: trailingAnchor),
-            // Stay above the home indicator (panel fills accessoryHost into the unsafe strip).
             bottomBar.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
             bottomBar.heightAnchor.constraint(equalToConstant: 48),
 
@@ -158,9 +227,18 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
         button.addTarget(self, action: action, for: .touchUpInside)
     }
 
-    // MARK: - Library
+    // MARK: - Library + tip
+
+    private func refreshTipAndLibrary() {
+        updatePhotoAccessTip()
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        if status == .authorized || status == .limited {
+            fetchAssets()
+        }
+    }
 
     private func requestAndFetch() {
+        updatePhotoAccessTip()
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         switch status {
         case .authorized, .limited:
@@ -168,8 +246,12 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
         case .notDetermined:
             PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] newStatus in
                 Task { @MainActor in
+                    self?.updatePhotoAccessTip()
                     if newStatus == .authorized || newStatus == .limited {
                         self?.fetchAssets()
+                    } else {
+                        self?.assets = []
+                        self?.collectionView.reloadData()
                     }
                 }
             }
@@ -177,6 +259,37 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
             assets = []
             collectionView.reloadData()
         }
+    }
+
+    private func updatePhotoAccessTip() {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        switch status {
+        case .limited:
+            setTipVisible(
+                true,
+                text: "只能访问相册部分照片，点击去设置选择更多"
+            )
+        case .denied, .restricted:
+            setTipVisible(
+                true,
+                text: "未获得相册权限，点击去设置开启"
+            )
+        default:
+            setTipVisible(false, text: nil)
+        }
+    }
+
+    private func setTipVisible(_ visible: Bool, text: String?) {
+        tipLabel.text = text
+        tipBanner.isHidden = !visible
+        tipBanner.isAccessibilityElement = visible
+        tipBanner.accessibilityLabel = text
+        tipHeightConstraint.constant = visible ? 32 : 0
+        sideTopToTip.isActive = visible
+        sideTopToSelf.isActive = !visible
+        collectionTopToTip.isActive = visible
+        collectionTopToSelf.isActive = !visible
+        setNeedsLayout()
     }
 
     private func fetchAssets() {
@@ -193,6 +306,11 @@ final class ChatImageAccessoryPanel: UIView, UICollectionViewDataSource, UIColle
     }
 
     // MARK: - Actions
+
+    @objc private func tipBannerTapped() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
 
     @objc private func cameraTapped() { delegate?.imagePanelDidTapCamera(self) }
     @objc private func albumTapped() { delegate?.imagePanelDidTapAlbum(self) }
