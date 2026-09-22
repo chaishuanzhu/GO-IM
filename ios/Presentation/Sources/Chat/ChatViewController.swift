@@ -228,34 +228,37 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: MessageBubbleCell.reuseID, for: indexPath) as! MessageBubbleCell
         let m = viewModel.messages[indexPath.row]
-        cell.configure(message: m, fileURL: { [weak self] fileId, thumb in
+        let vm = MessageBubbleMapper.map(m) { [weak self] fileId, thumb in
             self?.env.files.fileURL(fileId: fileId, thumb: thumb)
-        }, stickerImage: { [weak self] ref in
-            await self?.env.stickers.imageData(for: ref)
-        }, onOpen: { [weak self] url in
-            self?.openExternal(url)
-        }, onPlayVoice: { url, duration in
-            VoicePlayer.shared.toggle(url: url, estimatedDuration: duration)
-        }, onPreview: { [weak self] item in
-            guard let self else { return }
-            MediaPreview.present(
-                item,
-                from: self,
-                loadSticker: { [weak self] ref in
-                    await self?.env.stickers.imageData(for: ref)
-                },
-                files: env.files
-            )
-        })
+        }
         cell.onRetry = { [weak self] in
             let messageId = m.id
             Task { await self?.viewModel.retryMessage(id: messageId) }
         }
+        cell.configure(
+            vm: vm,
+            actions: MessageContentActions(
+                onRetry: nil,
+                onPreview: { [weak self] item in
+                    guard let self else { return }
+                    MediaPreview.present(
+                        item,
+                        from: self,
+                        loadSticker: { [weak self] ref in
+                            await self?.env.stickers.imageData(for: ref)
+                        },
+                        files: env.files
+                    )
+                },
+                onPlayVoice: { url, duration in
+                    VoicePlayer.shared.toggle(url: url, estimatedDuration: duration)
+                },
+                loadSticker: { [weak self] ref in
+                    await self?.env.stickers.imageData(for: ref)
+                }
+            )
+        )
         return cell
-    }
-
-    private func openExternal(_ url: URL) {
-        UIApplication.shared.open(url)
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {

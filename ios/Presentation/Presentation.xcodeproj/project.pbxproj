@@ -16,12 +16,16 @@
 		3BA2ACAE80D538954FE53359 /* Kingfisher.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DAF37120CD93338E2FDE8F39 /* Kingfisher.framework */; };
 		3DC453B54A61FE2E77577F8E /* SearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B9568357761966FD16EC2DA /* SearchViewModel.swift */; };
 		43F14E58C64869B72E3DB2AC /* ConversationListViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56166CB8D8C19D64D6A2F2D5 /* ConversationListViewController.swift */; };
+		449A4A1BEDBD894188041B2B /* FileMessageContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7465B7042BD37EE68041459A /* FileMessageContentView.swift */; };
 		46A53730561D5424215962D4 /* StickerImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A559335377136CB1082145AC /* StickerImageCache.swift */; };
+		5007EAD535FAC058FDDA647E /* VideoMessageContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F91A8DF4E9E5B011D492B37D /* VideoMessageContentView.swift */; };
 		5454FA743D4525ED16C648BC /* MentionPickerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD893B05F01C156FBF665F17 /* MentionPickerViewController.swift */; };
 		5EC0E2484256FFB20908E0DC /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 30AFFED66AE59FB40E7A4582 /* QuickLook.framework */; };
+		6241726E05F50EE01C149D5D /* MessageBubbleMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB25C8B2C6291EC3322F581F /* MessageBubbleMapper.swift */; };
+		65FC007D972692BFB0ECFB07 /* MessageBubbleViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28D593259962305CBC633C9 /* MessageBubbleViewModel.swift */; };
+		7311D61A97F7C51C6E3EC428 /* TextMessageContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C67F9556043AE54FA87D1CE4 /* TextMessageContentView.swift */; };
 		74AA705FEEC392C5CF875838 /* ContactsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10F46DDCC7E9E6A60133615A /* ContactsViewController.swift */; };
 		8085D88A48CB7AEDD1720E17 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D02F279F8F9C1D5C4CC79F36 /* AVFoundation.framework */; };
-		80CE6D2914596077C48AB136 /* MessageBubbleCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68689B30C7319E1DA9E1DC02 /* MessageBubbleCell.swift */; };
 		83B36C2A1C1D7A7DE515AD8D /* GroupsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4243DCD31C287817197D3D /* GroupsViewModel.swift */; };
 		8EF1F96972A4A874D88A4F06 /* FileDownloadViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520CEBF3BAA750B5A9DAA23C /* FileDownloadViewController.swift */; };
 		94263ED0A63D1D8C40CE817E /* ChatViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA3DCCB5D0A480E9A77FE2E5 /* ChatViewController.swift */; };
@@ -35,12 +39,19 @@
 		B05E0B7F1F4C6ED42645E70E /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E0B8DA9BF42823545F7E95 /* VoiceRecorder.swift */; };
 		BD4FE566A822D9A4B2FB723F /* ChatImageAccessoryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99633DFBD4AF96E039CFB323 /* ChatImageAccessoryPanel.swift */; };
 		BF48BDBEC86F97BF5F097589 /* ChatComposerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01848853A32AA271747F65EF /* ChatComposerBar.swift */; };
+		C1146555A8E5AF0C8BFD3754 /* ImageMessageContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE04080860D820C367BF9821 /* ImageMessageContentView.swift */; };
 		C3F2EB3F55CF0822E9F9E4BB /* StickerAccessoryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DCE11FBC8B59F5604125C75 /* StickerAccessoryPanel.swift */; };
 		C69F416DF07BCBEAD082D6E8 /* ConversationListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25A9A62B96B1228609D82A09 /* ConversationListViewModel.swift */; };
+		C79BC2F3CED9AF79E050788A /* VoiceMessageContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B46E58CD448CBB1C3E9567 /* VoiceMessageContentView.swift */; };
 		C971CC7DB86A1CB907A1E7E5 /* MediaPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BD3454218BD49CC3D2CF30 /* MediaPreview.swift */; };
 		CDF9107D5A660FC35D5D2D4D /* SearchViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEF91866913359D01E3A5F57 /* SearchViewController.swift */; };
+		D01FD03B3063D052F3FC6B0A /* MessageBubbleCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92256CEB0C9911EB1EFDFCD0 /* MessageBubbleCell.swift */; };
+		D514B47BAD487F0DF00AC450 /* MessageContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B9C0A982A25CC035F0EE223 /* MessageContentView.swift */; };
+		D6F16D24C1375F54B9530DA8 /* StickerMessageContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E3B627BD9291A2459A7552 /* StickerMessageContentView.swift */; };
 		DACF659AC6AB0454ACB3FBE9 /* ContactsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BC8F6336477FAD93635F6A2 /* ContactsViewModel.swift */; };
+		DD8D66C2E105970BE40BC980 /* MessageBubbleLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D6FC21A7E354FCF67F8D56 /* MessageBubbleLayout.swift */; };
 		E3A13586C59B6A7395FA4593 /* DeveloperSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9010F95E5A57DF12625E189C /* DeveloperSettings.swift */; };
+		E42D2B195B5E7FD5F13A8FD9 /* SystemMessageContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C149B89A6CE500443ADA2C6 /* SystemMessageContentView.swift */; };
 		EC9F0D69C275EDE13DC30E3A /* GroupsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F8D5C3383EE89C50CE3D753 /* GroupsViewController.swift */; };
 		F4A1E548002EA720F56AB739 /* ImageCompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E486F103CB6665A4BDB0BF5 /* ImageCompressor.swift */; };
 		F97087B6D910F774406793B2 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763E3913D61CD2E64A0B3065 /* ChatViewModel.swift */; };
@@ -67,6 +78,8 @@
 		10F46DDCC7E9E6A60133615A /* ContactsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsViewController.swift; sourceTree = "<group>"; };
 		134AEE009D928C7E39EAF4CD /* Presentation-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Presentation-Info.plist"; sourceTree = "<group>"; };
 		14E0B8DA9BF42823545F7E95 /* VoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorder.swift; sourceTree = "<group>"; };
+		15B46E58CD448CBB1C3E9567 /* VoiceMessageContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMessageContentView.swift; sourceTree = "<group>"; };
+		1B9C0A982A25CC035F0EE223 /* MessageContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageContentView.swift; sourceTree = "<group>"; };
 		25A9A62B96B1228609D82A09 /* ConversationListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListViewModel.swift; sourceTree = "<group>"; };
 		30AFFED66AE59FB40E7A4582 /* QuickLook.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLook.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/QuickLook.framework; sourceTree = DEVELOPER_DIR; };
 		342AE4EAEE40294F0A26F2B8 /* Presentation.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Presentation.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -75,10 +88,11 @@
 		520CEBF3BAA750B5A9DAA23C /* FileDownloadViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDownloadViewController.swift; sourceTree = "<group>"; };
 		56166CB8D8C19D64D6A2F2D5 /* ConversationListViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListViewController.swift; sourceTree = "<group>"; };
 		5622D9AE824EC95785795937 /* GOIMAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GOIMAppearance.swift; sourceTree = "<group>"; };
-		68689B30C7319E1DA9E1DC02 /* MessageBubbleCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleCell.swift; sourceTree = "<group>"; };
+		6C149B89A6CE500443ADA2C6 /* SystemMessageContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMessageContentView.swift; sourceTree = "<group>"; };
 		70F372A70C41BA652D2B7550 /* NewFriendsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewFriendsViewController.swift; sourceTree = "<group>"; };
 		717A82BE2EAB93D062C88993 /* LoginViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModel.swift; sourceTree = "<group>"; };
 		7333E10251C845BB0139EBC6 /* SettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewController.swift; sourceTree = "<group>"; };
+		7465B7042BD37EE68041459A /* FileMessageContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMessageContentView.swift; sourceTree = "<group>"; };
 		763E3913D61CD2E64A0B3065 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		7E486F103CB6665A4BDB0BF5 /* ImageCompressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCompressor.swift; sourceTree = "<group>"; };
 		82F0720D9B464CF8F3E51AD1 /* Domain.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Domain.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -86,6 +100,7 @@
 		8BC8F6336477FAD93635F6A2 /* ContactsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsViewModel.swift; sourceTree = "<group>"; };
 		8DCE11FBC8B59F5604125C75 /* StickerAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerAccessoryPanel.swift; sourceTree = "<group>"; };
 		9010F95E5A57DF12625E189C /* DeveloperSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettings.swift; sourceTree = "<group>"; };
+		92256CEB0C9911EB1EFDFCD0 /* MessageBubbleCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleCell.swift; sourceTree = "<group>"; };
 		99633DFBD4AF96E039CFB323 /* ChatImageAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImageAccessoryPanel.swift; sourceTree = "<group>"; };
 		A3CA00D2DCE363E383E7AF6B /* GroupInfoViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupInfoViewController.swift; sourceTree = "<group>"; };
 		A4FC7ECE2FF02F5A1BEEFE79 /* ServerSettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettingsViewController.swift; sourceTree = "<group>"; };
@@ -95,10 +110,17 @@
 		AEF91866913359D01E3A5F57 /* SearchViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViewController.swift; sourceTree = "<group>"; };
 		B6FBF1F27C6988B954C900D7 /* FriendPickerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendPickerViewController.swift; sourceTree = "<group>"; };
 		BA3DCCB5D0A480E9A77FE2E5 /* ChatViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewController.swift; sourceTree = "<group>"; };
+		BB25C8B2C6291EC3322F581F /* MessageBubbleMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleMapper.swift; sourceTree = "<group>"; };
+		C28D593259962305CBC633C9 /* MessageBubbleViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleViewModel.swift; sourceTree = "<group>"; };
+		C2E3B627BD9291A2459A7552 /* StickerMessageContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerMessageContentView.swift; sourceTree = "<group>"; };
+		C3D6FC21A7E354FCF67F8D56 /* MessageBubbleLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleLayout.swift; sourceTree = "<group>"; };
 		C4BD3454218BD49CC3D2CF30 /* MediaPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPreview.swift; sourceTree = "<group>"; };
+		C67F9556043AE54FA87D1CE4 /* TextMessageContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextMessageContentView.swift; sourceTree = "<group>"; };
+		CE04080860D820C367BF9821 /* ImageMessageContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageMessageContentView.swift; sourceTree = "<group>"; };
 		D02F279F8F9C1D5C4CC79F36 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/AVFoundation.framework; sourceTree = DEVELOPER_DIR; };
 		D55380062BB92CC4207311E7 /* LoginViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewController.swift; sourceTree = "<group>"; };
 		DAF37120CD93338E2FDE8F39 /* Kingfisher.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Kingfisher.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		F91A8DF4E9E5B011D492B37D /* VideoMessageContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMessageContentView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -125,6 +147,19 @@
 				08D6A9E253693427557F2ED5 /* MainTabBarController.swift */,
 			);
 			path = Common;
+			sourceTree = "<group>";
+		};
+		109454F3C51712F64CDFF74E /* Bubble */ = {
+			isa = PBXGroup;
+			children = (
+				6B82DFF637E9599C3AA937A8 /* Contents */,
+				92256CEB0C9911EB1EFDFCD0 /* MessageBubbleCell.swift */,
+				C3D6FC21A7E354FCF67F8D56 /* MessageBubbleLayout.swift */,
+				BB25C8B2C6291EC3322F581F /* MessageBubbleMapper.swift */,
+				C28D593259962305CBC633C9 /* MessageBubbleViewModel.swift */,
+				1B9C0A982A25CC035F0EE223 /* MessageContentView.swift */,
+			);
+			path = Bubble;
 			sourceTree = "<group>";
 		};
 		4750F860E7126A4865576EA5 /* Derived */ = {
@@ -155,6 +190,7 @@
 		64895440671D853462B8F17E /* Chat */ = {
 			isa = PBXGroup;
 			children = (
+				109454F3C51712F64CDFF74E /* Bubble */,
 				01848853A32AA271747F65EF /* ChatComposerBar.swift */,
 				99633DFBD4AF96E039CFB323 /* ChatImageAccessoryPanel.swift */,
 				BA3DCCB5D0A480E9A77FE2E5 /* ChatViewController.swift */,
@@ -163,13 +199,26 @@
 				7E486F103CB6665A4BDB0BF5 /* ImageCompressor.swift */,
 				C4BD3454218BD49CC3D2CF30 /* MediaPreview.swift */,
 				AD893B05F01C156FBF665F17 /* MentionPickerViewController.swift */,
-				68689B30C7319E1DA9E1DC02 /* MessageBubbleCell.swift */,
 				8DCE11FBC8B59F5604125C75 /* StickerAccessoryPanel.swift */,
 				A559335377136CB1082145AC /* StickerImageCache.swift */,
 				14E0B8DA9BF42823545F7E95 /* VoiceRecorder.swift */,
 				867A4E507E0B31F9D3294FAC /* VoiceWaveformBarsView.swift */,
 			);
 			path = Chat;
+			sourceTree = "<group>";
+		};
+		6B82DFF637E9599C3AA937A8 /* Contents */ = {
+			isa = PBXGroup;
+			children = (
+				7465B7042BD37EE68041459A /* FileMessageContentView.swift */,
+				CE04080860D820C367BF9821 /* ImageMessageContentView.swift */,
+				C2E3B627BD9291A2459A7552 /* StickerMessageContentView.swift */,
+				6C149B89A6CE500443ADA2C6 /* SystemMessageContentView.swift */,
+				C67F9556043AE54FA87D1CE4 /* TextMessageContentView.swift */,
+				F91A8DF4E9E5B011D492B37D /* VideoMessageContentView.swift */,
+				15B46E58CD448CBB1C3E9567 /* VoiceMessageContentView.swift */,
+			);
+			path = Contents;
 			sourceTree = "<group>";
 		};
 		8D825CA6F8A9CE5FCB00787B /* Login */ = {
@@ -333,6 +382,18 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				449A4A1BEDBD894188041B2B /* FileMessageContentView.swift in Sources */,
+				C1146555A8E5AF0C8BFD3754 /* ImageMessageContentView.swift in Sources */,
+				D6F16D24C1375F54B9530DA8 /* StickerMessageContentView.swift in Sources */,
+				E42D2B195B5E7FD5F13A8FD9 /* SystemMessageContentView.swift in Sources */,
+				7311D61A97F7C51C6E3EC428 /* TextMessageContentView.swift in Sources */,
+				5007EAD535FAC058FDDA647E /* VideoMessageContentView.swift in Sources */,
+				C79BC2F3CED9AF79E050788A /* VoiceMessageContentView.swift in Sources */,
+				D01FD03B3063D052F3FC6B0A /* MessageBubbleCell.swift in Sources */,
+				DD8D66C2E105970BE40BC980 /* MessageBubbleLayout.swift in Sources */,
+				6241726E05F50EE01C149D5D /* MessageBubbleMapper.swift in Sources */,
+				65FC007D972692BFB0ECFB07 /* MessageBubbleViewModel.swift in Sources */,
+				D514B47BAD487F0DF00AC450 /* MessageContentView.swift in Sources */,
 				BF48BDBEC86F97BF5F097589 /* ChatComposerBar.swift in Sources */,
 				BD4FE566A822D9A4B2FB723F /* ChatImageAccessoryPanel.swift in Sources */,
 				94263ED0A63D1D8C40CE817E /* ChatViewController.swift in Sources */,
@@ -341,7 +402,6 @@
 				F4A1E548002EA720F56AB739 /* ImageCompressor.swift in Sources */,
 				C971CC7DB86A1CB907A1E7E5 /* MediaPreview.swift in Sources */,
 				5454FA743D4525ED16C648BC /* MentionPickerViewController.swift in Sources */,
-				80CE6D2914596077C48AB136 /* MessageBubbleCell.swift in Sources */,
 				C3F2EB3F55CF0822E9F9E4BB /* StickerAccessoryPanel.swift in Sources */,
 				46A53730561D5424215962D4 /* StickerImageCache.swift in Sources */,
 				B05E0B7F1F4C6ED42645E70E /* VoiceRecorder.swift in Sources */,

@@ -122,7 +122,7 @@ public struct SendFileMessageUseCase: Sendable {
         guard message.isOutgoing else {
             throw DomainError.invalidState("only outgoing messages can be retried")
         }
-        guard let meta = Self.parseFileMeta(message.content) else {
+        guard let meta = Message.decodeFileMeta(message.content) else {
             try await messages.retry(message)
             return message
         }
@@ -160,29 +160,6 @@ public struct SendFileMessageUseCase: Sendable {
         return message
     }
 
-    private static func parseFileMeta(_ content: String) -> FileMeta? {
-        guard let data = content.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        let fileId: String
-        if let s = obj["file_id"] as? String {
-            fileId = s
-        } else if let n = obj["file_id"] as? NSNumber {
-            fileId = n.stringValue
-        } else {
-            return nil
-        }
-        return FileMeta(
-            fileId: fileId,
-            name: obj["name"] as? String ?? "file",
-            size: (obj["size"] as? NSNumber)?.int64Value ?? 0,
-            mime: obj["mime"] as? String ?? "application/octet-stream",
-            width: (obj["width"] as? NSNumber)?.intValue,
-            height: (obj["height"] as? NSNumber)?.intValue,
-            duration: (obj["duration"] as? NSNumber)?.intValue
-        )
-    }
 }
 
 public struct ObserveConversationsUseCase: Sendable {
