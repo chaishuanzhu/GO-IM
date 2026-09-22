@@ -11,6 +11,7 @@
 		1FD0F8CD70F1FEBBD4799DF3 /* ReconnectPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D03DF525056DFC188494358B /* ReconnectPolicyTests.swift */; };
 		294070257EE90EB242DD2C4D /* ReconnectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9526DDC1267ECCAA83A4EF /* ReconnectPolicy.swift */; };
 		300E4F4EB259178CD8889158 /* Handlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 173D4A5815C84A0EF12C3796 /* Handlers.swift */; };
+		32DC47158FFBF37F413A4F7A /* FileDownloadCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 237472839BAF2C3C91085B82 /* FileDownloadCenter.swift */; };
 		385AF37CFC09728522432EC2 /* ConversationRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 999C4C2747B53CB9BC055C31 /* ConversationRepositoryImpl.swift */; };
 		4C79417A06A432A70F69EDD8 /* StickerRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D3772BB4B14FBF6391757E3 /* StickerRepositoryImpl.swift */; };
 		4E973B4DD8B7DCA508F70D6B /* SwiftProtobuf.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5E686E31A7BB571385831946 /* SwiftProtobuf.framework */; };
@@ -76,6 +77,7 @@
 		06FAA1459D11CCE724C34195 /* Domain.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Domain.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		0FEED37EF208A1EEE0CA3E94 /* ProtobufCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtobufCodec.swift; sourceTree = "<group>"; };
 		173D4A5815C84A0EF12C3796 /* Handlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Handlers.swift; sourceTree = "<group>"; };
+		237472839BAF2C3C91085B82 /* FileDownloadCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDownloadCenter.swift; sourceTree = "<group>"; };
 		29E4719BB8B24E079512BFF3 /* MessageRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRepositoryImpl.swift; sourceTree = "<group>"; };
 		2D3772BB4B14FBF6391757E3 /* StickerRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerRepositoryImpl.swift; sourceTree = "<group>"; };
 		32227617B04813597B875901 /* FriendRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendRepositoryImpl.swift; sourceTree = "<group>"; };
@@ -230,6 +232,7 @@
 		AF0AD5DE6CE9133C56EAB37C /* Storage */ = {
 			isa = PBXGroup;
 			children = (
+				237472839BAF2C3C91085B82 /* FileDownloadCenter.swift */,
 				4631D310A8CDE0930697872D /* KeychainStore.swift */,
 				9BD4DD048C626F34A147E13E /* LegacyUserDataMigrator.swift */,
 				C7BF14A481FD8FB0ACB69801 /* LocalMediaStore.swift */,
@@ -391,6 +394,7 @@
 				5C595053BE68FA4B0B220779 /* MessageRepositoryImpl.swift in Sources */,
 				FBBD2738F6E3357C3C2D47C5 /* SearchRepositoryImpl.swift in Sources */,
 				4C79417A06A432A70F69EDD8 /* StickerRepositoryImpl.swift in Sources */,
+				32DC47158FFBF37F413A4F7A /* FileDownloadCenter.swift in Sources */,
 				80D128765A3E8C4910DA98F8 /* KeychainStore.swift in Sources */,
 				EDC3961D1B6005BA7B3695B2 /* LegacyUserDataMigrator.swift in Sources */,
 				FB7F20DD366454280CF8944D /* LocalMediaStore.swift in Sources */,

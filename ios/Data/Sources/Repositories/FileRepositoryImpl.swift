@@ -105,27 +105,47 @@ public final class FileRepositoryImpl: FileRepository, @unchecked Sendable {
         try mediaStore.promote(localId: localId, remoteFileId: remoteFileId, to: kind)
     }
 
+    public func localFileIfPresent(fileId: String) -> URL? {
+        guard !LocalMediaStore.isLocalFileId(fileId) else {
+            return mediaStore.urlIfPresent(for: fileId)
+        }
+        return mediaStore.urlIfPresent(for: fileId)
+    }
+
     public func ensureLocalFile(fileId: String, suggestedName: String?) async throws -> URL {
-        if let existing = mediaStore.urlIfPresent(for: fileId),
-           !LocalMediaStore.isLocalFileId(fileId) {
-            // Prefer files/ over tmp if already promoted.
+        if let existing = localFileIfPresent(fileId: fileId) {
             return existing
         }
         guard let remote = remoteFileURL(fileId: fileId, thumb: false) else {
             throw DomainError.notAuthenticated
         }
-        do {
-            let (temp, response) = try await session.download(from: remote)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 200
-            guard (200..<300).contains(status) else {
-                mediaStore.removeIncompleteDownload(fileId: fileId)
-                throw DomainError.server(status, "download failed")
+        return try await FileDownloadCenter.shared.ensure(
+            fileId: fileId,
+            remoteURL: remote,
+            suggestedName: suggestedName,
+            mediaStore: mediaStore
+        )
+    }
+
+    public func observeFileDownload(fileId: String, suggestedName: String?) -> AsyncStream<FileDownloadEvent> {
+        if let existing = localFileIfPresent(fileId: fileId) {
+            return AsyncStream { continuation in
+                continuation.yield(.completed(existing))
+                continuation.finish()
             }
-            return try mediaStore.storeDownload(fileId: fileId, from: temp, suggestedName: suggestedName)
-        } catch {
-            mediaStore.removeIncompleteDownload(fileId: fileId)
-            throw error
         }
+        guard let remote = remoteFileURL(fileId: fileId, thumb: false) else {
+            return AsyncStream { continuation in
+                continuation.yield(.failed("未登录"))
+                continuation.finish()
+            }
+        }
+        return FileDownloadCenter.shared.observe(
+            fileId: fileId,
+            remoteURL: remote,
+            suggestedName: suggestedName,
+            mediaStore: mediaStore
+        )
     }
 
     public func fileURL(fileId: String, thumb: Bool) -> URL? {

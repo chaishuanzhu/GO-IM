@@ -236,6 +236,7 @@ public enum CompositionRoot {
         cancelPumps()
         VoicePlayer.shared.stop()
         MediaPreview.clearPresenter()
+        FileDownloadCenter.shared.reset()
         ImageCache.default.clearMemoryCache()
         ImageCache.default.clearDiskCache()
         URLCache.shared.removeAllCachedResponses()

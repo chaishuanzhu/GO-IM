@@ -170,8 +170,19 @@ public protocol FileRepository: Sendable {
     func removeStaged(fileId: String)
     /// After successful upload: move `tmp` staging into `files/` or `media/` under the server file id.
     func promoteStaged(localId: String, remoteFileId: String, mime: String) throws
-    /// Ensure a remote file message is on disk under `files/` (download via tmp then promote).
+    /// Completed local file under `files/` / `media/` if present.
+    func localFileIfPresent(fileId: String) -> URL?
+    /// Ensure a remote file is on disk (awaits in-flight download; does not restart).
     func ensureLocalFile(fileId: String, suggestedName: String?) async throws -> URL
+    /// Start or attach to a background download; emits progress until completed/failed.
+    func observeFileDownload(fileId: String, suggestedName: String?) -> AsyncStream<FileDownloadEvent>
+}
+
+/// Progress events for chat file downloads (continues if the download UI is dismissed).
+public enum FileDownloadEvent: Sendable, Equatable {
+    case progress(Double)
+    case completed(URL)
+    case failed(String)
 }
 
 public protocol SearchRepository: Sendable {

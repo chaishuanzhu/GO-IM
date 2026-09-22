@@ -23,6 +23,7 @@
 		8085D88A48CB7AEDD1720E17 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D02F279F8F9C1D5C4CC79F36 /* AVFoundation.framework */; };
 		80CE6D2914596077C48AB136 /* MessageBubbleCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68689B30C7319E1DA9E1DC02 /* MessageBubbleCell.swift */; };
 		83B36C2A1C1D7A7DE515AD8D /* GroupsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4243DCD31C287817197D3D /* GroupsViewModel.swift */; };
+		8EF1F96972A4A874D88A4F06 /* FileDownloadViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520CEBF3BAA750B5A9DAA23C /* FileDownloadViewController.swift */; };
 		94263ED0A63D1D8C40CE817E /* ChatViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA3DCCB5D0A480E9A77FE2E5 /* ChatViewController.swift */; };
 		95DE84C90BC427AB16B28D5B /* SettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7333E10251C845BB0139EBC6 /* SettingsViewController.swift */; };
 		9A38F45616541E23B2BD7536 /* Domain.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F0720D9B464CF8F3E51AD1 /* Domain.framework */; };
@@ -71,6 +72,7 @@
 		342AE4EAEE40294F0A26F2B8 /* Presentation.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Presentation.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		442030232CADED95A2ADC002 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
 		4B9568357761966FD16EC2DA /* SearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViewModel.swift; sourceTree = "<group>"; };
+		520CEBF3BAA750B5A9DAA23C /* FileDownloadViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDownloadViewController.swift; sourceTree = "<group>"; };
 		56166CB8D8C19D64D6A2F2D5 /* ConversationListViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListViewController.swift; sourceTree = "<group>"; };
 		5622D9AE824EC95785795937 /* GOIMAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GOIMAppearance.swift; sourceTree = "<group>"; };
 		68689B30C7319E1DA9E1DC02 /* MessageBubbleCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleCell.swift; sourceTree = "<group>"; };
@@ -157,6 +159,7 @@
 				99633DFBD4AF96E039CFB323 /* ChatImageAccessoryPanel.swift */,
 				BA3DCCB5D0A480E9A77FE2E5 /* ChatViewController.swift */,
 				763E3913D61CD2E64A0B3065 /* ChatViewModel.swift */,
+				520CEBF3BAA750B5A9DAA23C /* FileDownloadViewController.swift */,
 				7E486F103CB6665A4BDB0BF5 /* ImageCompressor.swift */,
 				C4BD3454218BD49CC3D2CF30 /* MediaPreview.swift */,
 				AD893B05F01C156FBF665F17 /* MentionPickerViewController.swift */,
@@ -334,6 +337,7 @@
 				BD4FE566A822D9A4B2FB723F /* ChatImageAccessoryPanel.swift in Sources */,
 				94263ED0A63D1D8C40CE817E /* ChatViewController.swift in Sources */,
 				F97087B6D910F774406793B2 /* ChatViewModel.swift in Sources */,
+				8EF1F96972A4A874D88A4F06 /* FileDownloadViewController.swift in Sources */,
 				F4A1E548002EA720F56AB739 /* ImageCompressor.swift in Sources */,
 				C971CC7DB86A1CB907A1E7E5 /* MediaPreview.swift in Sources */,
 				5454FA743D4525ED16C648BC /* MentionPickerViewController.swift in Sources */,

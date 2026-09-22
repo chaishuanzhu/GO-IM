@@ -443,11 +443,15 @@ public enum MediaPreview {
         activeFilePresenter = nil
     }
 
+    static func retainFilePresenter(_ presenter: FilePreviewPresenter) {
+        activeFilePresenter = presenter
+    }
+
     public static func present(
         _ item: MediaPreviewItem,
         from host: UIViewController,
         loadSticker: ((StickerRef) async -> Data?)? = nil,
-        ensureFile: ((String, String) async throws -> URL)? = nil
+        files: FileRepository? = nil
     ) {
         switch item {
         case let .image(fullURL, placeholder):
@@ -477,16 +481,7 @@ public enum MediaPreview {
             host.present(vc, animated: true)
 
         case let .file(name, mime, url, fileId):
-            Task {
-                await presentFile(
-                    name: name,
-                    mime: mime,
-                    url: url,
-                    fileId: fileId,
-                    ensureFile: ensureFile,
-                    from: host
-                )
-            }
+            presentFile(name: name, mime: mime, url: url, fileId: fileId, files: files, from: host)
         }
     }
 
@@ -495,55 +490,74 @@ public enum MediaPreview {
         mime: String?,
         url: URL?,
         fileId: String?,
-        ensureFile: ((String, String) async throws -> URL)?,
+        files: FileRepository?,
         from host: UIViewController
-    ) async {
+    ) {
         let safeName = name.isEmpty ? "file" : name
-        do {
-            let local: URL
-            if let url, url.isFileURL {
-                // Already on disk — skip download overlay for snappier open.
-                local = url
-            } else if let fileId, let ensureFile, !fileId.hasPrefix("local:") {
-                let overlay = BlockingOverlay(message: "正在加载…")
-                await MainActor.run { overlay.show(on: host.view) }
-                defer { Task { @MainActor in overlay.hide() } }
-                local = try await ensureFile(fileId, safeName)
-            } else if let url {
-                local = try await resolveLocalFile(url: url, safeName: safeName, on: host)
-            } else {
-                await MainActor.run {
-                    presentUnsupported(name: safeName, mime: mime, localURL: nil, from: host)
+
+        // 1) Local file URL from bubble / store → preview immediately.
+        if let url, url.isFileURL {
+            presentLocalPreview(url: url, name: safeName, mime: mime, from: host)
+            return
+        }
+        if let fileId, let files, let local = files.localFileIfPresent(fileId: fileId) {
+            presentLocalPreview(url: local, name: safeName, mime: mime, from: host)
+            return
+        }
+
+        // 2) Need download — dedicated page with progress (survives dismiss).
+        if let fileId, let files, !fileId.hasPrefix("local:") {
+            let page = FileDownloadViewController(
+                fileId: fileId,
+                fileName: safeName,
+                mime: mime,
+                files: files
+            )
+            let nav = UINavigationController(rootViewController: page)
+            host.present(nav, animated: true)
+            return
+        }
+
+        // 3) Fallback: one-shot remote URL download (no fileId).
+        if let url {
+            Task {
+                do {
+                    let local = try await resolveLocalFile(url: url, safeName: safeName, on: host)
+                    await MainActor.run {
+                        presentLocalPreview(url: local, name: safeName, mime: mime, from: host)
+                    }
+                } catch {
+                    await MainActor.run {
+                        let alert = UIAlertController(
+                            title: "加载失败",
+                            message: error.localizedDescription,
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: "好", style: .default))
+                        host.present(alert, animated: true)
+                    }
                 }
-                return
             }
-            await MainActor.run {
-                var previewURL = local
-                // Only copy when the path has no usable extension (legacy downloads).
-                if local.pathExtension.isEmpty,
-                   !QLPreviewController.canPreview(local as NSURL),
-                   let renamed = try? Self.copyForQuickLook(local, displayName: safeName),
-                   QLPreviewController.canPreview(renamed as NSURL) {
-                    previewURL = renamed
-                }
-                if QLPreviewController.canPreview(previewURL as NSURL) {
-                    let presenter = FilePreviewPresenter(fileURL: previewURL)
-                    activeFilePresenter = presenter
-                    presenter.present(from: host)
-                } else {
-                    presentUnsupported(name: safeName, mime: mime, localURL: local, from: host)
-                }
-            }
-        } catch {
-            await MainActor.run {
-                let alert = UIAlertController(
-                    title: "加载失败",
-                    message: error.localizedDescription,
-                    preferredStyle: .alert
-                )
-                alert.addAction(UIAlertAction(title: "好", style: .default))
-                host.present(alert, animated: true)
-            }
+            return
+        }
+
+        presentUnsupported(name: safeName, mime: mime, localURL: nil, from: host)
+    }
+
+    private static func presentLocalPreview(url: URL, name: String, mime: String?, from host: UIViewController) {
+        var previewURL = url
+        if url.pathExtension.isEmpty,
+           !QLPreviewController.canPreview(url as NSURL),
+           let renamed = try? copyForQuickLook(url, displayName: name),
+           QLPreviewController.canPreview(renamed as NSURL) {
+            previewURL = renamed
+        }
+        if QLPreviewController.canPreview(previewURL as NSURL) {
+            let presenter = FilePreviewPresenter(fileURL: previewURL)
+            activeFilePresenter = presenter
+            presenter.present(from: host)
+        } else {
+            presentUnsupported(name: name, mime: mime, localURL: url, from: host)
         }
     }
 
@@ -582,7 +596,6 @@ public enum MediaPreview {
         return dest
     }
 }
-
 @MainActor
 private final class BlockingOverlay {
     private let dim = UIView()
