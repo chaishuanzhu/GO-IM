@@ -27,10 +27,6 @@ final class MessageBubbleCell: UITableViewCell {
     private var currentKey: String?
     private var actions = MessageContentActions()
 
-    var onRetry: (() -> Void)? {
-        didSet { actions.onRetry = onRetry }
-    }
-
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         selectionStyle = .none
@@ -156,13 +152,10 @@ final class MessageBubbleCell: UITableViewCell {
         statusLabel.isHidden = true
         hideSendAccessory()
         actions = MessageContentActions()
-        onRetry = nil
     }
 
     func configure(vm: MessageBubbleViewModel, actions: MessageContentActions) {
-        var merged = actions
-        merged.onRetry = onRetry ?? actions.onRetry
-        self.actions = merged
+        self.actions = actions
 
         switch vm.alignment {
         case .leading:
@@ -306,6 +299,6 @@ final class MessageBubbleCell: UITableViewCell {
     }
 
     @objc private func retryTapped() {
-        (onRetry ?? actions.onRetry)?()
+        actions.onRetry?()
     }
 }

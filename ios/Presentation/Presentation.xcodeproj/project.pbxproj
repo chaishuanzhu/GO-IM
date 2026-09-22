@@ -31,6 +31,7 @@
 		7311D61A97F7C51C6E3EC428 /* TextMessageContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C67F9556043AE54FA87D1CE4 /* TextMessageContentView.swift */; };
 		74AA705FEEC392C5CF875838 /* ContactsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10F46DDCC7E9E6A60133615A /* ContactsViewController.swift */; };
 		8085D88A48CB7AEDD1720E17 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D02F279F8F9C1D5C4CC79F36 /* AVFoundation.framework */; };
+		80B2DE125B33652B94F135EE /* ChatUIAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3FCFC965B62F1A107B986B9 /* ChatUIAction.swift */; };
 		83B36C2A1C1D7A7DE515AD8D /* GroupsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4243DCD31C287817197D3D /* GroupsViewModel.swift */; };
 		8EF1F96972A4A874D88A4F06 /* FileDownloadViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520CEBF3BAA750B5A9DAA23C /* FileDownloadViewController.swift */; };
 		930077E585221BCE212B2265 /* VoiceAccessoryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82E90BE7D739D88EFF720790 /* VoiceAccessoryPanel.swift */; };
@@ -39,8 +40,10 @@
 		9A38F45616541E23B2BD7536 /* Domain.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82F0720D9B464CF8F3E51AD1 /* Domain.framework */; };
 		9B7222A2BAA52BCB237DF9EE /* NewFriendsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70F372A70C41BA652D2B7550 /* NewFriendsViewController.swift */; };
 		9CFD3EE345CFE91037D288A1 /* GroupInfoViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3CA00D2DCE363E383E7AF6B /* GroupInfoViewController.swift */; };
+		9FA9EE0C81D7760E9EF3A4B4 /* ChatMediaLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82E4529F8B05647F073DA3F1 /* ChatMediaLoader.swift */; };
 		A0F163665360ECB79214438C /* GOIMAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5622D9AE824EC95785795937 /* GOIMAppearance.swift */; };
 		A810B34C3896A142DDC1B7BD /* LoginViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D55380062BB92CC4207311E7 /* LoginViewController.swift */; };
+		AB95A200844EFDE973BC7335 /* ChatEventRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D4EB2E348128EF9466DFE4C /* ChatEventRouter.swift */; };
 		AE322F873EB5CD81A4801A6B /* VoiceWaveformBarsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 867A4E507E0B31F9D3294FAC /* VoiceWaveformBarsView.swift */; };
 		B05E0B7F1F4C6ED42645E70E /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E0B8DA9BF42823545F7E95 /* VoiceRecorder.swift */; };
 		C1146555A8E5AF0C8BFD3754 /* ImageMessageContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE04080860D820C367BF9821 /* ImageMessageContentView.swift */; };
@@ -93,6 +96,7 @@
 		5548B11C462A1CDF3CE5BC8B /* ChatComposerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerBar.swift; sourceTree = "<group>"; };
 		56166CB8D8C19D64D6A2F2D5 /* ConversationListViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListViewController.swift; sourceTree = "<group>"; };
 		5622D9AE824EC95785795937 /* GOIMAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GOIMAppearance.swift; sourceTree = "<group>"; };
+		5D4EB2E348128EF9466DFE4C /* ChatEventRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatEventRouter.swift; sourceTree = "<group>"; };
 		5E3AA015690B9DFDBAB651FB /* StickerAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerAccessoryPanel.swift; sourceTree = "<group>"; };
 		5FA76BC619B13BACBBB6CE55 /* EmojiAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiAccessoryPanel.swift; sourceTree = "<group>"; };
 		6C149B89A6CE500443ADA2C6 /* SystemMessageContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMessageContentView.swift; sourceTree = "<group>"; };
@@ -103,6 +107,7 @@
 		763E3913D61CD2E64A0B3065 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		7A26B83892D4983D01A02ED3 /* MoreAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreAccessoryPanel.swift; sourceTree = "<group>"; };
 		7E486F103CB6665A4BDB0BF5 /* ImageCompressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCompressor.swift; sourceTree = "<group>"; };
+		82E4529F8B05647F073DA3F1 /* ChatMediaLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMediaLoader.swift; sourceTree = "<group>"; };
 		82E90BE7D739D88EFF720790 /* VoiceAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAccessoryPanel.swift; sourceTree = "<group>"; };
 		82F0720D9B464CF8F3E51AD1 /* Domain.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Domain.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		867A4E507E0B31F9D3294FAC /* VoiceWaveformBarsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWaveformBarsView.swift; sourceTree = "<group>"; };
@@ -128,6 +133,7 @@
 		D02F279F8F9C1D5C4CC79F36 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/AVFoundation.framework; sourceTree = DEVELOPER_DIR; };
 		D55380062BB92CC4207311E7 /* LoginViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewController.swift; sourceTree = "<group>"; };
 		DAF37120CD93338E2FDE8F39 /* Kingfisher.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Kingfisher.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		F3FCFC965B62F1A107B986B9 /* ChatUIAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatUIAction.swift; sourceTree = "<group>"; };
 		F91A8DF4E9E5B011D492B37D /* VideoMessageContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMessageContentView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -182,6 +188,16 @@
 			path = Bubble;
 			sourceTree = "<group>";
 		};
+		37E578C4A82F77CC096C2DDE /* Events */ = {
+			isa = PBXGroup;
+			children = (
+				5D4EB2E348128EF9466DFE4C /* ChatEventRouter.swift */,
+				82E4529F8B05647F073DA3F1 /* ChatMediaLoader.swift */,
+				F3FCFC965B62F1A107B986B9 /* ChatUIAction.swift */,
+			);
+			path = Events;
+			sourceTree = "<group>";
+		};
 		4750F860E7126A4865576EA5 /* Derived */ = {
 			isa = PBXGroup;
 			children = (
@@ -212,6 +228,7 @@
 			children = (
 				109454F3C51712F64CDFF74E /* Bubble */,
 				C8D9C63BE966B26C220DA69F /* Composer */,
+				37E578C4A82F77CC096C2DDE /* Events */,
 				BA3DCCB5D0A480E9A77FE2E5 /* ChatViewController.swift */,
 				763E3913D61CD2E64A0B3065 /* ChatViewModel.swift */,
 				520CEBF3BAA750B5A9DAA23C /* FileDownloadViewController.swift */,
@@ -431,6 +448,9 @@
 				930077E585221BCE212B2265 /* VoiceAccessoryPanel.swift in Sources */,
 				081005E7E1440B8FDF92CCFD /* ChatComposerAccessory.swift in Sources */,
 				1E815B5B4E9CD59FC2F828D6 /* ChatComposerBar.swift in Sources */,
+				AB95A200844EFDE973BC7335 /* ChatEventRouter.swift in Sources */,
+				9FA9EE0C81D7760E9EF3A4B4 /* ChatMediaLoader.swift in Sources */,
+				80B2DE125B33652B94F135EE /* ChatUIAction.swift in Sources */,
 				8EF1F96972A4A874D88A4F06 /* FileDownloadViewController.swift in Sources */,
 				F4A1E548002EA720F56AB739 /* ImageCompressor.swift in Sources */,
 				C971CC7DB86A1CB907A1E7E5 /* MediaPreview.swift in Sources */,

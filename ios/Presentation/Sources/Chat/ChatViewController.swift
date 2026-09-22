@@ -1,25 +1,17 @@
 import UIKit
-import Photos
-import PhotosUI
-import UniformTypeIdentifiers
-import AVFoundation
 import Domain
 
+/// Chat chrome: layout, table, keyboard lift / insets. User intents go through `ChatEventRouter`.
 @MainActor
-public final class ChatViewController: UIViewController, UITableViewDataSource, UITableViewDelegate,
-    PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate,
-    UIDocumentPickerDelegate, ChatComposerBarDelegate
-{
+public final class ChatViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
     private let env: AppEnvironment
     private let viewModel: ChatViewModel
+    private let router: ChatEventRouter
 
     private let tableView = UITableView(frame: .zero, style: .plain)
     private let composer = ChatComposerBar()
     /// Docked to the physical bottom; keyboard lifts via constant (avoids safe-area gap).
     private var composerBottomConstraint: NSLayoutConstraint!
-
-    private var pickerMode: PickerMode = .album
-    private enum PickerMode { case album, video }
 
     /// First open / first data fill should land on the latest message after layout.
     private var pendingScrollToBottom = false
@@ -28,8 +20,10 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
     public init(env: AppEnvironment, conversation: Conversation) {
         self.env = env
         viewModel = ChatViewModel(env: env, conversation: conversation)
+        router = ChatEventRouter(env: env, viewModel: viewModel)
         super.init(nibName: nil, bundle: nil)
         hidesBottomBarWhenPushed = true
+        router.bindHosts(composerHost: self, presentationHost: self)
     }
 
     @available(*, unavailable)
@@ -96,7 +90,6 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
                 let delta = self.tableView.contentSize.height - oldHeight
                 self.tableView.contentOffset.y = max(0, oldOffset + delta)
             } else if isInitialFill || !self.hasScrolledToBottomOnce {
-                // Entering chat (local cache and/or first history batch): pin to latest.
                 self.scrollToBottom(animated: false, force: true)
             } else if newCount > previousCount {
                 self.scrollToBottom(animated: true, force: false)
@@ -129,19 +122,15 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 120
         tableView.translatesAutoresizingMaskIntoConstraints = false
-        // Stable table frame: composer overlays; inset keeps last messages visible.
-        // Animating tableView.bottom with the accessory stretches self-sizing image cells.
         tableView.contentInsetAdjustmentBehavior = .never
         tableView.contentInset = UIEdgeInsets(top: 6, left: 0, bottom: 12, right: 0)
 
-        composer.delegate = self
+        composer.delegate = router
         composer.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(tableView)
         view.addSubview(composer)
 
-        // Always pin to the physical bottom so home-indicator strip is the same
-        // chrome material as the toolbar (no separate fill / color mismatch).
         composerBottomConstraint = composer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
 
         NSLayoutConstraint.activate([
@@ -174,7 +163,6 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         else { return }
         let converted = view.convert(frame, from: nil)
         let overlap = max(0, view.bounds.maxY - converted.minY)
-        // Don't lift when accessory panel is open (composer already fills to bottom).
         let lift = composer.accessory == .none ? overlap : 0
         composerBottomConstraint.constant = -lift
         let curveRaw = (note.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int) ?? 7
@@ -199,21 +187,13 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         inset.bottom = bottom
         tableView.contentInset = inset
         tableView.verticalScrollIndicatorInsets.bottom = bottom
-        // Inset change can leave the latest message covered — re-pin if we intended to be at bottom.
         if hasScrolledToBottomOnce, isNearBottom || pendingScrollToBottom {
             pendingScrollToBottom = true
         }
     }
 
     @objc private func openGroupInfo() {
-        let conv = viewModel.conversation
-        guard conv.chatType == .group else { return }
-        let info = GroupInfoViewController(
-            env: env,
-            groupId: conv.peerOrGroupId,
-            groupName: conv.title
-        )
-        navigationController?.pushViewController(info, animated: true)
+        router.handle(.openGroupInfo)
     }
 
     @objc private func dismissInputs() {
@@ -231,33 +211,7 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         let vm = MessageBubbleMapper.map(m) { [weak self] fileId, thumb in
             self?.env.files.fileURL(fileId: fileId, thumb: thumb)
         }
-        cell.onRetry = { [weak self] in
-            let messageId = m.id
-            Task { await self?.viewModel.retryMessage(id: messageId) }
-        }
-        cell.configure(
-            vm: vm,
-            actions: MessageContentActions(
-                onRetry: nil,
-                onPreview: { [weak self] item in
-                    guard let self else { return }
-                    MediaPreview.present(
-                        item,
-                        from: self,
-                        loadSticker: { [weak self] ref in
-                            await self?.env.stickers.imageData(for: ref)
-                        },
-                        files: env.files
-                    )
-                },
-                onPlayVoice: { url, duration in
-                    VoicePlayer.shared.toggle(url: url, estimatedDuration: duration)
-                },
-                loadSticker: { [weak self] ref in
-                    await self?.env.stickers.imageData(for: ref)
-                }
-            )
-        )
+        cell.configure(vm: vm, actions: router.bubbleActions(for: m.id))
         return cell
     }
 
@@ -266,288 +220,6 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
         if scrollView.contentOffset.y < 48 {
             Task { await viewModel.loadOlderIfNeeded() }
         }
-    }
-
-    // MARK: - ChatComposerBarDelegate
-
-    func composerBar(_ bar: ChatComposerBar, didSendText text: String) {
-        viewModel.draft = text
-        Task { await viewModel.sendText() }
-    }
-
-    func composerBar(_ bar: ChatComposerBar, didSelectSticker sticker: StickerRef) {
-        Task { await viewModel.sendSticker(sticker) }
-    }
-
-    func composerBarDidTapMention(_ bar: ChatComposerBar) {
-        let picker = MentionPickerViewController(env: env, conversation: viewModel.conversation)
-        picker.onPick = { [weak self] uid in
-            self?.composer.insertMention(uid)
-        }
-        let nav = UINavigationController(rootViewController: picker)
-        present(nav, animated: true)
-    }
-
-    func composerBar(_ bar: ChatComposerBar, didFinishVoice data: Data, duration: Int) {
-        Task {
-            await viewModel.sendAttachment(data: data, fileName: "voice.m4a", mime: "audio/mp4", duration: duration)
-        }
-    }
-
-    func composerBarDidRequestCamera(_ bar: ChatComposerBar) {
-        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
-            presentError(title: "相机", message: "当前设备无法拍照")
-            return
-        }
-        let picker = UIImagePickerController()
-        picker.sourceType = .camera
-        picker.delegate = self
-        picker.allowsEditing = false
-        present(picker, animated: true)
-    }
-
-    func composerBarDidRequestAlbum(_ bar: ChatComposerBar) {
-        presentMediaPicker(mode: .album)
-    }
-
-    func composerBarDidRequestVideo(_ bar: ChatComposerBar) {
-        presentMediaPicker(mode: .video)
-    }
-
-    func composerBarDidRequestFile(_ bar: ChatComposerBar) {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
-        picker.delegate = self
-        picker.allowsMultipleSelection = false
-        present(picker, animated: true)
-    }
-
-    func composerBar(
-        _ bar: ChatComposerBar,
-        didConfirmAssets assets: [PHAsset],
-        extraImages: [UIImage],
-        sendOriginal: Bool
-    ) {
-        composer.dismissAccessory()
-        // Fire each image as soon as it's ready — don't wait for all loads + full compress.
-        Task {
-            var index = 0
-            func nextName() -> String {
-                index += 1
-                return "photo-\(index).jpg"
-            }
-
-            for image in extraImages {
-                await viewModel.sendImage(image, fileName: nextName(), original: sendOriginal)
-            }
-
-            var hadAsset = false
-            for asset in assets {
-                if let image = await loadUIImage(from: asset) {
-                    hadAsset = true
-                    await viewModel.sendImage(image, fileName: nextName(), original: sendOriginal)
-                }
-            }
-
-            if extraImages.isEmpty && !hadAsset {
-                presentError(title: "发送图片失败", message: "未能读取所选图片")
-            }
-        }
-    }
-
-    func composerBar(_ bar: ChatComposerBar, voiceFailed message: String) {
-        presentError(title: "语音", message: message)
-    }
-
-    func composerBar(_ bar: ChatComposerBar, accessoryChanged mode: ChatComposerAccessory) {
-        // Composer stays pinned to the physical bottom; accessory grows upward inside it.
-        if mode != .none {
-            composerBottomConstraint.constant = 0
-        }
-        UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseInOut]) {
-            self.composer.layoutIfNeeded()
-            self.view.layoutIfNeeded()
-            self.updateTableInsetsForComposer()
-        } completion: { _ in
-            self.updateTableInsetsForComposer()
-            if mode != .none {
-                self.scrollToBottom(animated: true, force: false)
-            }
-        }
-    }
-
-    // MARK: - Pickers
-
-    private func presentMediaPicker(mode: PickerMode) {
-        pickerMode = mode
-        var config = PHPickerConfiguration(photoLibrary: .shared())
-        config.filter = mode == .album ? .images : .videos
-        config.selectionLimit = mode == .album ? 9 : 1
-        config.preferredAssetRepresentationMode = .current
-        let picker = PHPickerViewController(configuration: config)
-        picker.delegate = self
-        present(picker, animated: true)
-    }
-
-    public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        picker.dismiss(animated: true)
-        guard !results.isEmpty else { return }
-        switch pickerMode {
-        case .album:
-            Task {
-                for result in results {
-                    if let image = try? await loadUIImage(from: result.itemProvider) {
-                        composer.appendPickedImage(image)
-                    }
-                }
-            }
-        case .video:
-            guard let provider = results.first?.itemProvider else { return }
-            composer.dismissAccessory()
-            Task {
-                do {
-                    let (data, name, mime, duration) = try await loadVideo(from: provider)
-                    await viewModel.sendAttachment(data: data, fileName: name, mime: mime, duration: duration)
-                } catch {
-                    presentError(title: "选媒体失败", message: error.localizedDescription)
-                }
-            }
-        }
-    }
-
-    public func imagePickerController(
-        _ picker: UIImagePickerController,
-        didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
-    ) {
-        picker.dismiss(animated: true)
-        if let image = info[.originalImage] as? UIImage {
-            composer.appendPickedImage(image)
-        }
-    }
-
-    public func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        picker.dismiss(animated: true)
-    }
-
-    public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        guard let url = urls.first else { return }
-        composer.dismissAccessory()
-        Task {
-            do {
-                let accessed = url.startAccessingSecurityScopedResource()
-                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-                let data = try Data(contentsOf: url)
-                let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
-                await viewModel.sendAttachment(data: data, fileName: url.lastPathComponent, mime: mime)
-            } catch {
-                presentError(title: "读取文件失败", message: error.localizedDescription)
-            }
-        }
-    }
-
-    // MARK: - Loaders
-
-    private func loadUIImage(from asset: PHAsset) async -> UIImage? {
-        await withCheckedContinuation { cont in
-            let opts = PHImageRequestOptions()
-            opts.deliveryMode = .highQualityFormat
-            opts.resizeMode = .none
-            opts.isNetworkAccessAllowed = true
-            var resumed = false
-            PHImageManager.default().requestImage(
-                for: asset,
-                targetSize: PHImageManagerMaximumSize,
-                contentMode: .aspectFit,
-                options: opts
-            ) { image, info in
-                let cancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
-                let failed = info?[PHImageErrorKey] != nil
-                let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
-                if cancelled || failed {
-                    guard !resumed else { return }
-                    resumed = true
-                    cont.resume(returning: nil)
-                    return
-                }
-                if degraded { return }
-                guard !resumed else { return }
-                resumed = true
-                cont.resume(returning: image)
-            }
-        }
-    }
-
-    private func loadUIImage(from provider: NSItemProvider) async throws -> UIImage {
-        if provider.canLoadObject(ofClass: UIImage.self) {
-            return try await withCheckedThrowingContinuation { cont in
-                provider.loadObject(ofClass: UIImage.self) { object, error in
-                    if let error { cont.resume(throwing: error) }
-                    else if let image = object as? UIImage { cont.resume(returning: image) }
-                    else { cont.resume(throwing: DomainError.invalidState("无法读取图片对象")) }
-                }
-            }
-        }
-        let data = try await loadImageData(from: provider)
-        guard let image = UIImage(data: data) else {
-            throw DomainError.invalidState("图片解码失败")
-        }
-        return image
-    }
-
-    private func loadImageData(from provider: NSItemProvider) async throws -> Data {
-        if provider.canLoadObject(ofClass: UIImage.self) {
-            let image: UIImage = try await withCheckedThrowingContinuation { cont in
-                provider.loadObject(ofClass: UIImage.self) { object, error in
-                    if let error { cont.resume(throwing: error) }
-                    else if let image = object as? UIImage { cont.resume(returning: image) }
-                    else { cont.resume(throwing: DomainError.invalidState("无法读取图片对象")) }
-                }
-            }
-            if let data = image.jpegData(compressionQuality: 0.8) { return data }
-        }
-        if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-            return try await withCheckedThrowingContinuation { cont in
-                provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
-                    if let error { cont.resume(throwing: error) }
-                    else if let data, !data.isEmpty { cont.resume(returning: data) }
-                    else { cont.resume(throwing: DomainError.invalidState("图片数据为空")) }
-                }
-            }
-        }
-        throw DomainError.invalidState("当前照片无法加载，请换一张重试")
-    }
-
-    private func loadVideo(from provider: NSItemProvider) async throws -> (Data, String, String, Int) {
-        let typeId = provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier)
-            ? UTType.movie.identifier : "public.movie"
-        let url: URL = try await withCheckedThrowingContinuation { cont in
-            provider.loadFileRepresentation(forTypeIdentifier: typeId) { url, error in
-                if let error { cont.resume(throwing: error); return }
-                guard let url else {
-                    cont.resume(throwing: DomainError.invalidState("视频数据为空"))
-                    return
-                }
-                let dest = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("goim-video-\(UUID().uuidString)-\(url.lastPathComponent)")
-                do {
-                    try? FileManager.default.removeItem(at: dest)
-                    try FileManager.default.copyItem(at: url, to: dest)
-                    cont.resume(returning: dest)
-                } catch {
-                    cont.resume(throwing: error)
-                }
-            }
-        }
-        defer { try? FileManager.default.removeItem(at: url) }
-        let data = try Data(contentsOf: url)
-        let duration = Int(ceil(CMTimeGetSeconds(AVURLAsset(url: url).duration)))
-        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "video/mp4"
-        return (data, url.lastPathComponent, mime, max(duration, 0))
-    }
-
-    private func presentError(title: String, message: String) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "好", style: .default))
-        present(alert, animated: true)
     }
 
     private func scrollToBottom(animated: Bool, force: Bool) {
@@ -574,5 +246,56 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
     private func flushPendingScrollToBottom() {
         guard pendingScrollToBottom else { return }
         scrollToBottom(animated: false, force: true)
+    }
+}
+
+// MARK: - Hosts
+
+extension ChatViewController: ChatComposerHosting {
+    var accessory: ChatComposerAccessory { composer.accessory }
+
+    func dismissAccessory() {
+        composer.dismissAccessory()
+    }
+
+    func appendPickedImage(_ image: UIImage) {
+        composer.appendPickedImage(image)
+    }
+
+    func insertMention(_ uid: String) {
+        composer.insertMention(uid)
+    }
+}
+
+extension ChatViewController: ChatPresentationHosting {
+    func presentHosted(_ viewController: UIViewController, animated: Bool) {
+        present(viewController, animated: animated)
+    }
+
+    func presentError(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "好", style: .default))
+        present(alert, animated: true)
+    }
+
+    func composerAccessoryChanged(_ mode: ChatComposerAccessory) {
+        if mode != .none {
+            composerBottomConstraint.constant = 0
+        }
+        UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseInOut]) {
+            self.composer.layoutIfNeeded()
+            self.view.layoutIfNeeded()
+            self.updateTableInsetsForComposer()
+        } completion: { _ in
+            self.updateTableInsetsForComposer()
+            if mode != .none {
+                self.scrollToBottom(animated: true, force: false)
+            }
+        }
+    }
+
+    func pushGroupInfo(groupId: String, groupName: String) {
+        let info = GroupInfoViewController(env: env, groupId: groupId, groupName: groupName)
+        navigationController?.pushViewController(info, animated: true)
     }
 }
