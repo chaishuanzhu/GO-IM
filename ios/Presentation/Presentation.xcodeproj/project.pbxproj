@@ -39,6 +39,7 @@
 		C971CC7DB86A1CB907A1E7E5 /* MediaPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BD3454218BD49CC3D2CF30 /* MediaPreview.swift */; };
 		CDF9107D5A660FC35D5D2D4D /* SearchViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEF91866913359D01E3A5F57 /* SearchViewController.swift */; };
 		DACF659AC6AB0454ACB3FBE9 /* ContactsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BC8F6336477FAD93635F6A2 /* ContactsViewModel.swift */; };
+		E3A13586C59B6A7395FA4593 /* DeveloperSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9010F95E5A57DF12625E189C /* DeveloperSettings.swift */; };
 		EC9F0D69C275EDE13DC30E3A /* GroupsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F8D5C3383EE89C50CE3D753 /* GroupsViewController.swift */; };
 		F4A1E548002EA720F56AB739 /* ImageCompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E486F103CB6665A4BDB0BF5 /* ImageCompressor.swift */; };
 		F97087B6D910F774406793B2 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763E3913D61CD2E64A0B3065 /* ChatViewModel.swift */; };
@@ -82,6 +83,7 @@
 		867A4E507E0B31F9D3294FAC /* VoiceWaveformBarsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWaveformBarsView.swift; sourceTree = "<group>"; };
 		8BC8F6336477FAD93635F6A2 /* ContactsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsViewModel.swift; sourceTree = "<group>"; };
 		8DCE11FBC8B59F5604125C75 /* StickerAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerAccessoryPanel.swift; sourceTree = "<group>"; };
+		9010F95E5A57DF12625E189C /* DeveloperSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettings.swift; sourceTree = "<group>"; };
 		99633DFBD4AF96E039CFB323 /* ChatImageAccessoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImageAccessoryPanel.swift; sourceTree = "<group>"; };
 		A3CA00D2DCE363E383E7AF6B /* GroupInfoViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupInfoViewController.swift; sourceTree = "<group>"; };
 		A4FC7ECE2FF02F5A1BEEFE79 /* ServerSettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettingsViewController.swift; sourceTree = "<group>"; };
@@ -180,6 +182,7 @@
 		9AB6CC6007B62F116FDDA23D /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				9010F95E5A57DF12625E189C /* DeveloperSettings.swift */,
 				7333E10251C845BB0139EBC6 /* SettingsViewController.swift */,
 			);
 			path = Settings;
@@ -356,6 +359,7 @@
 				292A48546F29BBD45AA90320 /* ServerSettingsViewController.swift in Sources */,
 				CDF9107D5A660FC35D5D2D4D /* SearchViewController.swift in Sources */,
 				3DC453B54A61FE2E77577F8E /* SearchViewModel.swift in Sources */,
+				E3A13586C59B6A7395FA4593 /* DeveloperSettings.swift in Sources */,
 				95DE84C90BC427AB16B28D5B /* SettingsViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

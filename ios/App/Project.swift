@@ -40,6 +40,8 @@ let project = Project(
                 .project(target: "Data", path: "../Data"),
                 .project(target: "Domain", path: "../Domain"),
                 .external(name: "Moya"),
+                .external(name: "Kingfisher"),
+                .external(name: "FLEX"),
             ],
             settings: .settings(
                 base: [

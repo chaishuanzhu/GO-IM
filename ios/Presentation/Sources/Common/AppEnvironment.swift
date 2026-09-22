@@ -29,6 +29,10 @@ public final class AppEnvironment {
 
     public private(set) var apiBaseURL: URL
     public var onAPIBaseURLChange: ((URL) -> Void)?
+    /// Fired when the Settings developer toggle for FLEX changes.
+    public var onFLEXEnabledChange: ((Bool) -> Void)?
+    /// Re-show FLEX toolbar if the user dismissed it while still enabled.
+    public var onShowFLEXExplorer: (() -> Void)?
 
     public init(
         auth: AuthRepository,

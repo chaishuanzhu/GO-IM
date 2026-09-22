@@ -84,6 +84,20 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "4CDE5457F4D90A2C42AB7707"
+               BuildableName = "FLEX.framework"
+               BlueprintName = "FLEX"
+               ReferencedContainer = "container:Tuist/.build/tuist-derived/Projects/FLEX/FLEX.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "E7A085A178F6DE2EDB8C1683"
                BuildableName = "GOIM.app"
                BlueprintName = "GOIM"

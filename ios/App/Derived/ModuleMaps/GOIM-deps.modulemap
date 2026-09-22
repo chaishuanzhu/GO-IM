@@ -1,1 +1,2 @@
+extern module FLEX "/Users/chaisz/WorkSpace/GitHub/GO-IM/ios/Tuist/.build/tuist-derived/ModuleMaps/FLEX/FLEX.modulemap"
 extern module GRDBSQLite "/Users/chaisz/WorkSpace/GitHub/GO-IM/ios/Tuist/.build/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"

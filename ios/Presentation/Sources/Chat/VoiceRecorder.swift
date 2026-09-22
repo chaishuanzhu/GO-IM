@@ -85,8 +85,8 @@ final class VoiceRecorder: NSObject {
 
 /// In-app voice playback. Downloads `/file` to a temp `.m4a` then plays with AVPlayer.
 @MainActor
-final class VoicePlayer: NSObject {
-    static let shared = VoicePlayer()
+public final class VoicePlayer: NSObject {
+    public static let shared = VoicePlayer()
 
     private(set) var playingURL: URL?
     /// Remaining whole seconds for UI countdown (0 when idle).
@@ -104,7 +104,7 @@ final class VoicePlayer: NSObject {
     private var estimatedDuration = 0
     private var generation = 0
 
-    func toggle(url: URL, estimatedDuration: Int = 0) {
+    public func toggle(url: URL, estimatedDuration: Int = 0) {
         if playingKey == url.absoluteString, isActivelyPlaying || loadTask != nil {
             stop()
             return
@@ -140,7 +140,7 @@ final class VoicePlayer: NSObject {
         }
     }
 
-    func stop() {
+    public func stop() {
         stopPlayback(notify: true)
     }
 

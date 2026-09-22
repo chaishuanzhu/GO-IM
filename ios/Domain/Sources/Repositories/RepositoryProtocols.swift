@@ -168,6 +168,10 @@ public protocol FileRepository: Sendable {
     func replaceStaged(fileId: String, data: Data) throws
     func stagedData(fileId: String) -> Data?
     func removeStaged(fileId: String)
+    /// After successful upload: move `tmp` staging into `files/` or `media/` under the server file id.
+    func promoteStaged(localId: String, remoteFileId: String, mime: String) throws
+    /// Ensure a remote file message is on disk under `files/` (download via tmp then promote).
+    func ensureLocalFile(fileId: String, suggestedName: String?) async throws -> URL
 }
 
 public protocol SearchRepository: Sendable {

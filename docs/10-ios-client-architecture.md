@@ -424,3 +424,5 @@ UITabBar(会话 / 通讯录 / 设置) + 搜索入口 + 群/文件能力
 - 本地库：**GRDB**；协议：手写 **ProtobufCodec**（与 `message.proto` wire 兼容；SwiftProtobuf 已引入，可后续生成替换）。
 - **P0 范围**：单聊 + 群聊 + **好友** + **文件** + **搜索** + 双通道长链 + 本地库；撤回/编辑/转发/Typing/APNs 后置。
 - 群/单聊共用聊天页与 Pipeline；好友走 Cmd 20–21 + HTTP；文件 = upload + CmdFile + Kingfisher；搜索 = CmdSearch + GET /search。
+
+多用户本地隔离（`Users/{uid}/`、tmp→files/media、会话 remount）见 [`docs/11-ios-multi-account-isolation.md`](11-ios-multi-account-isolation.md)。

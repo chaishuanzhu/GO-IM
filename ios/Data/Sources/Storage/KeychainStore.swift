@@ -6,48 +6,133 @@ public final class KeychainStore: @unchecked Sendable {
     public static let shared = KeychainStore()
 
     private let service = "com.goim.keychain"
-    private let uidKey = "uid"
-    private let usernameKey = "username"
-    private let tokenKey = "token"
-    private let transportKey = "preferred_transport"
+    private let legacyUIDKey = "uid"
+    private let legacyUsernameKey = "username"
+    private let legacyTokenKey = "token"
+    private let legacyTransportKey = "preferred_transport"
 
-    public init() {}
+    public init() {
+        migrateLegacySessionIfNeeded()
+        migrateLegacyTransportIfNeeded()
+    }
+
+    // MARK: - Session (per uid)
 
     public func saveSession(uid: String, username: String, token: String) {
-        set(uidKey, uid)
-        set(usernameKey, username)
-        set(tokenKey, token)
+        let payload = SessionPayload(username: username, token: token)
+        if let data = try? JSONEncoder().encode(payload),
+           let json = String(data: data, encoding: .utf8) {
+            set(sessionKey(uid), json)
+        }
+        DevicePreferences.update { $0.activeUID = uid }
     }
 
-    public func clearSession() {
-        delete(uidKey)
-        delete(usernameKey)
-        delete(tokenKey)
-    }
-
-    public func loadSession() -> User? {
-        guard let uid = get(uidKey), !uid.isEmpty,
-              let token = get(tokenKey), !token.isEmpty else {
+    public func loadSession(uid: String) -> User? {
+        guard let raw = get(sessionKey(uid)),
+              let data = raw.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(SessionPayload.self, from: data),
+              !payload.token.isEmpty else {
             return nil
         }
-        let username = get(usernameKey) ?? uid
-        return User(uid: uid, username: username, token: token)
+        return User(uid: uid, username: payload.username.isEmpty ? uid : payload.username, token: payload.token)
     }
+
+    public func loadActiveSession() -> User? {
+        migrateLegacySessionIfNeeded()
+        guard let uid = DevicePreferences.load().activeUID, !uid.isEmpty else { return nil }
+        return loadSession(uid: uid)
+    }
+
+    /// Backward-compatible alias used by AuthRepository.
+    public func loadSession() -> User? {
+        loadActiveSession()
+    }
+
+    public func clearActiveSession() {
+        if let uid = DevicePreferences.load().activeUID {
+            delete(sessionKey(uid))
+        }
+        DevicePreferences.update { $0.activeUID = nil }
+        delete(legacyUIDKey)
+        delete(legacyUsernameKey)
+        delete(legacyTokenKey)
+    }
+
+    /// Clears active session tokens; keeps `Users/{uid}` on disk.
+    public func clearSession() {
+        clearActiveSession()
+    }
+
+    public func clearSession(uid: String) {
+        delete(sessionKey(uid))
+        var prefs = DevicePreferences.load()
+        if prefs.activeUID == uid {
+            prefs.activeUID = nil
+            prefs.save()
+        }
+    }
+
+    // MARK: - Transport (device-level via Shared)
 
     public var preferredTransport: TransportKind {
         get {
-            guard let raw = get(transportKey),
-                  let kind = TransportKind(rawValue: raw) else {
-                return .webSocket
+            migrateLegacyTransportIfNeeded()
+            let raw = DevicePreferences.load().preferredTransport
+            if let raw, let kind = TransportKind(rawValue: raw) {
+                return kind
             }
-            return kind
+            return .webSocket
         }
         set {
-            set(transportKey, newValue.rawValue)
+            DevicePreferences.update { $0.preferredTransport = newValue.rawValue }
         }
     }
 
+    // MARK: - Migration
+
+    private func migrateLegacySessionIfNeeded() {
+        guard let uid = get(legacyUIDKey), !uid.isEmpty,
+              let token = get(legacyTokenKey), !token.isEmpty else {
+            return
+        }
+        if loadSession(uid: uid) == nil {
+            let username = get(legacyUsernameKey) ?? uid
+            let payload = SessionPayload(username: username, token: token)
+            if let data = try? JSONEncoder().encode(payload),
+               let json = String(data: data, encoding: .utf8) {
+                set(sessionKey(uid), json)
+            }
+        }
+        var prefs = DevicePreferences.load()
+        if prefs.activeUID == nil {
+            prefs.activeUID = uid
+            prefs.save()
+        }
+        delete(legacyUIDKey)
+        delete(legacyUsernameKey)
+        delete(legacyTokenKey)
+    }
+
+    private func migrateLegacyTransportIfNeeded() {
+        guard let raw = get(legacyTransportKey), !raw.isEmpty else { return }
+        var prefs = DevicePreferences.load()
+        if prefs.preferredTransport == nil {
+            prefs.preferredTransport = raw
+            prefs.save()
+        }
+        delete(legacyTransportKey)
+    }
+
+    private func sessionKey(_ uid: String) -> String {
+        "session.\(UserHome.sanitizeUID(uid))"
+    }
+
     // MARK: - Keychain primitives
+
+    private struct SessionPayload: Codable {
+        var username: String
+        var token: String
+    }
 
     private func set(_ key: String, _ value: String) {
         let data = Data(value.utf8)

@@ -31,7 +31,9 @@
 		C90700C26F0875992A5BA96E /* LocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FC4C475EDCDECD69B01BEFA /* LocalStore.swift */; };
 		CC70E752D35EA11FA6DE16F2 /* ConnectionRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD590228B067BC87A4C9919C /* ConnectionRepositoryImpl.swift */; };
 		EBE6C36E01ABE04C44EB87AC /* AuthRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B08B8D885C7C6BDA4B019E0 /* AuthRepositoryImpl.swift */; };
+		EDC3961D1B6005BA7B3695B2 /* LegacyUserDataMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BD4DD048C626F34A147E13E /* LegacyUserDataMigrator.swift */; };
 		EFB08C110A8EB156A8ADA1D6 /* OutboundAckTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80CC866E25F01A300396865B /* OutboundAckTracker.swift */; };
+		FAB2407A583971905AF0A275 /* UserHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F9CE88CAD80146986DBAE08 /* UserHome.swift */; };
 		FB7F20DD366454280CF8944D /* LocalMediaStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7BF14A481FD8FB0ACB69801 /* LocalMediaStore.swift */; };
 		FBBD2738F6E3357C3C2D47C5 /* SearchRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48D2D31071F86E13EC090F4E /* SearchRepositoryImpl.swift */; };
 /* End PBXBuildFile section */
@@ -89,6 +91,8 @@
 		80CC866E25F01A300396865B /* OutboundAckTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboundAckTracker.swift; sourceTree = "<group>"; };
 		8F8F2D8535167882EE6052BF /* DataTests-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "DataTests-Info.plist"; sourceTree = "<group>"; };
 		999C4C2747B53CB9BC055C31 /* ConversationRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationRepositoryImpl.swift; sourceTree = "<group>"; };
+		9BD4DD048C626F34A147E13E /* LegacyUserDataMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyUserDataMigrator.swift; sourceTree = "<group>"; };
+		9F9CE88CAD80146986DBAE08 /* UserHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserHome.swift; sourceTree = "<group>"; };
 		B44348FF4DAE158391FC0E59 /* FileRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileRepositoryImpl.swift; sourceTree = "<group>"; };
 		B4F7038A8B7BE1ABB442FF98 /* IMPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMPipeline.swift; sourceTree = "<group>"; };
 		BB6519955ECB01AC1E70E60E /* GroupRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupRepositoryImpl.swift; sourceTree = "<group>"; };
@@ -227,7 +231,9 @@
 			isa = PBXGroup;
 			children = (
 				4631D310A8CDE0930697872D /* KeychainStore.swift */,
+				9BD4DD048C626F34A147E13E /* LegacyUserDataMigrator.swift */,
 				C7BF14A481FD8FB0ACB69801 /* LocalMediaStore.swift */,
+				9F9CE88CAD80146986DBAE08 /* UserHome.swift */,
 			);
 			path = Storage;
 			sourceTree = "<group>";
@@ -386,7 +392,9 @@
 				FBBD2738F6E3357C3C2D47C5 /* SearchRepositoryImpl.swift in Sources */,
 				4C79417A06A432A70F69EDD8 /* StickerRepositoryImpl.swift in Sources */,
 				80D128765A3E8C4910DA98F8 /* KeychainStore.swift in Sources */,
+				EDC3961D1B6005BA7B3695B2 /* LegacyUserDataMigrator.swift in Sources */,
 				FB7F20DD366454280CF8944D /* LocalMediaStore.swift in Sources */,
+				FAB2407A583971905AF0A275 /* UserHome.swift in Sources */,
 				81D3CA8E3F8EB8BBCCD4A2DA /* NWTransports.swift in Sources */,
 				294070257EE90EB242DD2C4D /* ReconnectPolicy.swift in Sources */,
 			);

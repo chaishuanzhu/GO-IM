@@ -8,18 +8,37 @@ public actor StickerRepositoryImpl: StickerRepository {
 
     private let rootURL: URL
     private let defaults: UserDefaults
-    private let recentKey = "goim.stickers.recent"
-    private let versionsKey = "goim.stickers.packVersions"
+    private var uid: String?
     private let catalogCacheKey = "goim.stickers.catalogCache"
+    private let versionsKey = "goim.stickers.packVersions"
     private var memoryCache: [String: Data] = [:]
     /// Preset / last-known catalog (bundle + OSS).
     private var catalogPacks: [StickerPack] = []
 
+    private var recentKey: String {
+        if let uid, !uid.isEmpty {
+            return "goim.\(UserHome.sanitizeUID(uid)).stickers.recent"
+        }
+        return "goim.stickers.recent"
+    }
+
     public init(fileManager: FileManager = .default, defaults: UserDefaults = .standard) {
-        let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        rootURL = support.appendingPathComponent("GOIM/Stickers", isDirectory: true)
+        rootURL = UserHome.stickerCatalogDirectory
         self.defaults = defaults
         try? fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+    }
+
+    public func setActiveUID(_ uid: String?) {
+        self.uid = uid
+        // One-shot: migrate global recent list into the first account that opens stickers.
+        if let uid, !uid.isEmpty {
+            let key = "goim.\(UserHome.sanitizeUID(uid)).stickers.recent"
+            if defaults.stringArray(forKey: key) == nil,
+               let legacy = defaults.stringArray(forKey: "goim.stickers.recent"), !legacy.isEmpty {
+                defaults.set(legacy, forKey: key)
+                defaults.removeObject(forKey: "goim.stickers.recent")
+            }
+        }
     }
 
     /// Load bundled catalog.json so the panel has an index before OSS sync.

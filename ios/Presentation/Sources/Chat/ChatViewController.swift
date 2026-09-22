@@ -243,6 +243,10 @@ public final class ChatViewController: UIViewController, UITableViewDataSource, 
                 from: self,
                 loadSticker: { [weak self] ref in
                     await self?.env.stickers.imageData(for: ref)
+                },
+                ensureFile: { [weak self] fileId, name in
+                    guard let self else { throw DomainError.invalidState("chat closed") }
+                    return try await self.env.files.ensureLocalFile(fileId: fileId, suggestedName: name)
                 }
             )
         })

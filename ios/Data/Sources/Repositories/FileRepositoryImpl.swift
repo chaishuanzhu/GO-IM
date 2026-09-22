@@ -6,17 +6,20 @@ public final class FileRepositoryImpl: FileRepository, @unchecked Sendable {
     private let serverConfig: ServerConfig
     private let auth: AuthRepository
     private let session: URLSession
+    private let mediaStore: LocalMediaStore
 
     public init(
         provider: SharedMoyaProvider,
         serverConfig: ServerConfig,
         auth: AuthRepository,
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        mediaStore: LocalMediaStore = .shared
     ) {
         _ = provider
         self.serverConfig = serverConfig
         self.auth = auth
         self.session = session
+        self.mediaStore = mediaStore
     }
 
     public func upload(data: Data, fileName: String, mime: String) async throws -> FileMeta {
@@ -82,25 +85,57 @@ public final class FileRepositoryImpl: FileRepository, @unchecked Sendable {
     }
 
     public func stageLocalFile(data: Data, fileName: String) throws -> String {
-        try LocalMediaStore.shared.stage(data: data, suggestedName: fileName)
+        try mediaStore.stage(data: data, suggestedName: fileName)
     }
 
     public func replaceStaged(fileId: String, data: Data) throws {
-        try LocalMediaStore.shared.replace(fileId, data: data)
+        try mediaStore.replace(fileId, data: data)
     }
 
     public func stagedData(fileId: String) -> Data? {
-        LocalMediaStore.shared.data(for: fileId)
+        mediaStore.data(for: fileId)
     }
 
     public func removeStaged(fileId: String) {
-        LocalMediaStore.shared.remove(fileId)
+        mediaStore.remove(fileId)
+    }
+
+    public func promoteStaged(localId: String, remoteFileId: String, mime: String) throws {
+        let kind = LocalMediaStore.attachmentKind(mime: mime)
+        try mediaStore.promote(localId: localId, remoteFileId: remoteFileId, to: kind)
+    }
+
+    public func ensureLocalFile(fileId: String, suggestedName: String?) async throws -> URL {
+        if let existing = mediaStore.urlIfPresent(for: fileId),
+           !LocalMediaStore.isLocalFileId(fileId) {
+            // Prefer files/ over tmp if already promoted.
+            return existing
+        }
+        guard let remote = remoteFileURL(fileId: fileId, thumb: false) else {
+            throw DomainError.notAuthenticated
+        }
+        do {
+            let (temp, response) = try await session.download(from: remote)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 200
+            guard (200..<300).contains(status) else {
+                mediaStore.removeIncompleteDownload(fileId: fileId)
+                throw DomainError.server(status, "download failed")
+            }
+            return try mediaStore.storeDownload(fileId: fileId, from: temp)
+        } catch {
+            mediaStore.removeIncompleteDownload(fileId: fileId)
+            throw error
+        }
     }
 
     public func fileURL(fileId: String, thumb: Bool) -> URL? {
-        if let local = LocalMediaStore.shared.urlIfPresent(for: fileId) {
+        if let local = mediaStore.urlIfPresent(for: fileId) {
             return local
         }
+        return remoteFileURL(fileId: fileId, thumb: thumb)
+    }
+
+    private func remoteFileURL(fileId: String, thumb: Bool) -> URL? {
         guard let user = auth.currentUser() else { return nil }
         var components = URLComponents(
             url: ServerConfigHolder.shared.baseURL.appendingPathComponent("file"),

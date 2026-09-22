@@ -567,7 +567,7 @@ final class MessageBubbleCell: UITableViewCell {
         let sizeText = meta?.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? ""
         bodyLabel.text = sizeText.isEmpty ? name : "\(name)\n\(sizeText)"
         let url = meta.flatMap { fileURL?($0.fileId, false) }
-        previewItem = .file(name: name, mime: meta?.mime, url: url)
+        previewItem = .file(name: name, mime: meta?.mime, url: url, fileId: meta?.fileId)
         openURL = nil
     }
 

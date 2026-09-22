@@ -5,11 +5,11 @@ import Kingfisher
 import Domain
 
 /// What to show when the user taps a media bubble.
-enum MediaPreviewItem {
+public enum MediaPreviewItem {
     case image(fullURL: URL?, placeholder: UIImage?)
     case sticker(ref: StickerRef, placeholder: UIImage?)
     case video(url: URL?, name: String?, duration: Int?)
-    case file(name: String, mime: String?, url: URL?)
+    case file(name: String, mime: String?, url: URL?, fileId: String?)
 }
 
 // MARK: - Image / sticker fullscreen
@@ -399,14 +399,19 @@ final class FilePreviewPresenter: NSObject, QLPreviewControllerDataSource {
 // MARK: - Chat helper
 
 @MainActor
-enum MediaPreview {
+public enum MediaPreview {
     /// Retained while a Quick Look sheet is visible (replaced on next preview).
     private static var activeFilePresenter: FilePreviewPresenter?
 
-    static func present(
+    public static func clearPresenter() {
+        activeFilePresenter = nil
+    }
+
+    public static func present(
         _ item: MediaPreviewItem,
         from host: UIViewController,
-        loadSticker: ((StickerRef) async -> Data?)? = nil
+        loadSticker: ((StickerRef) async -> Data?)? = nil,
+        ensureFile: ((String, String) async throws -> URL)? = nil
     ) {
         switch item {
         case let .image(fullURL, placeholder):
@@ -435,19 +440,44 @@ enum MediaPreview {
             let vc = VideoPreviewViewController(url: url, name: name)
             host.present(vc, animated: true)
 
-        case let .file(name, mime, url):
-            guard let url else {
-                presentUnsupported(name: name, mime: mime, localURL: nil, from: host)
-                return
+        case let .file(name, mime, url, fileId):
+            Task {
+                await presentFile(
+                    name: name,
+                    mime: mime,
+                    url: url,
+                    fileId: fileId,
+                    ensureFile: ensureFile,
+                    from: host
+                )
             }
-            Task { await presentFile(name: name, mime: mime, url: url, from: host) }
         }
     }
 
-    private static func presentFile(name: String, mime: String?, url: URL, from host: UIViewController) async {
+    private static func presentFile(
+        name: String,
+        mime: String?,
+        url: URL?,
+        fileId: String?,
+        ensureFile: ((String, String) async throws -> URL)?,
+        from host: UIViewController
+    ) async {
         let safeName = name.isEmpty ? "file" : name
         do {
-            let local = try await resolveLocalFile(url: url, safeName: safeName, on: host)
+            let local: URL
+            if let fileId, let ensureFile, !fileId.hasPrefix("local:") {
+                let overlay = BlockingOverlay(message: "正在加载…")
+                await MainActor.run { overlay.show(on: host.view) }
+                defer { Task { @MainActor in overlay.hide() } }
+                local = try await ensureFile(fileId, safeName)
+            } else if let url {
+                local = try await resolveLocalFile(url: url, safeName: safeName, on: host)
+            } else {
+                await MainActor.run {
+                    presentUnsupported(name: safeName, mime: mime, localURL: nil, from: host)
+                }
+                return
+            }
             await MainActor.run {
                 if QLPreviewController.canPreview(local as NSURL) {
                     let presenter = FilePreviewPresenter(fileURL: local, titleName: safeName)

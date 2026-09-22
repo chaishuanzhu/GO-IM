@@ -11,6 +11,7 @@ import PackageDescription
             "GRDB": .framework,
             "Kingfisher": .framework,
             "SwiftProtobuf": .framework,
+            "FLEX": .framework,
         ]
     )
 #endif
@@ -22,5 +23,6 @@ let package = Package(
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.4.0"),
         .package(url: "https://github.com/onevcat/Kingfisher.git", from: "8.1.0"),
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.28.0"),
+        .package(url: "https://github.com/FLEXTool/FLEX.git", from: "5.22.10"),
     ]
 )

@@ -243,7 +243,7 @@ public final class ChatViewModel {
             }
 
             let sent = try await env.messages.deliverOutgoingFile(pending, meta: meta)
-            env.files.removeStaged(fileId: localId)
+            try? env.files.promoteStaged(localId: localId, remoteFileId: meta.fileId, mime: meta.mime)
             try? await env.conversations.upsertConversation(from: sent, title: conversation.title, incrementUnread: false)
         } catch {
             try? await env.messages.markStatus(

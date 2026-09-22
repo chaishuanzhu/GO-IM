@@ -2,11 +2,10 @@ import Foundation
 
 public struct LoginUseCase: Sendable {
     private let auth: AuthRepository
-    private let connection: ConnectionRepository
 
     public init(auth: AuthRepository, connection: ConnectionRepository) {
         self.auth = auth
-        self.connection = connection
+        _ = connection
     }
 
     public func execute(uid: String, username: String, password: String, register: Bool) async throws -> User {
@@ -17,7 +16,7 @@ public struct LoginUseCase: Sendable {
             user = try await auth.login(uid: uid, username: username, password: password)
         }
         await auth.saveSession(user)
-        try await connection.connect(user: user, transport: connection.preferredTransport())
+        // Connection starts after CompositionRoot remounts UserHome + LocalStore.
         return user
     }
 }
@@ -106,7 +105,7 @@ public struct SendFileMessageUseCase: Sendable {
                 meta.duration = localDuration
             }
             let sent = try await messages.deliverOutgoingFile(pending, meta: meta)
-            files.removeStaged(fileId: localId)
+            try? files.promoteStaged(localId: localId, remoteFileId: meta.fileId, mime: meta.mime)
             return sent
         } catch {
             try? await messages.markStatus(
@@ -146,7 +145,7 @@ public struct SendFileMessageUseCase: Sendable {
                 if (uploaded.height ?? 0) <= 0 { uploaded.height = meta.height }
                 if (uploaded.duration ?? 0) <= 0 { uploaded.duration = meta.duration }
                 let sent = try await messages.deliverOutgoingFile(message, meta: uploaded)
-                files.removeStaged(fileId: meta.fileId)
+                try? files.promoteStaged(localId: meta.fileId, remoteFileId: uploaded.fileId, mime: uploaded.mime)
                 return sent
             } catch {
                 try? await messages.markStatus(

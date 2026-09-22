@@ -11,6 +11,7 @@ public final class SettingsViewController: UITableViewController {
     private enum Section: Int, CaseIterable {
         case account
         case connection
+        case developer
         case session
     }
 
@@ -53,6 +54,7 @@ public final class SettingsViewController: UITableViewController {
         switch Section(rawValue: section)! {
         case .account: return 1
         case .connection: return 3
+        case .developer: return DeveloperSettings.isFLEXEnabled ? 2 : 1
         case .session: return 1
         }
     }
@@ -61,6 +63,7 @@ public final class SettingsViewController: UITableViewController {
         switch Section(rawValue: section)! {
         case .account: return "账号"
         case .connection: return "连接"
+        case .developer: return "开发者选项"
         case .session: return nil
         }
     }
@@ -69,6 +72,8 @@ public final class SettingsViewController: UITableViewController {
         switch Section(rawValue: section)! {
         case .connection:
             return "API 地址用于登录与文件上传；传输协议用于实时消息。"
+        case .developer:
+            return "FLEX 调试面板默认关闭。开启后可在 App 内查看视图层级、网络与对象状态。"
         default:
             return nil
         }
@@ -108,6 +113,22 @@ public final class SettingsViewController: UITableViewController {
                 config.image = UIImage(systemName: "antenna.radiowaves.left.and.right")
                 cell.accessoryType = .disclosureIndicator
             }
+        case .developer:
+            if indexPath.row == 0 {
+                config.text = "FLEX 调试工具"
+                config.secondaryText = "网络 / 视图 / 对象浏览器"
+                config.image = UIImage(systemName: "hammer.fill")
+                cell.selectionStyle = .none
+                let toggle = UISwitch()
+                toggle.isOn = DeveloperSettings.isFLEXEnabled
+                toggle.addTarget(self, action: #selector(flexToggleChanged(_:)), for: .valueChanged)
+                cell.accessoryView = toggle
+            } else {
+                config.text = "打开 FLEX 面板"
+                config.secondaryText = "若工具条被关闭可由此重新打开"
+                config.image = UIImage(systemName: "rectangle.and.hand.point.up.left.fill")
+                cell.accessoryType = .disclosureIndicator
+            }
         case .session:
             config.text = "退出登录"
             config.textProperties.color = .systemRed
@@ -129,9 +150,20 @@ public final class SettingsViewController: UITableViewController {
             } else if indexPath.row == 2 {
                 pickTransport(source: tableView.cellForRow(at: indexPath))
             }
+        case .developer:
+            if indexPath.row == 1, DeveloperSettings.isFLEXEnabled {
+                env.onShowFLEXExplorer?()
+            }
         case .session:
             confirmLogout(source: tableView.cellForRow(at: indexPath))
         }
+    }
+
+    @objc private func flexToggleChanged(_ sender: UISwitch) {
+        let enabled = sender.isOn
+        DeveloperSettings.isFLEXEnabled = enabled
+        env.onFLEXEnabledChange?(enabled)
+        tableView.reloadSections(IndexSet(integer: Section.developer.rawValue), with: .automatic)
     }
 
     private func connectionStateTitle(_ state: ConnectionState) -> String {
