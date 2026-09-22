@@ -374,25 +374,61 @@ final class UnsupportedFileViewController: UIViewController {
 
 final class FilePreviewPresenter: NSObject, QLPreviewControllerDataSource {
     private let fileURL: URL
-    private let titleName: String
+    private lazy var previewItem = UntitledPreviewItem(url: fileURL)
 
-    init(fileURL: URL, titleName: String) {
+    init(fileURL: URL) {
         self.fileURL = fileURL
-        self.titleName = titleName
     }
 
     @MainActor
     func present(from host: UIViewController) {
-        let ql = QLPreviewController()
+        let ql = CompactQLPreviewController()
         ql.dataSource = self
-        ql.title = titleName
+        // Present QL itself so the system Done button works.
         host.present(ql, animated: true)
     }
 
     func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
 
     func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> any QLPreviewItem {
-        fileURL as NSURL
+        previewItem
+    }
+}
+
+/// QLPreviewController that suppresses the large document title in the nav bar.
+private final class CompactQLPreviewController: QLPreviewController {
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        suppressLargeTitle()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        suppressLargeTitle()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        suppressLargeTitle()
+    }
+
+    private func suppressLargeTitle() {
+        title = nil
+        navigationItem.title = nil
+        navigationItem.titleView = UIView()
+        navigationItem.largeTitleDisplayMode = .never
+        navigationController?.navigationBar.prefersLargeTitles = false
+    }
+}
+
+/// Empty title — `nil` makes Quick Look fall back to the file URL's last path component.
+private final class UntitledPreviewItem: NSObject, QLPreviewItem {
+    let previewItemURL: URL?
+    /// Must be non-nil empty; `nil` → QL uses the filename as a large title.
+    let previewItemTitle: String? = ""
+
+    init(url: URL) {
+        previewItemURL = url
     }
 }
 
@@ -465,7 +501,10 @@ public enum MediaPreview {
         let safeName = name.isEmpty ? "file" : name
         do {
             let local: URL
-            if let fileId, let ensureFile, !fileId.hasPrefix("local:") {
+            if let url, url.isFileURL {
+                // Already on disk — skip download overlay for snappier open.
+                local = url
+            } else if let fileId, let ensureFile, !fileId.hasPrefix("local:") {
                 let overlay = BlockingOverlay(message: "正在加载…")
                 await MainActor.run { overlay.show(on: host.view) }
                 defer { Task { @MainActor in overlay.hide() } }
@@ -479,8 +518,16 @@ public enum MediaPreview {
                 return
             }
             await MainActor.run {
-                if QLPreviewController.canPreview(local as NSURL) {
-                    let presenter = FilePreviewPresenter(fileURL: local, titleName: safeName)
+                var previewURL = local
+                // Only copy when the path has no usable extension (legacy downloads).
+                if local.pathExtension.isEmpty,
+                   !QLPreviewController.canPreview(local as NSURL),
+                   let renamed = try? Self.copyForQuickLook(local, displayName: safeName),
+                   QLPreviewController.canPreview(renamed as NSURL) {
+                    previewURL = renamed
+                }
+                if QLPreviewController.canPreview(previewURL as NSURL) {
+                    let presenter = FilePreviewPresenter(fileURL: previewURL)
                     activeFilePresenter = presenter
                     presenter.present(from: host)
                 } else {
@@ -522,6 +569,16 @@ public enum MediaPreview {
             .appendingPathComponent("goim-preview-\(UUID().uuidString)-\(safeName)")
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.moveItem(at: temp, to: dest)
+        return dest
+    }
+
+    /// Give Quick Look a path whose extension matches the original file name.
+    private static func copyForQuickLook(_ source: URL, displayName: String) throws -> URL {
+        let safe = displayName.isEmpty ? source.lastPathComponent : displayName
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("goim-ql-\(UUID().uuidString)-\(safe)", isDirectory: false)
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.copyItem(at: source, to: dest)
         return dest
     }
 }

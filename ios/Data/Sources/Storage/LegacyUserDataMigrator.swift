@@ -8,9 +8,13 @@ public enum LegacyUserDataMigrator {
         let legacyDB = goim.appendingPathComponent("goim.sqlite", isDirectory: false)
         guard fm.fileExists(atPath: legacyDB.path) else {
             migrateStagedOnlyIfNeeded(activeUID: activeUID)
+            migrateStickersCatalogIfNeeded()
             return
         }
-        guard let uid = activeUID, !uid.isEmpty else { return }
+        guard let uid = activeUID, !uid.isEmpty else {
+            migrateStickersCatalogIfNeeded()
+            return
+        }
 
         let home = UserHome(uid: uid)
         do {
@@ -31,17 +35,20 @@ public enum LegacyUserDataMigrator {
                 try? fm.removeItem(at: staged)
             }
 
-            // Old Stickers → Catalog/Stickers
-            let oldStickers = goim.appendingPathComponent("Stickers", isDirectory: true)
-            let catalog = UserHome.stickerCatalogDirectory
-            if fm.fileExists(atPath: oldStickers.path) {
-                try fm.createDirectory(at: catalog, withIntermediateDirectories: true)
-                try mergeDirectory(oldStickers, into: catalog)
-                try? fm.removeItem(at: oldStickers)
-            }
+            migrateStickersCatalogIfNeeded()
         } catch {
             // Best-effort; leave legacy files if move fails so next launch can retry.
         }
+    }
+
+    private static func migrateStickersCatalogIfNeeded() {
+        let fm = FileManager.default
+        let oldStickers = UserHome.applicationSupportGOIM.appendingPathComponent("Stickers", isDirectory: true)
+        let catalog = UserHome.stickerCatalogDirectory
+        guard fm.fileExists(atPath: oldStickers.path) else { return }
+        try? fm.createDirectory(at: catalog, withIntermediateDirectories: true)
+        try? mergeDirectory(oldStickers, into: catalog)
+        try? fm.removeItem(at: oldStickers)
     }
 
     private static func migrateStagedOnlyIfNeeded(activeUID: String?) {

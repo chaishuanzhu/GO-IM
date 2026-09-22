@@ -23,9 +23,30 @@ public actor StickerRepositoryImpl: StickerRepository {
     }
 
     public init(fileManager: FileManager = .default, defaults: UserDefaults = .standard) {
-        rootURL = UserHome.stickerCatalogDirectory
+        let catalog = UserHome.stickerCatalogDirectory
+        Self.migrateLegacyStickersDirectoryIfNeeded(fileManager: fileManager)
+        rootURL = catalog
         self.defaults = defaults
         try? fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+    }
+
+    /// Move `GOIM/Stickers` → `GOIM/Catalog/Stickers` even when the DB migration already ran.
+    private static func migrateLegacyStickersDirectoryIfNeeded(fileManager: FileManager) {
+        let legacy = UserHome.applicationSupportGOIM.appendingPathComponent("Stickers", isDirectory: true)
+        let catalog = UserHome.stickerCatalogDirectory
+        guard fileManager.fileExists(atPath: legacy.path) else { return }
+        try? fileManager.createDirectory(at: catalog, withIntermediateDirectories: true)
+        if let items = try? fileManager.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil) {
+            for item in items {
+                let dest = catalog.appendingPathComponent(item.lastPathComponent, isDirectory: false)
+                if fileManager.fileExists(atPath: dest.path) {
+                    try? fileManager.removeItem(at: item)
+                } else {
+                    try? fileManager.moveItem(at: item, to: dest)
+                }
+            }
+        }
+        try? fileManager.removeItem(at: legacy)
     }
 
     public func setActiveUID(_ uid: String?) {

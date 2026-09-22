@@ -121,7 +121,7 @@ public final class FileRepositoryImpl: FileRepository, @unchecked Sendable {
                 mediaStore.removeIncompleteDownload(fileId: fileId)
                 throw DomainError.server(status, "download failed")
             }
-            return try mediaStore.storeDownload(fileId: fileId, from: temp)
+            return try mediaStore.storeDownload(fileId: fileId, from: temp, suggestedName: suggestedName)
         } catch {
             mediaStore.removeIncompleteDownload(fileId: fileId)
             throw error

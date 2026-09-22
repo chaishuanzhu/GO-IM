@@ -130,14 +130,14 @@ final class ChatComposerBar: UIView, UITextViewDelegate {
             accessoryHost.addSubview(panel)
             let stickerTop = panel.topAnchor.constraint(equalTo: emojiModeControl.bottomAnchor, constant: 4)
             let stickerBottom = panel.bottomAnchor.constraint(equalTo: accessoryHost.bottomAnchor)
-            let stickerConstraints = [
-                stickerTop,
+            // Leading/trailing must stay active always (same as emojiCollection). Only the
+            // vertical pins join accessoryContentConstraints so they toggle with host height.
+            NSLayoutConstraint.activate([
                 panel.leadingAnchor.constraint(equalTo: accessoryHost.leadingAnchor),
                 panel.trailingAnchor.constraint(equalTo: accessoryHost.trailingAnchor),
-                stickerBottom,
-            ]
-            // Keep inactive while the host is collapsed (height == 0).
-            stickerConstraints.forEach { $0.isActive = accessory != .none }
+            ])
+            stickerTop.isActive = accessory != .none
+            stickerBottom.isActive = accessory != .none
             accessoryContentConstraints.append(contentsOf: [stickerTop, stickerBottom])
             stickerPanel = panel
             accessoryHost.bringSubviewToFront(emojiSendButton)

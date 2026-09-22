@@ -63,33 +63,57 @@ public final class LocalMediaStore: @unchecked Sendable {
                 NSLocalizedDescriptionKey: "staged file missing",
             ]) }()
         let destDir = kind == .file ? home.filesURL : home.mediaURL
-        let dest = destDir.appendingPathComponent(Self.diskKey(for: remoteFileId), isDirectory: false)
+        let suggestedName: String? = {
+            let meta = src.appendingPathExtension("name")
+            guard let data = try? Data(contentsOf: meta) else { return src.pathExtension.isEmpty ? nil : src.lastPathComponent }
+            return String(data: data, encoding: .utf8)
+        }()
+        let key = Self.diskKey(for: remoteFileId)
+        let fileName = Self.storedFileName(key: key, suggestedName: suggestedName)
+        let dest = destDir.appendingPathComponent(fileName, isDirectory: false)
         try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
-        if FileManager.default.fileExists(atPath: dest.path) {
-            try? FileManager.default.removeItem(at: dest)
-        }
+        Self.removeMatching(prefix: key, in: destDir)
         try FileManager.default.moveItem(at: src, to: dest)
         let nameMeta = src.appendingPathExtension("name")
         if FileManager.default.fileExists(atPath: nameMeta.path) {
             try? FileManager.default.removeItem(at: nameMeta)
         }
+        if let suggestedName, let data = suggestedName.data(using: .utf8) {
+            try? data.write(to: dest.appendingPathExtension("name"), options: .atomic)
+        }
     }
 
     /// Write downloaded bytes into tmp then promote to files (atomic complete).
-    public func storeDownload(fileId: String, from tempURL: URL) throws -> URL {
+    /// Uses `suggestedName`'s extension so Quick Look can resolve UTI (e.g. `.pdf`).
+    public func storeDownload(fileId: String, from tempURL: URL, suggestedName: String? = nil) throws -> URL {
         let home = try requireHome()
         try home.ensureDirectories()
-        let tmpDest = home.tmpURL.appendingPathComponent(Self.diskKey(for: fileId), isDirectory: false)
+        let key = Self.diskKey(for: fileId)
+        let fileName = Self.storedFileName(key: key, suggestedName: suggestedName)
+        let tmpDest = home.tmpURL.appendingPathComponent(fileName, isDirectory: false)
         if FileManager.default.fileExists(atPath: tmpDest.path) {
             try? FileManager.default.removeItem(at: tmpDest)
         }
+        // Also clear any prior extensionless / other-ext copies for this id.
+        Self.removeMatching(prefix: key, in: home.tmpURL)
         try FileManager.default.moveItem(at: tempURL, to: tmpDest)
-        let finalURL = home.filesURL.appendingPathComponent(Self.diskKey(for: fileId), isDirectory: false)
-        if FileManager.default.fileExists(atPath: finalURL.path) {
-            try? FileManager.default.removeItem(at: finalURL)
-        }
+        let finalURL = home.filesURL.appendingPathComponent(fileName, isDirectory: false)
+        Self.removeMatching(prefix: key, in: home.filesURL)
         try FileManager.default.moveItem(at: tmpDest, to: finalURL)
+        if let suggestedName, let data = suggestedName.data(using: .utf8) {
+            try? data.write(to: finalURL.appendingPathExtension("name"), options: .atomic)
+        }
         return finalURL
+    }
+
+    /// Copy `source` into a Quick Look–friendly temp file that keeps `displayName`'s extension.
+    public static func previewURL(copying source: URL, displayName: String) throws -> URL {
+        let safe = displayName.isEmpty ? source.lastPathComponent : displayName
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("goim-ql-\(UUID().uuidString)-\(safe)", isDirectory: false)
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.copyItem(at: source, to: dest)
+        return dest
     }
 
     public func data(for fileId: String) -> Data? {
@@ -119,8 +143,7 @@ public final class LocalMediaStore: @unchecked Sendable {
 
     public func removeIncompleteDownload(fileId: String) {
         guard let home else { return }
-        let tmp = home.tmpURL.appendingPathComponent(Self.diskKey(for: fileId), isDirectory: false)
-        try? FileManager.default.removeItem(at: tmp)
+        Self.removeMatching(prefix: Self.diskKey(for: fileId), in: home.tmpURL)
     }
 
     // MARK: - Internals
@@ -148,17 +171,18 @@ public final class LocalMediaStore: @unchecked Sendable {
         lock.unlock()
         guard let home else { return nil }
         let key = Self.diskKey(for: fileId)
-        let candidates: [URL]
+        let dirs: [URL]
         if Self.isLocalFileId(fileId) {
-            candidates = [home.tmpURL.appendingPathComponent(key, isDirectory: false)]
+            dirs = [home.tmpURL]
         } else {
-            candidates = [
-                home.filesURL.appendingPathComponent(key, isDirectory: false),
-                home.mediaURL.appendingPathComponent(key, isDirectory: false),
-                home.tmpURL.appendingPathComponent(key, isDirectory: false),
-            ]
+            dirs = [home.filesURL, home.mediaURL, home.tmpURL]
         }
-        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+        for dir in dirs {
+            if let match = Self.findStoredFile(key: key, in: dir) {
+                return match
+            }
+        }
+        return nil
     }
 
     public static func diskKey(for fileId: String) -> String {
@@ -170,6 +194,47 @@ public final class LocalMediaStore: @unchecked Sendable {
         let cleaned = key.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
         let joined = String(cleaned)
         return joined.isEmpty ? UUID().uuidString : joined
+    }
+
+    public static func storedFileName(key: String, suggestedName: String?) -> String {
+        let ext = fileExtension(from: suggestedName)
+        return ext.isEmpty ? key : "\(key).\(ext)"
+    }
+
+    public static func fileExtension(from suggestedName: String?) -> String {
+        guard let suggestedName, !suggestedName.isEmpty else { return "" }
+        let ext = (suggestedName as NSString).pathExtension
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+        let allowed = CharacterSet.alphanumerics
+        let cleaned = String(ext.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" })
+        return cleaned
+    }
+
+    private static func findStoredFile(key: String, in dir: URL) -> URL? {
+        let fm = FileManager.default
+        let exact = dir.appendingPathComponent(key, isDirectory: false)
+        if fm.fileExists(atPath: exact.path) { return exact }
+        guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
+            return nil
+        }
+        let matches = items.filter { url in
+            let name = url.lastPathComponent
+            if name.hasSuffix(".name") { return false }
+            return name == key || name.hasPrefix("\(key).")
+        }
+        return matches.first
+    }
+
+    private static func removeMatching(prefix key: String, in dir: URL) {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+        for item in items {
+            let name = item.lastPathComponent
+            if name == key || name.hasPrefix("\(key).") {
+                try? fm.removeItem(at: item)
+            }
+        }
     }
 
     public static func attachmentKind(mime: String, msgTypeHint: MsgTypeHint? = nil) -> AttachmentKind {
