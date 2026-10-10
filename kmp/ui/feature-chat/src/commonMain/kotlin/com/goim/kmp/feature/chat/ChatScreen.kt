@@ -1,0 +1,466 @@
+package com.goim.kmp.feature.chat
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.text.style.TextOverflow
+import com.goim.kmp.designsystem.MonogramAvatar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.goim.kmp.designsystem.GoImDimens
+import com.goim.kmp.designsystem.GoImFormat
+import com.goim.kmp.designsystem.GoImIcons
+import com.goim.kmp.designsystem.GoImTheme
+import com.goim.kmp.designsystem.title
+import com.goim.kmp.model.ChatType
+import com.goim.kmp.model.ConnectionState
+import com.goim.kmp.model.FileMeta
+import com.goim.kmp.model.Message
+import com.goim.kmp.model.MessagePreview
+import com.goim.kmp.model.MessageStatus
+import com.goim.kmp.model.MsgType
+import com.goim.kmp.model.StickerRef
+import com.goim.kmp.platform.VoicePlayer
+import com.goim.kmp.platform.createVoicePlayer
+import com.goim.kmp.platform.createVoiceRecorder
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenGroupInfo: (() -> Unit)? = null) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val draft by viewModel.draft.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    val conversation = viewModel.conversation
+    val platformContext = rememberPlatformContext()
+    val player = remember { createVoicePlayer(platformContext) }
+    val recorder = remember { createVoiceRecorder(platformContext) }
+    var preview by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    var dropHover by remember { mutableStateOf(false) }
+    var collapseComposer by remember { mutableIntStateOf(0) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val dropModifier = rememberFileDropModifier(
+        onHover = { dropHover = it },
+        onDrop = { files -> viewModel.media?.sendDropped(files) },
+    )
+    DisposableEffect(Unit) {
+        onDispose {
+            player.stop()
+            recorder.cancel()
+        }
+    }
+    val bubbles = remember(viewModel, player) {
+        BubbleEnv(
+            viewModel.media,
+            player,
+            selfName = viewModel.selfName,
+            onPreview = { model, local -> preview = model to local },
+            onError = viewModel::reportError,
+        )
+    }
+
+    LaunchedEffect(state.error) {
+        state.error?.let {
+            snackbar.showSnackbar(it)
+            viewModel.consumeError()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        MonogramAvatar(conversation.title, size = 36.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                conversation.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            val subtitle = when {
+                                state.connectionState != ConnectionState.CONNECTED -> state.connectionState.title
+                                conversation.chatType == ChatType.GROUP -> "群聊"
+                                else -> null
+                            }
+                            if (subtitle != null) {
+                                Text(
+                                    subtitle,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                },
+                navigationIcon = {
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
+                    }
+                },
+                actions = {
+                    if (onOpenGroupInfo != null) {
+                        IconButton(onClick = onOpenGroupInfo) { Icon(GoImIcons.Group, contentDescription = "群信息") }
+                    }
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+        // 底部安全区由输入栏自己处理（背景铺到屏幕底边），这里只让出顶栏
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+    ) { padding ->
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .consumeWindowInsets(padding)
+                .then(if (viewModel.media != null) dropModifier else Modifier),
+        ) {
+        Column(Modifier.fillMaxSize().imePadding()) {
+            MessageList(
+                state = state,
+                onLoadOlder = viewModel::loadOlder,
+                onRetry = viewModel::retry,
+                onHighlightShown = viewModel::clearHighlight,
+                bubbles = bubbles,
+                modifier = Modifier
+                    .weight(1f)
+                    // 点消息列表空白处收起键盘和表情 / 语音 / 更多面板；气泡等可点击元素会先消费点击
+                    .pointerInput(Unit) {
+                        detectTapGestures {
+                            focusManager.clearFocus()
+                            keyboard?.hide()
+                            collapseComposer++
+                        }
+                    },
+            )
+            ChatComposer(
+                collapseRequests = collapseComposer,
+                draft = draft,
+                onDraftChange = viewModel::onDraftChange,
+                onSend = viewModel::send,
+                media = viewModel.media,
+                recorder = recorder,
+                isGroup = conversation.chatType == ChatType.GROUP,
+                onAppend = viewModel::appendToDraft,
+                onMention = viewModel::insertMention,
+                onError = viewModel::reportError,
+            )
+        }
+            if (dropHover) DropOverlay()
+        }
+    }
+    preview?.let { (model, local) -> ImagePreviewDialog(model, local, onDismiss = { preview = null }) }
+}
+
+@Composable
+private fun DropOverlay() {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .padding(12.dp)
+            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f), MaterialTheme.shapes.extraLarge)
+            .border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraLarge),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(GoImIcons.Upload, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(40.dp))
+            Text("松开发送文件", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
+    }
+}
+
+/** 气泡渲染附件所需的依赖。 */
+private class BubbleEnv(
+    val media: ChatMediaActions?,
+    val player: VoicePlayer,
+    val selfName: String,
+    val onPreview: (model: String, localPath: String?) -> Unit,
+    val onError: (String) -> Unit,
+)
+
+@Composable
+private fun MessageList(
+    state: ChatUiState,
+    onLoadOlder: () -> Unit,
+    onRetry: (Message) -> Unit,
+    onHighlightShown: () -> Unit,
+    bubbles: BubbleEnv,
+    modifier: Modifier = Modifier,
+) {
+    val listState = rememberLazyListState()
+    val newestFirst = remember(state.messages) { state.messages.asReversed() }
+    val newest = newestFirst.firstOrNull()
+    val targetIndex = state.highlightId?.let { id -> newestFirst.indexOfFirst { it.id == id } } ?: -1
+
+    // 搜索跳转：目标进入窗口后滚过去，高亮 2 秒。
+    LaunchedEffect(state.highlightId, targetIndex >= 0) {
+        if (targetIndex >= 0) {
+            listState.scrollToItem(targetIndex)
+            delay(HIGHLIGHT_MILLIS)
+            onHighlightShown()
+        }
+    }
+
+    // reverseLayout：index 0 在底部。新消息到达时，若在底部附近或是自己发的，滚到底。
+    LaunchedEffect(newest?.id) {
+        if (newest != null && (listState.firstVisibleItemIndex <= 1 || newest.isOutgoing)) {
+            listState.animateScrollToItem(0)
+        }
+    }
+    // 滚到顶部附近触发加载更早。
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            info.totalItemsCount > 0 && lastVisible >= info.totalItemsCount - 3
+        }.distinctUntilChanged().filter { it }.collect { onLoadOlder() }
+    }
+
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val maxBubbleWidth = maxWidth * GoImDimens.BUBBLE_MAX_WIDTH_RATIO
+        LazyColumn(
+            state = listState,
+            reverseLayout = true,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            items(newestFirst, key = { it.id }, contentType = { it.msgType }) { message ->
+                val highlighted = message.id == state.highlightId
+                val tint by animateColorAsState(
+                    if (highlighted) MaterialTheme.colorScheme.tertiaryContainer else Color.Transparent,
+                )
+                Box(Modifier.fillMaxWidth().background(tint, MaterialTheme.shapes.medium)) {
+                    MessageRow(message, maxBubbleWidth, onRetry, bubbles)
+                }
+            }
+            if (state.isLoadingHistory) {
+                item(key = "loading") {
+                    Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private const val HIGHLIGHT_MILLIS = 2_000L
+
+@Composable
+private fun MessageRow(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> Unit, bubbles: BubbleEnv) {
+    val notice = if (message.msgType == MsgType.Text) MessagePreview.systemNotice(message.content) else null
+    when {
+        message.status == MessageStatus.RECALLED -> CenterNotice("已撤回")
+        notice != null -> CenterNotice(notice)
+        else -> Bubble(message, maxBubbleWidth, onRetry, bubbles)
+    }
+}
+
+@Composable
+private fun CenterNotice(text: String) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Text(
+                text,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> Unit, bubbles: BubbleEnv) {
+    val outgoing = message.isOutgoing
+    val time = GoImFormat.messageTime(message.timestampMs)
+    val meta = if (outgoing) time else "${message.fromUid} · $time"
+
+    val description = remember(message.content, message.status, message.msgType, time) {
+        buildString {
+            append(if (outgoing) "我" else message.fromUid).append("，")
+            append(if (message.msgType == MsgType.Text) message.content else MessagePreview.listPreview(message)).append("，")
+            append(time)
+            when (message.status) {
+                MessageStatus.SENDING -> append("，发送中")
+                MessageStatus.FAILED -> append("，发送失败")
+                else -> Unit
+            }
+        }
+    }
+    val avatarName = if (outgoing) bubbles.selfName else message.fromUid
+    Row(
+        Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = description },
+        horizontalArrangement = Arrangement.spacedBy(8.dp, if (outgoing) Alignment.End else Alignment.Start),
+        verticalAlignment = Alignment.Top,
+    ) {
+        if (!outgoing) MonogramAvatar(avatarName, size = GoImDimens.messageAvatarSize)
+        Column(
+            Modifier.weight(1f, fill = false),
+            horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start,
+        ) {
+            Text(
+                meta,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (outgoing) {
+                    when (message.status) {
+                        MessageStatus.SENDING -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        MessageStatus.FAILED -> Icon(
+                            Icons.Filled.Warning,
+                            contentDescription = "重试发送",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .clickable(role = Role.Button, onClickLabel = "重试") { onRetry(message) }
+                                .size(22.dp),
+                        )
+                        else -> Unit
+                    }
+                    Spacer(Modifier.width(6.dp))
+                }
+                BubbleBody(message, maxBubbleWidth, bubbles)
+            }
+        }
+        if (outgoing) MonogramAvatar(avatarName, size = GoImDimens.messageAvatarSize)
+    }
+}
+
+@Composable
+private fun BubbleBody(message: Message, maxBubbleWidth: Dp, bubbles: BubbleEnv) {
+    val colors = GoImTheme.chatColors
+    val outgoing = message.isOutgoing
+    val media = bubbles.media
+    val meta = remember(message.content, message.msgType) {
+        if (message.msgType == MsgType.Text || message.msgType == MsgType.Sticker) null else MessagePreview.decodeFileMeta(message.content)
+    }
+    val sticker = remember(message.content, message.msgType) {
+        if (message.msgType == MsgType.Sticker) StickerRef.decode(message.content) else null
+    }
+    // 图片 / 贴纸不画气泡底色
+    if (media != null && sticker != null) {
+        StickerView(sticker, media.stickers, 140.dp)
+        return
+    }
+    if (media != null && meta != null && displayType(message.msgType, meta) == MsgType.Image) {
+        ImageBubble(meta, media.files, bubbles.onPreview)
+        return
+    }
+    Surface(
+        color = if (outgoing) colors.outgoingBubble else colors.incomingBubble,
+        contentColor = if (outgoing) colors.outgoingText else colors.incomingText,
+        shape = if (outgoing) GoImDimens.outgoingBubbleShape else GoImDimens.incomingBubbleShape,
+        modifier = Modifier.widthIn(max = maxBubbleWidth),
+    ) {
+        val type = meta?.let { displayType(message.msgType, it) }
+        when {
+            media != null && meta != null && type == MsgType.Voice ->
+                VoiceBubble(message, meta, media.files, bubbles.player, bubbles.onError)
+            media != null && meta != null && (type == MsgType.Video || type == MsgType.File) ->
+                FileCardBubble(meta, media.files, isVideo = type == MsgType.Video, maxWidth = maxBubbleWidth, onError = bubbles.onError)
+            else -> {
+                val isText = message.msgType == MsgType.Text
+                SelectionContainer {
+                    Text(
+                        if (isText) message.content else MessagePreview.listPreview(message),
+                        fontStyle = if (isText) FontStyle.Normal else FontStyle.Italic,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** msg_type=文件 但 MIME 是图片 / 音频 / 视频时按对应类型展示（同 iOS 映射兜底）。 */
+private fun displayType(type: MsgType, meta: FileMeta): MsgType {
+    if (type != MsgType.File) return type
+    val mime = meta.mime.lowercase()
+    return when {
+        mime.startsWith("image/") -> MsgType.Image
+        mime.startsWith("audio/") -> MsgType.Voice
+        mime.startsWith("video/") -> MsgType.Video
+        else -> MsgType.File
+    }
+}

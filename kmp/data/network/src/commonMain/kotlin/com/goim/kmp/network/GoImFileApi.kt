@@ -1,0 +1,277 @@
+package com.goim.kmp.network
+
+import com.goim.kmp.common.DomainError
+import com.goim.kmp.model.FileMeta
+import com.goim.kmp.model.StickerItem
+import com.goim.kmp.model.StickerPack
+import com.goim.kmp.model.User
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.onUpload
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.client.request.get
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsBytes
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
+import io.ktor.http.URLBuilder
+import io.ktor.http.contentLength
+import io.ktor.http.isSuccess
+import io.ktor.utils.io.readAvailable
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+
+@Serializable
+internal data class UploadResponseDto(
+    @SerialName("file_id") val fileId: JsonElement? = null,
+    val name: String? = null,
+    val size: Long? = null,
+    val mime: String? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    @SerialName("thumb_width") val thumbWidth: Int? = null,
+    @SerialName("thumb_height") val thumbHeight: Int? = null,
+)
+
+/** `/upload` + `/file`：multipart 上传（带进度）与流式下载，鉴权同其它 REST 接口（`uid` + `token`）。 */
+class GoImFileApi(
+    private val client: HttpClient,
+    private val baseUrl: () -> String,
+    private val user: User,
+) {
+    /** 返回服务端识别出的元数据；`0` 尺寸视为缺失（同 iOS `positive`）。 */
+    suspend fun upload(
+        bytes: ByteArray,
+        fileName: String,
+        mime: String,
+        onProgress: (Float) -> Unit = {},
+    ): FileMeta {
+        val response = request {
+            client.submitFormWithBinaryData(
+                url = url("upload"),
+                formData = formData {
+                    append("uid", user.uid)
+                    append("token", user.token)
+                    append(
+                        "file",
+                        bytes,
+                        Headers.build {
+                            append(HttpHeaders.ContentType, mime)
+                            append(HttpHeaders.ContentDisposition, "filename=\"${fileName.replace("\"", "")}\"")
+                        },
+                    )
+                },
+            ) {
+                timeout { requestTimeoutMillis = TRANSFER_TIMEOUT_MS }
+                onUpload { sent, total ->
+                    val all = total ?: bytes.size.toLong()
+                    if (all > 0) onProgress((sent.toFloat() / all).coerceIn(0f, 1f))
+                }
+            }
+        }
+        val dto = try {
+            apiJson.decodeFromString(UploadResponseDto.serializer(), response.bodyAsText())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw DomainError.Server(response.status.value, "响应解析失败: ${e.message}")
+        }
+        val fileId = (dto.fileId as? JsonPrimitive)?.content?.takeIf { it.isNotEmpty() && it != "null" }
+            ?: throw DomainError.Server(response.status.value, "上传响应缺少 file_id")
+        return FileMeta(
+            fileId = fileId,
+            name = dto.name?.takeIf { it.isNotEmpty() } ?: fileName,
+            size = dto.size ?: bytes.size.toLong(),
+            mime = dto.mime?.takeIf { it.isNotEmpty() } ?: mime,
+            width = dto.width?.takeIf { it > 0 },
+            height = dto.height?.takeIf { it > 0 },
+            thumbWidth = dto.thumbWidth?.takeIf { it > 0 },
+            thumbHeight = dto.thumbHeight?.takeIf { it > 0 },
+        )
+    }
+
+    /** `/file?id=&uid=&token=[&thumb=1]`；同时供图片加载器直接使用。 */
+    fun fileUrl(fileId: String, thumb: Boolean = false): String {
+        val (uid, token) = user.uid to user.token
+        return URLBuilder(url("file")).apply {
+            parameters.append("id", fileId)
+            parameters.append("uid", uid)
+            parameters.append("token", token)
+            if (thumb) parameters.append("thumb", "1")
+        }.buildString()
+    }
+
+    /** 分块写给 [sink]；无 Content-Length 时不回调进度。 */
+    suspend fun download(
+        fileId: String,
+        thumb: Boolean = false,
+        onProgress: (Float) -> Unit = {},
+        sink: suspend (chunk: ByteArray, length: Int) -> Unit,
+    ) {
+        stream(fileUrl(fileId, thumb), onProgress, sink)
+    }
+
+    suspend fun downloadBytes(fileId: String, thumb: Boolean = false): ByteArray =
+        fetchBytes(client, fileUrl(fileId, thumb))
+
+    private suspend fun stream(
+        url: String,
+        onProgress: (Float) -> Unit,
+        sink: suspend (ByteArray, Int) -> Unit,
+    ) {
+        try {
+            client.prepareGet(url) {
+                timeout { requestTimeoutMillis = TRANSFER_TIMEOUT_MS }
+            }.execute { response ->
+                ensureSuccess(response)
+                val total = response.contentLength() ?: -1L
+                val channel = response.bodyAsChannel()
+                val buffer = ByteArray(CHUNK)
+                var received = 0L
+                while (true) {
+                    val n = channel.readAvailable(buffer, 0, buffer.size)
+                    if (n < 0) break
+                    if (n == 0) {
+                        if (channel.isClosedForRead) break
+                        continue
+                    }
+                    sink(buffer, n)
+                    received += n
+                    if (total > 0) onProgress((received.toFloat() / total).coerceIn(0f, 1f))
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: DomainError) {
+            throw e
+        } catch (e: Exception) {
+            throw DomainError.Network(e.message ?: e::class.simpleName ?: "network error")
+        }
+    }
+
+    private fun url(path: String) = baseUrl().trimEnd('/') + "/" + path
+
+    private suspend fun request(block: suspend () -> HttpResponse): HttpResponse {
+        val response = try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw DomainError.Network(e.message ?: e::class.simpleName ?: "network error")
+        }
+        ensureSuccess(response)
+        return response
+    }
+
+    private companion object {
+        const val TRANSFER_TIMEOUT_MS = 120_000L
+        const val CHUNK = 64 * 1024
+    }
+}
+
+private suspend fun ensureSuccess(response: HttpResponse) {
+    if (!response.status.isSuccess()) {
+        throw DomainError.Server(response.status.value, response.bodyAsText().trim())
+    }
+}
+
+internal suspend fun fetchBytes(client: HttpClient, url: String): ByteArray {
+    val response = try {
+        client.get(url) { timeout { requestTimeoutMillis = 60_000L } }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        throw DomainError.Network(e.message ?: e::class.simpleName ?: "network error")
+    }
+    ensureSuccess(response)
+    return response.bodyAsBytes()
+}
+
+@Serializable
+internal data class CatalogDto(
+    @SerialName("cdn_base") val cdnBase: String? = null,
+    val packs: List<CatalogPackDto> = emptyList(),
+)
+
+@Serializable
+internal data class CatalogPackDto(
+    @SerialName("pack_id") val packId: String,
+    val name: String = "",
+    val version: Int = 1,
+    @SerialName("base_url") val baseUrl: String? = null,
+    val cover: String? = null,
+    val count: Int = 0,
+)
+
+@Serializable
+internal data class PackManifestDto(
+    @SerialName("pack_id") val packId: String,
+    val name: String = "",
+    val version: Int = 1,
+    val cover: String? = null,
+    @SerialName("base_url") val baseUrl: String? = null,
+    val stickers: List<StickerDto> = emptyList(),
+)
+
+@Serializable
+internal data class StickerDto(val id: String, val file: String, val w: Int = 240, val h: Int = 240)
+
+/** 远端贴纸目录条目（未下载 `pack.json` 前只有封面与数量）。 */
+data class CatalogPack(
+    val packId: String,
+    val name: String,
+    val version: Int,
+    val baseUrl: String,
+    val cover: String?,
+    val count: Int,
+)
+
+/** 贴纸 CDN：`catalog.json` → 每包 `pack.json` → `{base_url}{file}`；不需要登录。 */
+class StickerCdnApi(private val client: HttpClient) {
+    suspend fun catalog(url: String = CATALOG_URL): List<CatalogPack> = parseCatalog(fetchBytes(client, url).decodeToString())
+
+    suspend fun pack(baseUrl: String): StickerPack = parsePackManifest(fetchBytes(client, normalized(baseUrl) + "pack.json").decodeToString(), baseUrl)
+
+    suspend fun bytes(url: String): ByteArray = fetchBytes(client, url)
+
+    companion object {
+        const val CDN_BASE = "https://oss.chaisz.com/im-sticker-pack"
+        const val CATALOG_URL = "$CDN_BASE/catalog.json"
+
+        fun normalized(baseUrl: String) = if (baseUrl.endsWith('/')) baseUrl else "$baseUrl/"
+
+        fun parseCatalog(text: String): List<CatalogPack> {
+            val dto = apiJson.decodeFromString(CatalogDto.serializer(), text)
+            val cdn = dto.cdnBase?.trimEnd('/') ?: CDN_BASE
+            return dto.packs.map {
+                CatalogPack(
+                    packId = it.packId,
+                    name = it.name.ifEmpty { it.packId },
+                    version = it.version,
+                    baseUrl = normalized(it.baseUrl?.takeIf { u -> u.isNotEmpty() } ?: "$cdn/${it.packId}/"),
+                    cover = it.cover,
+                    count = it.count,
+                )
+            }
+        }
+
+        fun parsePackManifest(text: String, fallbackBaseUrl: String): StickerPack {
+            val dto = apiJson.decodeFromString(PackManifestDto.serializer(), text)
+            return StickerPack(
+                packId = dto.packId,
+                name = dto.name.ifEmpty { dto.packId },
+                version = dto.version,
+                coverFileName = dto.cover,
+                stickers = dto.stickers.map { StickerItem(dto.packId, it.id, it.file, it.w, it.h) },
+                baseUrl = normalized(dto.baseUrl?.takeIf { it.isNotEmpty() } ?: fallbackBaseUrl),
+            )
+        }
+    }
+}
