@@ -20,7 +20,6 @@ assets+=("$DIST/SHA256SUMS.txt")
 
 if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
     echo "Release $TAG 已存在，覆盖上传产物"
-    gh release upload "$TAG" "${assets[@]}" -R "$REPO" --clobber
 else
     flags=()
     if [ "${PRERELEASE:-false}" = "true" ]; then flags+=(--prerelease); fi
@@ -31,8 +30,24 @@ else
 | \`GO-IM-${VERSION}-android.apk\` | Android 8.0+ |
 | \`GO-IM-${VERSION}-macos-arm64.dmg\` | macOS（Apple Silicon，未公证：首次打开需右键 → 打开） |
 | \`GO-IM-${VERSION}-ios-unsigned.ipa\` | iOS 16+，未签名，需自行重签名或侧载 |"
-    gh release create "$TAG" "${assets[@]}" -R "$REPO" --target "$GIT_COMMIT" \
+    gh release create "$TAG" -R "$REPO" --target "$GIT_COMMIT" \
         --title "GO-IM KMP ${VERSION}" --notes "$notes" ${flags[@]+"${flags[@]}"}
 fi
+
+# 到 GitHub 的上传偶发超时（HTTP 408 / SSL 断开），逐个上传并重试
+for asset in "${assets[@]}"; do
+    for attempt in 1 2 3 4 5; do
+        if gh release upload "$TAG" "$asset" -R "$REPO" --clobber; then
+            echo "已上传 $(basename "$asset")"
+            break
+        fi
+        if [ "$attempt" -eq 5 ]; then
+            echo "上传失败：$asset" >&2
+            exit 1
+        fi
+        echo "上传 $(basename "$asset") 失败，$((attempt * 15))s 后重试（$attempt/5）" >&2
+        sleep $((attempt * 15))
+    done
+done
 
 gh release view "$TAG" -R "$REPO" --json url -q .url
