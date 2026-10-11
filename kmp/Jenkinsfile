@@ -1,0 +1,119 @@
+// KMP 客户端发布流水线：在 macOS 节点上构建 Android APK、macOS DMG、iOS 未签名 IPA，并发布到 GitHub Release。
+//
+// Jenkins 凭据：
+//   goim-android-keystore   Secret file           Android release keystore
+//   goim-android-signing    Username with password  用户名 = key alias，密码 = keystore / key 密码
+//   github-token            Secret text           可写 Release 的 GitHub token
+
+pipeline {
+    agent { label 'node-mac' }
+
+    parameters {
+        string(name: 'BRANCH', defaultValue: 'main', description: '构建的分支（Jenkinsfile 也从该分支读取）')
+        string(name: 'VERSION', defaultValue: '1.0.0', description: '版本号 MAJOR.MINOR.PATCH，MAJOR ≥ 1（DMG 的限制）；Release tag 为 kmp-v<VERSION>')
+        booleanParam(name: 'BUILD_ANDROID', defaultValue: true, description: 'Android APK')
+        booleanParam(name: 'BUILD_DESKTOP', defaultValue: true, description: 'macOS DMG')
+        booleanParam(name: 'BUILD_IOS', defaultValue: true, description: 'iOS 未签名 IPA')
+        booleanParam(name: 'PUBLISH', defaultValue: true, description: '发布到 GitHub Release（已存在同名 tag 时覆盖同名产物）')
+        booleanParam(name: 'PRERELEASE', defaultValue: false, description: '标记为预发布')
+    }
+
+    options {
+        timeout(time: 90, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '5'))
+    }
+
+    environment {
+        LANG = 'en_US.UTF-8'
+        // Gradle 8.14 不支持 JDK 25，编译用 Android Studio 自带 JBR；DMG 打包需要带 jpackage 的完整 JDK
+        JAVA_HOME = '/Applications/Android Studio.app/Contents/jbr/Contents/Home'
+        PACKAGE_JAVA_HOME = '/Users/chaisz/Library/Java/JavaVirtualMachines/openjdk-25.0.2/Contents/Home'
+        ANDROID_HOME = '/Users/chaisz/Library/Android/sdk'
+        TAG = "kmp-v${params.VERSION}"
+        DIST = "${env.WORKSPACE}/kmp/dist"
+        GRADLE_ARGS = "--console=plain --no-configuration-cache -Pgoim.versionName=${params.VERSION} -Pgoim.versionCode=${env.BUILD_NUMBER}"
+    }
+
+    stages {
+        stage('Prepare') {
+            steps {
+                sh '''
+                    [[ "$VERSION" =~ ^[1-9][0-9]*\\.[0-9]+\\.[0-9]+$ ]] || { echo "VERSION 须为 MAJOR.MINOR.PATCH 且 MAJOR ≥ 1：$VERSION"; exit 1; }
+                    rm -rf kmp/dist && mkdir -p kmp/dist
+                '''
+            }
+        }
+
+        stage('Android') {
+            when { expression { params.BUILD_ANDROID } }
+            steps {
+                dir('kmp') {
+                    withCredentials([
+                        file(credentialsId: 'goim-android-keystore', variable: 'GOIM_KEYSTORE_FILE'),
+                        usernamePassword(credentialsId: 'goim-android-signing', usernameVariable: 'GOIM_KEY_ALIAS', passwordVariable: 'GOIM_KEYSTORE_PASSWORD'),
+                    ]) {
+                        sh '''
+                            export GOIM_KEY_PASSWORD="$GOIM_KEYSTORE_PASSWORD"
+                            ./gradlew :app:android:assembleRelease $GRADLE_ARGS
+                            cp app/android/build/outputs/apk/release/android-release.apk "$DIST/GO-IM-$VERSION-android.apk"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Desktop') {
+            when { expression { params.BUILD_DESKTOP } }
+            steps {
+                dir('kmp') {
+                    sh '''
+                        ./gradlew :app:desktop:packageDmg $GRADLE_ARGS -Pgoim.packageJavaHome="$PACKAGE_JAVA_HOME"
+                        cp app/desktop/build/compose/binaries/main/dmg/GO-IM-$VERSION.dmg "$DIST/GO-IM-$VERSION-macos-arm64.dmg"
+                    '''
+                }
+            }
+        }
+
+        stage('iOS') {
+            when { expression { params.BUILD_IOS } }
+            steps {
+                dir('kmp') {
+                    sh '''
+                        xcodebuild -workspace iosApp/iosApp.xcworkspace -scheme GOIMKMP -configuration Release \
+                            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/ios \
+                            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+
+                        APP=build/ios/Build/Products/Release-iphoneos/GOIMKMP.app
+                        /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Info.plist"
+                        /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP/Info.plist"
+
+                        rm -rf build/ipa && mkdir -p build/ipa/Payload
+                        cp -R "$APP" build/ipa/Payload/
+                        (cd build/ipa && zip -qry "$DIST/GO-IM-$VERSION-ios-unsigned.ipa" Payload)
+                    '''
+                }
+            }
+        }
+
+        stage('Publish') {
+            when { expression { params.PUBLISH } }
+            steps {
+                dir('kmp') {
+                    withCredentials([string(credentialsId: 'github-token', variable: 'GH_TOKEN')]) {
+                        sh 'ci/publish-github-release.sh'
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            archiveArtifacts artifacts: 'kmp/dist/*', fingerprint: true
+        }
+        always {
+            cleanWs(deleteDirs: true, notFailBuild: true)
+        }
+    }
+}

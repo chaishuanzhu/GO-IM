@@ -12,3 +12,4 @@ captures/
 iosApp/Derived/
 xcuserdata/
 *.xcworkspace/xcuserdata/
+dist/

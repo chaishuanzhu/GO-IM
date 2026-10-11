@@ -14,13 +14,27 @@ android {
         applicationId = "com.goim.kmp"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = providers.gradleProperty("goim.versionCode").getOrElse("1").toInt()
+        versionName = providers.gradleProperty("goim.versionName").getOrElse("1.0.0")
+    }
+
+    // CI 通过环境变量注入 release 签名；本地未配置时退回 debug 签名，保证产物可安装
+    val keystore = providers.environmentVariable("GOIM_KEYSTORE_FILE").orNull
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = providers.environmentVariable("GOIM_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("GOIM_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("GOIM_KEY_PASSWORD").get()
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
