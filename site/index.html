@@ -88,7 +88,8 @@
   .btn-outline:hover { background: var(--surface-2); }
 
   /* 首屏 */
-  .hero { position: relative; overflow: hidden; padding: 88px 0 40px; text-align: center; }
+  /* 底部留白容纳下沉的手机样机，避免被 overflow 裁掉 */
+  .hero { position: relative; overflow: hidden; padding: 88px 0 96px; text-align: center; }
   .hero::before {
     content: ""; position: absolute; inset: -40% -20% auto; height: 120%;
     background:
@@ -108,7 +109,7 @@
 
   .showcase { position: relative; margin: 64px auto 0; max-width: 980px; }
   .desktop-shot {
-    width: 100%; border-radius: 14px; display: block;
+    width: 100%; height: auto; border-radius: 14px; display: block;
     box-shadow: 0 30px 80px rgba(16, 24, 40, .22), 0 0 0 1px color-mix(in srgb, var(--outline) 60%, transparent);
   }
   .phone {
@@ -116,7 +117,7 @@
     padding: 8px; border-radius: 34px; background: #0d0f13;
     box-shadow: 0 24px 60px rgba(16, 24, 40, .35);
   }
-  .phone img { display: block; width: 100%; border-radius: 27px; }
+  .phone img { display: block; width: 100%; height: auto; border-radius: 27px; }
   @media (max-width: 720px) { .phone { right: 2%; width: 30%; } }
 
   section { padding: 96px 0; }
