@@ -80,6 +80,8 @@ pipeline {
             steps {
                 dir('kmp') {
                     sh '''
+                        # Derived/（Info.plist 等）由 Tuist 生成且不入库
+                        (cd iosApp && tuist generate --no-open)
                         xcodebuild -workspace iosApp/iosApp.xcworkspace -scheme GOIMKMP -configuration Release \
                             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/ios \
                             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
