@@ -114,7 +114,8 @@ pipeline {
         success {
             archiveArtifacts artifacts: 'kmp/dist/*', fingerprint: true
         }
-        always {
+        // cleanup 在所有其它 post 条件之后执行；放在 always 里会先于 success 删掉待归档的产物
+        cleanup {
             deleteDir()
         }
     }
