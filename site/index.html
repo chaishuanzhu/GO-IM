@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GO-IM — 用 Go 构建的开源即时通讯系统</title>
+<meta name="description" content="GO-IM：基于 Go 的开源即时通讯系统。WebSocket / TCP 双协议、单聊群聊、消息撤回、全文搜索、多网关集群，提供 Android、iOS、macOS 与 Web 客户端。">
+<meta property="og:title" content="GO-IM — 用 Go 构建的开源即时通讯系统">
+<meta property="og:description" content="WebSocket / TCP 双协议、单聊群聊、多网关集群；Android、iOS、macOS、Web 全平台客户端。">
+<meta property="og:image" content="assets/desktop.png">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%23415F91'/><path d='M18 20h28a4 4 0 0 1 4 4v14a4 4 0 0 1-4 4H30l-8 7v-7h-4a4 4 0 0 1-4-4V24a4 4 0 0 1 4-4z' fill='white'/></svg>">
+<style>
+  :root {
+    --primary: #415f91;
+    --primary-strong: #2b4678;
+    --on-primary: #fff;
+    --primary-container: #d6e3ff;
+    --on-primary-container: #001b3e;
+    --tertiary: #705575;
+    --bg: #f9f9ff;
+    --surface: #ffffff;
+    --surface-2: #eef0f8;
+    --text: #191c20;
+    --muted: #44474e;
+    --outline: #c4c6d0;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 12px 32px rgba(16, 24, 40, .08);
+    --radius: 20px;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --primary: #aac7ff;
+      --primary-strong: #d6e3ff;
+      --on-primary: #0a305f;
+      --primary-container: #284777;
+      --on-primary-container: #d6e3ff;
+      --tertiary: #ddbce0;
+      --bg: #111318;
+      --surface: #1d2024;
+      --surface-2: #272a2f;
+      --text: #e2e2e9;
+      --muted: #c4c6d0;
+      --outline: #44474e;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 32px rgba(0, 0, 0, .35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* 导航 */
+  header {
+    position: sticky; top: 0; z-index: 10;
+    backdrop-filter: saturate(180%) blur(16px);
+    -webkit-backdrop-filter: saturate(180%) blur(16px);
+    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--outline) 50%, transparent);
+  }
+  .nav { display: flex; align-items: center; height: 64px; gap: 32px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: .2px; }
+  .brand-mark {
+    width: 32px; height: 32px; border-radius: 9px; background: var(--primary);
+    display: grid; place-items: center;
+  }
+  .brand-mark svg { width: 20px; height: 20px; fill: var(--on-primary); }
+  .nav-links { display: flex; gap: 24px; margin-left: auto; font-size: 15px; color: var(--muted); }
+  .nav-links a:hover { color: var(--text); }
+  @media (max-width: 640px) { .nav-links a:not(.gh) { display: none; } }
+
+  /* 按钮 */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 48px; padding: 0 24px; border-radius: 999px;
+    font-weight: 600; font-size: 15px; transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .btn svg { width: 20px; height: 20px; fill: currentColor; }
+  .btn-primary { background: var(--primary); color: var(--on-primary); box-shadow: 0 6px 16px color-mix(in srgb, var(--primary) 35%, transparent); }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 24px color-mix(in srgb, var(--primary) 40%, transparent); }
+  .btn-outline { border: 1px solid var(--outline); color: var(--text); }
+  .btn-outline:hover { background: var(--surface-2); }
+
+  /* 首屏 */
+  .hero { position: relative; overflow: hidden; padding: 88px 0 40px; text-align: center; }
+  .hero::before {
+    content: ""; position: absolute; inset: -40% -20% auto; height: 120%;
+    background:
+      radial-gradient(40% 50% at 30% 30%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 70%),
+      radial-gradient(35% 45% at 75% 20%, color-mix(in srgb, var(--tertiary) 20%, transparent), transparent 70%);
+    z-index: -1; pointer-events: none;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px;
+    background: var(--primary-container); color: var(--on-primary-container); font-size: 13px; font-weight: 600;
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  h1 { font-size: clamp(40px, 6vw, 68px); line-height: 1.08; margin: 20px 0 16px; letter-spacing: -1.5px; }
+  h1 .accent { color: var(--primary); }
+  .lead { font-size: clamp(16px, 2vw, 19px); color: var(--muted); max-width: 680px; margin: 0 auto; }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 32px; }
+
+  .showcase { position: relative; margin: 64px auto 0; max-width: 980px; }
+  .desktop-shot {
+    width: 100%; border-radius: 14px; display: block;
+    box-shadow: 0 30px 80px rgba(16, 24, 40, .22), 0 0 0 1px color-mix(in srgb, var(--outline) 60%, transparent);
+  }
+  .phone {
+    position: absolute; right: -2%; bottom: -8%; width: 22%; min-width: 130px;
+    padding: 8px; border-radius: 34px; background: #0d0f13;
+    box-shadow: 0 24px 60px rgba(16, 24, 40, .35);
+  }
+  .phone img { display: block; width: 100%; border-radius: 27px; }
+  @media (max-width: 720px) { .phone { right: 2%; width: 30%; } }
+
+  section { padding: 96px 0; }
+  .section-head { text-align: center; max-width: 640px; margin: 0 auto 48px; }
+  .eyebrow { color: var(--primary); font-weight: 700; font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase; }
+  h2 { font-size: clamp(28px, 4vw, 40px); line-height: 1.2; margin: 8px 0 12px; letter-spacing: -.5px; }
+  .section-head p { color: var(--muted); margin: 0; }
+
+  /* 下载 */
+  #download { background: var(--surface-2); }
+  .downloads { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+  .dl {
+    display: flex; flex-direction: column; gap: 14px; padding: 28px;
+    background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+    border: 1px solid color-mix(in srgb, var(--outline) 40%, transparent);
+    transition: transform .2s ease, box-shadow .2s ease;
+  }
+  .dl:hover { transform: translateY(-3px); }
+  .dl-icon {
+    width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center;
+    background: var(--primary-container); color: var(--on-primary-container);
+  }
+  .dl-icon svg { width: 28px; height: 28px; fill: currentColor; }
+  .dl h3 { margin: 0; font-size: 20px; }
+  .dl .meta { color: var(--muted); font-size: 14px; margin: -8px 0 0; min-height: 22px; }
+  .dl .note { color: var(--muted); font-size: 13px; margin: 0; flex: 1; }
+  .dl .btn { width: 100%; }
+  .release-info { text-align: center; color: var(--muted); font-size: 14px; margin-top: 28px; }
+  .release-info a { color: var(--primary); font-weight: 600; }
+
+  /* 功能 */
+  .features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  @media (max-width: 1000px) { .features { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .features { grid-template-columns: 1fr; } }
+  .feature {
+    padding: 28px; border-radius: var(--radius); background: var(--surface);
+    border: 1px solid color-mix(in srgb, var(--outline) 40%, transparent);
+  }
+  .feature .ic {
+    width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); margin-bottom: 16px;
+  }
+  .feature .ic svg { width: 24px; height: 24px; fill: currentColor; }
+  .feature h3 { margin: 0 0 6px; font-size: 18px; }
+  .feature p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  /* 架构 */
+  #arch { background: var(--surface-2); }
+  .arch { display: grid; gap: 14px; max-width: 860px; margin: 0 auto; }
+  .tier {
+    display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 20px;
+    padding: 20px 24px; border-radius: 16px; background: var(--surface);
+    border: 1px solid color-mix(in srgb, var(--outline) 40%, transparent);
+  }
+  .tier .name { font-weight: 700; color: var(--primary); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    padding: 6px 12px; border-radius: 8px; font-size: 14px;
+    background: var(--surface-2); border: 1px solid color-mix(in srgb, var(--outline) 50%, transparent);
+  }
+  .arrow { text-align: center; color: var(--muted); font-size: 13px; }
+  @media (max-width: 640px) { .tier { grid-template-columns: 1fr; gap: 10px; } }
+
+  /* 底部 */
+  .final { text-align: center; }
+  footer { padding: 32px 0 48px; color: var(--muted); font-size: 14px; border-top: 1px solid color-mix(in srgb, var(--outline) 50%, transparent); }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
+  footer a:hover { color: var(--text); }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .btn, .dl { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></symbol>
+  <symbol id="i-github" viewBox="0 0 24 24"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.7 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></symbol>
+  <symbol id="i-android" viewBox="0 0 24 24"><path d="M17.6 9.48l1.84-3.18a.38.38 0 0 0-.66-.38l-1.86 3.22a11.4 11.4 0 0 0-9.84 0L5.22 5.92a.38.38 0 0 0-.66.38L6.4 9.48A10.8 10.8 0 0 0 1 18h22a10.8 10.8 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/></symbol>
+  <symbol id="i-apple" viewBox="0 0 24 24"><path d="M16.37 12.6c-.03-2.6 2.13-3.86 2.22-3.92-1.21-1.77-3.09-2.01-3.76-2.04-1.6-.16-3.12.94-3.93.94-.81 0-2.06-.92-3.39-.89-1.74.03-3.35 1.01-4.25 2.57-1.81 3.14-.46 7.79 1.3 10.34.86 1.25 1.89 2.65 3.23 2.6 1.3-.05 1.79-.84 3.36-.84 1.57 0 2.01.84 3.38.81 1.4-.02 2.28-1.27 3.13-2.52.99-1.45 1.4-2.85 1.42-2.92-.03-.01-2.72-1.05-2.75-4.13zM13.8 4.95c.71-.87 1.2-2.07 1.06-3.27-1.03.04-2.28.69-3.02 1.55-.66.76-1.24 1.99-1.09 3.16 1.15.09 2.33-.58 3.05-1.44z"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M16 1H8a3 3 0 0 0-3 3v16a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3V4a3 3 0 0 0-3-3zm-4 21a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5-5H7V4h10v13z"/></symbol>
+  <symbol id="i-web" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm6.93 6h-2.95a15.7 15.7 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.93 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14a8.2 8.2 0 0 1 0-4h3.38a16.5 16.5 0 0 0 0 4H4.26zm.81 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 0 1 5.07 16zm2.95-8H5.07a7.99 7.99 0 0 1 4.33-3.56A15.7 15.7 0 0 0 8.02 8zM12 19.96A14.1 14.1 0 0 1 10.09 16h3.82A14.1 14.1 0 0 1 12 19.96zM14.34 14H9.66a14.7 14.7 0 0 1 0-4h4.68a14.7 14.7 0 0 1 0 4zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56zM16.36 14a16.5 16.5 0 0 0 0-4h3.38a8.2 8.2 0 0 1 0 4h-3.38z"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z"/></symbol>
+  <symbol id="i-group" viewBox="0 0 24 24"><path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm-8 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05A4.2 4.2 0 0 1 17 16.5V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62A7.95 7.95 0 0 1 12.5 10.5c3.54 0 6.55 2.31 7.6 5.5l2.37-.78A10.5 10.5 0 0 0 12.5 8z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></symbol>
+  <symbol id="i-done" viewBox="0 0 24 24"><path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/></symbol>
+  <symbol id="i-hub" viewBox="0 0 24 24"><path d="M8.4 18.2A2.5 2.5 0 1 1 6 15c.17 0 .33.02.49.05l1.6-2.82a4 4 0 0 1 .03-4.48L6.5 4.95A2.5 2.5 0 1 1 8.4 3.3l1.61 2.82A4 4 0 0 1 12 5.6a4 4 0 0 1 3.99 3.9h3.22a2.5 2.5 0 1 1 0 2h-3.22A4 4 0 0 1 12 13.6c-.72 0-1.4-.19-1.99-.53L8.4 15.9c.36.44.6.99.6 1.6 0 .25-.04.48-.1.7z"/></symbol>
+</svg>
+
+<header>
+  <nav class="wrap nav" aria-label="主导航">
+    <a class="brand" href="#top" aria-label="GO-IM 首页">
+      <span class="brand-mark"><svg><use href="#i-chat"/></svg></span>GO-IM
+    </a>
+    <div class="nav-links">
+      <a href="#download">下载</a>
+      <a href="#features">功能</a>
+      <a href="#arch">架构</a>
+      <a class="gh" href="https://github.com/chaishuanzhu/GO-IM">GitHub</a>
+    </div>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <span class="pill"><span class="dot"></span>开源 · MIT 协议</span>
+      <h1>用 <span class="accent">Go</span> 构建的<br>即时通讯系统</h1>
+      <p class="lead">WebSocket 与 TCP 双协议接入，单聊、群聊、离线消息、撤回、全文搜索与多网关集群开箱即用。一套 Kotlin Multiplatform 代码覆盖 Android、iOS 与桌面端。</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="#download"><svg><use href="#i-download"/></svg>下载客户端</a>
+        <a class="btn btn-outline" href="https://github.com/chaishuanzhu/GO-IM"><svg><use href="#i-github"/></svg>查看源码</a>
+      </div>
+      <div class="showcase">
+        <img class="desktop-shot" src="assets/desktop.png" alt="GO-IM 桌面端：会话列表与聊天面板" width="1100" height="760">
+        <div class="phone"><img src="assets/mobile.png" alt="GO-IM iOS 端会话列表" width="276" height="600"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="download">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Download</div>
+        <h2>选择你的平台</h2>
+        <p>客户端由 Jenkins 自动构建并发布到 GitHub Releases，下方链接始终指向最新版本。</p>
+      </div>
+      <div class="downloads">
+        <article class="dl">
+          <div class="dl-icon"><svg><use href="#i-android"/></svg></div>
+          <h3>Android</h3>
+          <p class="meta" data-meta="android">Android 8.0 及以上</p>
+          <p class="note">APK 安装包，安装时需允许「安装未知来源应用」。</p>
+          <a class="btn btn-primary" data-asset="-android.apk" href="https://github.com/chaishuanzhu/GO-IM/releases"><svg><use href="#i-download"/></svg>下载 APK</a>
+        </article>
+        <article class="dl">
+          <div class="dl-icon"><svg><use href="#i-apple"/></svg></div>
+          <h3>macOS</h3>
+          <p class="meta" data-meta="macos">Apple Silicon（M 系列芯片）</p>
+          <p class="note">DMG 安装包。应用尚未公证，首次打开请在「应用程序」中右键 → 打开。</p>
+          <a class="btn btn-primary" data-asset="-macos-arm64.dmg" href="https://github.com/chaishuanzhu/GO-IM/releases"><svg><use href="#i-download"/></svg>下载 DMG</a>
+        </article>
+        <article class="dl">
+          <div class="dl-icon"><svg><use href="#i-phone"/></svg></div>
+          <h3>iOS</h3>
+          <p class="meta" data-meta="ios">iOS 16 及以上</p>
+          <p class="note">未签名 IPA，需使用 AltStore、Sideloadly 等工具自签安装。</p>
+          <a class="btn btn-primary" data-asset="-ios-unsigned.ipa" href="https://github.com/chaishuanzhu/GO-IM/releases"><svg><use href="#i-download"/></svg>下载 IPA</a>
+        </article>
+        <article class="dl">
+          <div class="dl-icon"><svg><use href="#i-web"/></svg></div>
+          <h3>Web</h3>
+          <p class="meta">无需安装</p>
+          <p class="note">在浏览器中直接使用 React 网页版，与各客户端消息实时互通。</p>
+          <a class="btn btn-outline" href="https://im.chaisz.com/"><svg><use href="#i-web"/></svg>打开网页版</a>
+        </article>
+      </div>
+      <p class="release-info" id="release-info">
+        所有版本与校验和见 <a href="https://github.com/chaishuanzhu/GO-IM/releases">GitHub Releases</a>
+      </p>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Features</div>
+        <h2>一个 IM 该有的，都在这里</h2>
+        <p>从连接接入到消息落库，每一层都可独立替换与扩展。</p>
+      </div>
+      <div class="features">
+        <div class="feature"><div class="ic"><svg><use href="#i-bolt"/></svg></div><h3>双协议接入</h3><p>WebSocket 与基于 gnet 的原生 TCP 并行，Protobuf 二进制编码，心跳保活与断线重连。</p></div>
+        <div class="feature"><div class="ic"><svg><use href="#i-group"/></svg></div><h3>单聊与群聊</h3><p>群组创建、加入、退出与成员通知，群消息扇出投递，@ 提及成员。</p></div>
+        <div class="feature"><div class="ic"><svg><use href="#i-chat"/></svg></div><h3>离线消息</h3><p>在线实时推送、离线 Redis 队列暂存，重新上线后自动补拉，消息去重与 ACK 确认。</p></div>
+        <div class="feature"><div class="ic"><svg><use href="#i-undo"/></svg></div><h3>消息撤回</h3><p>两分钟内撤回已发送消息，跨网关与离线用户同步撤回通知。</p></div>
+        <div class="feature"><div class="ic"><svg><use href="#i-done"/></svg></div><h3>已读与未读</h3><p>已读回执实时回传，会话未读数精确统计，多端状态一致。</p></div>
+        <div class="feature"><div class="ic"><svg><use href="#i-image"/></svg></div><h3>富媒体</h3><p>图片、视频、文件、语音与贴纸表情；MinIO 对象存储，自动生成图片缩略图。</p></div>
+        <div class="feature"><div class="ic"><svg><use href="#i-search"/></svg></div><h3>全文搜索</h3><p>按关键字检索历史消息，游标分页，客户端 ⌘/Ctrl+F 快速唤起。</p></div>
+        <div class="feature"><div class="ic"><svg><use href="#i-hub"/></svg></div><h3>多网关集群</h3><p>一致性哈希路由用户，gRPC 跨节点转发，Redis 服务发现与健康检查自动摘除故障节点。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="arch">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Architecture</div>
+        <h2>分层架构，按需伸缩</h2>
+        <p>接入层只管连接与路由，持久化通过 Kafka 异步完成，热路径不被存储拖慢。</p>
+      </div>
+      <div class="arch">
+        <div class="tier"><div class="name">客户端</div><div class="chips"><span class="chip">Kotlin Multiplatform</span><span class="chip">Compose Multiplatform</span><span class="chip">SwiftUI</span><span class="chip">React</span></div></div>
+        <div class="arrow">WebSocket / TCP · Protobuf</div>
+        <div class="tier"><div class="name">Gateway</div><div class="chips"><span class="chip">gorilla/websocket</span><span class="chip">gnet</span><span class="chip">JWT</span><span class="chip">限流 · 去重 · ACK</span><span class="chip">一致性哈希</span></div></div>
+        <div class="arrow">gRPC · Kafka</div>
+        <div class="tier"><div class="name">Logic</div><div class="chips"><span class="chip">gRPC 服务</span><span class="chip">Kafka 消费批量落库</span><span class="chip">历史查询</span></div></div>
+        <div class="arrow">存储</div>
+        <div class="tier"><div class="name">数据层</div><div class="chips"><span class="chip">MySQL</span><span class="chip">Redis</span><span class="chip">Kafka</span><span class="chip">MinIO</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="wrap">
+      <h2>现在就开始聊天</h2>
+      <p class="lead">下载客户端，或者用 Docker Compose 一键部署属于你自己的 IM 服务。</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="#download"><svg><use href="#i-download"/></svg>下载客户端</a>
+        <a class="btn btn-outline" href="https://github.com/chaishuanzhu/GO-IM#readme"><svg><use href="#i-github"/></svg>部署文档</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© GO-IM · MIT License</span>
+    <span><a href="https://github.com/chaishuanzhu/GO-IM">GitHub</a> · <a href="https://github.com/chaishuanzhu/GO-IM/releases">Releases</a> · <a href="https://im.chaisz.com/">网页版</a></span>
+  </div>
+</footer>
+
+<script>
+  // 取最新的 kmp-v* Release，把下载按钮指向对应产物；请求失败时保留指向 Releases 页的默认链接
+  (async () => {
+    const repo = 'chaishuanzhu/GO-IM';
+    try {
+      const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=20`, {
+        headers: { Accept: 'application/vnd.github+json' },
+      });
+      if (!res.ok) return;
+      const release = (await res.json()).find(r => !r.draft && r.tag_name.startsWith('kmp-v'));
+      if (!release) return;
+
+      const mb = bytes => `${(bytes / 1048576).toFixed(1)} MB`;
+      document.querySelectorAll('[data-asset]').forEach(link => {
+        const asset = release.assets.find(a => a.name.endsWith(link.dataset.asset));
+        if (!asset) return;
+        link.href = asset.browser_download_url;
+        const meta = link.closest('.dl').querySelector('.meta');
+        meta.textContent = `${meta.textContent} · ${mb(asset.size)}`;
+      });
+
+      const version = release.tag_name.replace(/^kmp-v/, '');
+      const date = new Date(release.published_at).toLocaleDateString('zh-CN');
+      const info = document.getElementById('release-info');
+      info.innerHTML = '';
+      info.append(`当前版本 ${version}${release.prerelease ? '（预发布）' : ''} · ${date} 发布 · `);
+      const all = document.createElement('a');
+      all.href = release.html_url;
+      all.textContent = '更新说明与校验和';
+      info.append(all);
+    } catch (_) { /* 网络不可用时使用默认链接 */ }
+  })();
+</script>
+</body>
+</html>
