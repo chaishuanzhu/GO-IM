@@ -24,15 +24,15 @@ if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
 else
     flags=()
     if [ "${PRERELEASE:-false}" = "true" ]; then flags+=(--prerelease); fi
-    notes="GO-IM KMP 客户端 $VERSION（commit ${GIT_COMMIT:0:7}，Jenkins #${BUILD_NUMBER:-local}）
+    notes="GO-IM KMP 客户端 ${VERSION}（commit ${GIT_COMMIT:0:7}，Jenkins #${BUILD_NUMBER:-local}）
 
 | 文件 | 平台 |
 |------|------|
-| \`GO-IM-$VERSION-android.apk\` | Android 8.0+ |
-| \`GO-IM-$VERSION-macos-arm64.dmg\` | macOS（Apple Silicon，未公证：首次打开需右键 → 打开） |
-| \`GO-IM-$VERSION-ios-unsigned.ipa\` | iOS 16+，未签名，需自行重签名或侧载 |"
+| \`GO-IM-${VERSION}-android.apk\` | Android 8.0+ |
+| \`GO-IM-${VERSION}-macos-arm64.dmg\` | macOS（Apple Silicon，未公证：首次打开需右键 → 打开） |
+| \`GO-IM-${VERSION}-ios-unsigned.ipa\` | iOS 16+，未签名，需自行重签名或侧载 |"
     gh release create "$TAG" "${assets[@]}" -R "$REPO" --target "$GIT_COMMIT" \
-        --title "GO-IM KMP $VERSION" --notes "$notes" ${flags[@]+"${flags[@]}"}
+        --title "GO-IM KMP ${VERSION}" --notes "$notes" ${flags[@]+"${flags[@]}"}
 fi
 
 gh release view "$TAG" -R "$REPO" --json url -q .url

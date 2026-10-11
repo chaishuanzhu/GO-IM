@@ -115,7 +115,7 @@ pipeline {
             archiveArtifacts artifacts: 'kmp/dist/*', fingerprint: true
         }
         always {
-            cleanWs(deleteDirs: true, notFailBuild: true)
+            deleteDir()
         }
     }
 }
