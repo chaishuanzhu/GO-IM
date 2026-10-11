@@ -70,6 +70,9 @@ withEnv([
                 '''
             }
 
+            // 先归档到 Jenkins，发布失败时也能从构建页下载
+            archiveArtifacts artifacts: 'dist/*', fingerprint: true
+
             stage('Publish') {
                 if (!params.PUBLISH) { echo '跳过'; return }
                 withCredentials([string(credentialsId: 'github-token', variable: 'GH_TOKEN')]) {
@@ -77,6 +80,5 @@ withEnv([
                 }
             }
         }
-        archiveArtifacts artifacts: 'kmp/dist/*', fingerprint: true
     }
 }
