@@ -79,7 +79,7 @@ class SessionCoordinator(
             }
             is InboundEvent.FriendRequestReceived -> friends?.onRequestReceived(event)
             is InboundEvent.FriendRequestResult -> friends?.onRequestResult(event)
-            is InboundEvent.FriendResponded -> friends?.refresh()
+            is InboundEvent.FriendResponded -> friends?.onResponded(event)
         }
     }
 

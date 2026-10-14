@@ -923,6 +923,7 @@ func (s *Server) HandleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
+	s.router.NotifyFriendRequest(r.Context(), claims.UID, claims.Username, toUID)
 
 	data, _ := json.Marshal(map[string]string{"status": "ok"})
 	w.Header().Set("Content-Type", "application/json")
@@ -956,6 +957,7 @@ func (s *Server) HandleFriendAccept(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	s.router.NotifyFriendResponse(r.Context(), claims.UID, fromUID, "accept")
 
 	data, _ := json.Marshal(map[string]string{"status": "ok"})
 	w.Header().Set("Content-Type", "application/json")
@@ -989,6 +991,7 @@ func (s *Server) HandleFriendReject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	s.router.NotifyFriendResponse(r.Context(), claims.UID, fromUID, "reject")
 
 	data, _ := json.Marshal(map[string]string{"status": "ok"})
 	w.Header().Set("Content-Type", "application/json")

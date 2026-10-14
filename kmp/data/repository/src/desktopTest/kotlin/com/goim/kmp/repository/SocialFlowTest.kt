@@ -163,6 +163,42 @@ class SocialFlowTest {
     }
 
     @Test
+    fun acceptOverSocketWhileRefreshFailsStillAddsFriend() = runBlocking<Unit> {
+        val connection = FakeConnection(connected = true)
+        val friends = FriendRepositoryImpl(api, db, connection, me.uid, confirmTimeoutMillis = 50, pollIntervalMillis = 10)
+        friends.onRequestReceived(InboundEvent.FriendRequestReceived("bob", "bob", 10))
+
+        // 长连接已接受，但 HTTP 不可用：刷新失败，回退的 /friend/accept 报 404（请求已被处理）
+        routes = mapOf(
+            "/friend/list" to (HttpStatusCode.BadGateway to "upstream down"),
+            "/friend/accept" to (HttpStatusCode.NotFound to "no pending friend request from bob to alice"),
+        )
+        friends.respond("bob", accept = true)
+
+        assertTrue(friends.observeRequests().first().isEmpty())
+        assertEquals(listOf("bob"), friends.observeFriends().first().map { it.uid })
+    }
+
+    @Test
+    fun acceptedResponseAddsFriendEvenIfRefreshFails() = runBlocking<Unit> {
+        val connection = FakeConnection(connected = true)
+        val friends = FriendRepositoryImpl(api, db, connection, me.uid)
+        val messages = MessageRepositoryImpl(db, connection, this)
+        val conversations = ConversationRepositoryImpl(db)
+        val pumps = CoroutineScope(coroutineContext + Job())
+        SessionCoordinator(me, connection, messages, conversations, pumps, friends = friends) {}.start()
+
+        routes = mapOf("/friend/list" to (HttpStatusCode.BadGateway to "upstream down"))
+        connection.events.send(InboundEvent.FriendResponded("bob", accepted = true))
+        eventually { friends.observeFriends().first().map { it.uid } == listOf("bob") }
+
+        connection.events.send(InboundEvent.FriendResponded("carol", accepted = false))
+        connection.events.send(InboundEvent.FriendResponded("dave", accepted = true))
+        eventually { friends.observeFriends().first().map { it.uid } == listOf("bob", "dave") }
+        pumps.cancel()
+    }
+
+    @Test
     fun groupRefreshSyncsTitlesAndDropsLeftGroups() = runBlocking<Unit> {
         val conversations = ConversationRepositoryImpl(db)
         val groups = GroupRepositoryImpl(api, db, conversations)

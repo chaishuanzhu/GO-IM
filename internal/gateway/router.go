@@ -1602,17 +1602,7 @@ func (r *Router) handleFriendRequest(ctx context.Context, sender *Client, msg *p
 	}
 
 	log.Printf("[router] friend request: %s → %s", sender.UID, msg.To)
-
-	// 如果目标在线(本地或跨网关)则通知它。
-	notify := &proto.Message{
-		Cmd:       proto.CmdFriendRequest,
-		MsgId:     r.snow.Next(),
-		From:      sender.UID,
-		To:        msg.To,
-		Content:   fmt.Sprintf(`{"from_uid":"%s","username":"%s"}`, sender.UID, sender.UID),
-		Timestamp: time.Now().UnixMilli(),
-	}
-	r.routeOrStoreOffline(ctx, msg.To, notify)
+	r.NotifyFriendRequest(ctx, sender.UID, sender.Username, msg.To)
 
 	// 向发送方发送 ACK
 	sender.Send(&proto.Message{
@@ -1667,17 +1657,48 @@ func (r *Router) handleFriendResponse(ctx context.Context, sender *Client, msg *
 	}
 
 	log.Printf("[router] friend response: %s %s request from %s", sender.UID, action, targetUID)
+	r.NotifyFriendResponse(ctx, sender.UID, targetUID, action)
+}
 
-	// 通知原始请求者。
-	notify := &proto.Message{
+// NotifyFriendRequest 把好友请求推送给 toUID（WS 与 HTTP 入口共用）。
+func (r *Router) NotifyFriendRequest(ctx context.Context, fromUID, fromName, toUID string) {
+	if fromName == "" {
+		fromName = fromUID
+	}
+	content, _ := json.Marshal(map[string]string{"from_uid": fromUID, "username": fromName})
+	r.deliverToUser(ctx, toUID, &proto.Message{
+		Cmd:       proto.CmdFriendRequest,
+		MsgId:     r.snow.Next(),
+		From:      fromUID,
+		To:        toUID,
+		Content:   string(content),
+		Timestamp: time.Now().UnixMilli(),
+	})
+}
+
+// NotifyFriendResponse 把接受/拒绝结果推送给原始请求者 toUID。
+func (r *Router) NotifyFriendResponse(ctx context.Context, fromUID, toUID, action string) {
+	content, _ := json.Marshal(map[string]string{"action": action, "from_uid": fromUID})
+	r.deliverToUser(ctx, toUID, &proto.Message{
 		Cmd:       proto.CmdFriendResponse,
 		MsgId:     r.snow.Next(),
-		From:      sender.UID,
-		To:        targetUID,
-		Content:   fmt.Sprintf(`{"action":"%s","from_uid":"%s"}`, action, sender.UID),
+		From:      fromUID,
+		To:        toUID,
+		Content:   string(content),
 		Timestamp: time.Now().UnixMilli(),
+	})
+}
+
+// deliverToUser 优先投递给本地在线连接，否则交给 routeOrStoreOffline（跨网关转发或离线存储）。
+func (r *Router) deliverToUser(ctx context.Context, uid string, msg *proto.Message) {
+	if target := r.clients.Get(ctx, uid); target != nil {
+		if err := target.Send(msg); err == nil {
+			return
+		}
+		r.offline.StoreOffline(ctx, uid, msg)
+		return
 	}
-	r.routeOrStoreOffline(ctx, targetUID, notify)
+	r.routeOrStoreOffline(ctx, uid, msg)
 }
 
 // handleTyping 将正在输入的状态转发给目标用户或群成员。

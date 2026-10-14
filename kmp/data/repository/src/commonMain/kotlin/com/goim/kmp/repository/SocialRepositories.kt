@@ -164,12 +164,34 @@ class FriendRepositoryImpl(
             val deadline = confirmTimeoutMillis / pollIntervalMillis
             repeat(deadline.toInt().coerceAtLeast(1)) {
                 delay(pollIntervalMillis)
-                runCatching { refresh() }
-                if (persist { dao.pending(selfUid) }.none { it.fromUid == fromUid }) return
+                // 刷新成功才算服务端确认；刷新失败时 pending 仍是本地旧值，不能据此判断
+                if (runCatching { refresh() }.isSuccess &&
+                    persist { dao.pending(selfUid) }.none { it.fromUid == fromUid }
+                ) {
+                    return
+                }
             }
         }
-        api.respondFriendRequest(fromUid, accept)
-        persist { dao.deleteRequest(fromUid, selfUid) }
+        try {
+            api.respondFriendRequest(fromUid, accept)
+        } catch (e: DomainError.Server) {
+            // 长连接已处理过该请求时 HTTP 返回 404（no pending friend request）
+            if (!viaSocket || e.code != 404) throw e
+        }
+        applyResponse(fromUid, accept)
+        runCatching { refresh() }
+    }
+
+    private suspend fun applyResponse(fromUid: String, accept: Boolean) {
+        persist {
+            dao.deleteRequest(fromUid, selfUid)
+            if (accept) dao.upsertFriends(listOf(Friend(fromUid).toEntity()))
+        }
+    }
+
+    /** 对方接受了我的请求：先落库让列表立即出现，再全量刷新。 */
+    internal suspend fun onResponded(event: InboundEvent.FriendResponded) {
+        if (event.accepted) persist { dao.upsertFriends(listOf(Friend(event.peerUid).toEntity())) }
         runCatching { refresh() }
     }
 
