@@ -2,12 +2,12 @@
 //   node-mac   Android APK、macOS DMG、iOS 未签名 IPA
 //   win-host   Windows MSI（jpackage 只能在目标系统上打包）
 //   ci-01      Linux DEB（容器内构建）；服务端 gateway / logic 与 Web 前端多架构镜像推送 Docker Hub
-//   最后在 node-mac 汇总产物发布到 GitHub Release（tag kmp-v<VERSION>，已存在则覆盖同名产物）
+//   最后在 node-mac 汇总产物发布到 GitHub Release（tag v<VERSION>，已存在则覆盖同名产物）
 //   镜像推送后把 <VERSION> 镜像部署到 k8s 测试环境 go-im-test（https://test-go-im.chaisz.com）
 // 各节点各自检出同一个提交；Jenkins 控制器到 GitHub 的网络不稳定，控制器上不做检出。
-// 自动触发：任务 go-im-tags 轮询 GitHub，发现新的 kmp-v<版本> tag 就以 TAG 参数启动本任务。
+// 自动触发：任务 go-im-tags 轮询 GitHub，发现新的 v<版本> tag 就以 TAG 参数启动本任务。
 //
-// 任务参数：TAG（kmp-v<版本>，设置后版本号和提交取自 tag，忽略 BRANCH / VERSION）、BRANCH、VERSION、
+// 任务参数：TAG（v<版本>，设置后版本号和提交取自 tag，忽略 BRANCH / VERSION）、BRANCH、VERSION、
 //           BUILD_ANDROID、BUILD_DESKTOP（macOS）、BUILD_IOS、BUILD_WINDOWS、BUILD_LINUX、
 //           BUILD_IMAGES、DOCKERHUB_NAMESPACE（留空 = Docker Hub 凭据的用户名）、PUBLISH、PRERELEASE、DEPLOY_TEST
 // Jenkins 凭据：
@@ -22,8 +22,8 @@ def gitTag = params.TAG?.trim() ?: ''
 def version = params.VERSION.trim()
 def sourceRef = "refs/heads/${params.BRANCH}"
 if (gitTag) {
-    def m = gitTag =~ /^kmp-v([1-9][0-9]*\.[0-9]+\.[0-9]+)$/
-    if (!m.matches()) { error "TAG 须为 kmp-v<MAJOR.MINOR.PATCH> 且 MAJOR ≥ 1：${gitTag}" }
+    def m = gitTag =~ /^v([1-9][0-9]*\.[0-9]+\.[0-9]+)$/
+    if (!m.matches()) { error "TAG 须为 v<MAJOR.MINOR.PATCH> 且 MAJOR ≥ 1：${gitTag}" }
     version = m.group(1)
     m = null
     sourceRef = "refs/tags/${gitTag}"
@@ -31,7 +31,7 @@ if (gitTag) {
 if (!(version ==~ /[1-9][0-9]*\.[0-9]+\.[0-9]+/)) {
     error "VERSION 须为 MAJOR.MINOR.PATCH 且 MAJOR ≥ 1（DMG / MSI 的限制）：${version}"
 }
-def tag = "kmp-v${version}"
+def tag = "v${version}"
 def gradleArgs = "--console=plain --no-daemon --no-configuration-cache -Pgoim.versionName=${version} -Pgoim.versionCode=${env.BUILD_NUMBER}"
 def commit = ''
 def images = []

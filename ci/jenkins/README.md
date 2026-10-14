@@ -6,17 +6,17 @@
 
 | 任务 | 脚本 | 触发 | 作用 |
 |------|------|------|------|
-| `go-im` | [go-im.groovy](go-im.groovy) | 手动；或由 `go-im-tags` 以 `TAG` 参数启动 | 全端客户端构建（Android / macOS / iOS / Windows / Linux）、服务端与 Web 镜像推送 Docker Hub、发布 GitHub Release `kmp-v<VERSION>`、部署 k8s 测试环境 |
-| `go-im-tags` | [go-im-tags.groovy](go-im-tags.groovy) | 定时轮询 `H/3 * * * *` | 发现新的 `kmp-v<MAJOR.MINOR.PATCH>` tag 时启动 `go-im` |
+| `go-im` | [go-im.groovy](go-im.groovy) | 手动；或由 `go-im-tags` 以 `TAG` 参数启动 | 全端客户端构建（Android / macOS / iOS / Windows / Linux）、服务端与 Web 镜像推送 Docker Hub、发布 GitHub Release `v<VERSION>`、部署 k8s 测试环境 |
+| `go-im-tags` | [go-im-tags.groovy](go-im-tags.groovy) | 定时轮询 `H/3 * * * *` | 发现新的 `v<MAJOR.MINOR.PATCH>` tag 时启动 `go-im` |
 | `go-im-server` | [go-im-server.groovy](go-im-server.groovy) | 手动 | 只构建服务端镜像（tag `sha-<7>`）并部署测试环境 |
 
 ## 发布新版本
 
 ```bash
-git tag kmp-v1.2.0 && git push origin kmp-v1.2.0
+git tag v1.2.0 && git push origin v1.2.0
 ```
 
-`go-im-tags` 最多 3 分钟内发现新 tag，以 `TAG=kmp-v1.2.0` 启动 `go-im`：版本号与提交取自 tag，产物上传到同名 GitHub Release（发布脚本见 [kmp/ci/publish-github-release.sh](../../kmp/ci/publish-github-release.sh)）。落地页（[site/](../../site/)）运行时读取最新 Release，无需重新部署。
+`go-im-tags` 最多 3 分钟内发现新 tag，以 `TAG=v1.2.0` 启动 `go-im`：版本号与提交取自 tag，产物上传到同名 GitHub Release（发布脚本见 [kmp/ci/publish-github-release.sh](../../kmp/ci/publish-github-release.sh)）。落地页（[site/](../../site/)）运行时读取最新 Release，无需重新部署。
 
 镜像推送后，`go-im` 用 [deploy/dockerhub/sync-readme.sh](../../deploy/dockerhub/sync-readme.sh) 把 `deploy/dockerhub/*.md` 同步为 Docker Hub 仓库的 Overview；同步失败只告警，不影响构建。
 

@@ -364,7 +364,7 @@
 </footer>
 
 <script>
-  // 取最新的 kmp-v* Release，把下载按钮指向对应产物；请求失败时保留指向 Releases 页的默认链接
+  // 取最新的 v* Release（含早期 kmp-v* 命名），把下载按钮指向对应产物；请求失败时保留指向 Releases 页的默认链接
   (async () => {
     const repo = 'chaishuanzhu/GO-IM';
     try {
@@ -372,7 +372,7 @@
         headers: { Accept: 'application/vnd.github+json' },
       });
       if (!res.ok) return;
-      const release = (await res.json()).find(r => !r.draft && r.tag_name.startsWith('kmp-v'));
+      const release = (await res.json()).find(r => !r.draft && /^(kmp-)?v\d/.test(r.tag_name));
       if (!release) return;
 
       const mb = bytes => `${(bytes / 1048576).toFixed(1)} MB`;
@@ -384,7 +384,7 @@
         meta.textContent = `${meta.textContent} · ${mb(asset.size)}`;
       });
 
-      const version = release.tag_name.replace(/^kmp-v/, '');
+      const version = release.tag_name.replace(/^(kmp-)?v/, '');
       const date = new Date(release.published_at).toLocaleDateString('zh-CN');
       const info = document.getElementById('release-info');
       info.innerHTML = '';
