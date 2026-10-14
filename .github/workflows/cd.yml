@@ -13,8 +13,8 @@
 # 前置条件(详见 README 部署章节):
 #   1. 服务器已 git clone 仓库到 ~/im,并手动执行过 deploy/init-ssl.sh
 #   2. 已配置 11 个必配 secrets(SSH_HOST / SSH_USER / SSH_KEY / SSH_PORT / DOMAIN /
-#      JWT_SECRET / MYSQL_ROOT_PASSWORD / MYSQL_PASSWORD / MINIO_ROOT_USER /
-#      MINIO_SECRET_KEY / ADMIN_UID);GHCR_USER / GHCR_TOKEN 可选 —— 镜像公开时
+#      JWT_SECRET / MYSQL_ROOT_PASSWORD / MYSQL_PASSWORD / RUSTFS_ACCESS_KEY /
+#      RUSTFS_SECRET_KEY / ADMIN_UID,旧名 MINIO_ROOT_USER / MINIO_SECRET_KEY 仍兼容);GHCR_USER / GHCR_TOKEN 可选 —— 镜像公开时
 #      匿名拉取即可,配了才执行 docker login(镜像转私有后按需补)
 #   3. GRAFANA_CLOUD_URL / GRAFANA_CLOUD_USER / GRAFANA_CLOUD_TOKEN 可选 ——
 #      接入 Grafana Cloud 免费版指标采集(见 deploy/alloy.config.alloy);
@@ -111,7 +111,7 @@ jobs:
           DOMAIN: ${{ secrets.DOMAIN }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
-          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+          RUSTFS_SECRET_KEY: ${{ secrets.RUSTFS_SECRET_KEY || secrets.MINIO_SECRET_KEY }}
           ADMIN_UID: ${{ secrets.ADMIN_UID }}
 
       # 先 pull 再 scp: 生成的配置是 gitignore 文件,不会被 git pull 覆盖。
@@ -152,8 +152,8 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
           MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
-          MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
-          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+          RUSTFS_ACCESS_KEY: ${{ secrets.RUSTFS_ACCESS_KEY || secrets.MINIO_ROOT_USER }}
+          RUSTFS_SECRET_KEY: ${{ secrets.RUSTFS_SECRET_KEY || secrets.MINIO_SECRET_KEY }}
           DOMAIN: ${{ secrets.DOMAIN }}
           GRAFANA_CLOUD_URL: ${{ secrets.GRAFANA_CLOUD_URL }}
           GRAFANA_CLOUD_USER: ${{ secrets.GRAFANA_CLOUD_USER }}
@@ -164,7 +164,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          envs: GHCR_USER,GHCR_TOKEN,MYSQL_ROOT_PASSWORD,MYSQL_PASSWORD,MINIO_ROOT_USER,MINIO_SECRET_KEY,DOMAIN,GRAFANA_CLOUD_URL,GRAFANA_CLOUD_USER,GRAFANA_CLOUD_TOKEN,TAG
+          envs: GHCR_USER,GHCR_TOKEN,MYSQL_ROOT_PASSWORD,MYSQL_PASSWORD,RUSTFS_ACCESS_KEY,RUSTFS_SECRET_KEY,DOMAIN,GRAFANA_CLOUD_URL,GRAFANA_CLOUD_USER,GRAFANA_CLOUD_TOKEN,TAG
           script: |
             set -e
             cd ~/im
@@ -175,13 +175,13 @@ jobs:
               echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             fi
 
-            # 写入 compose 环境变量(gitignore 的 .env,MySQL/MinIO 首次启动时创建凭据,
+            # 写入 compose 环境变量(gitignore 的 .env,MySQL/RustFS 首次启动时创建凭据,
             # 之后保持不变 —— secrets 值一旦部署即应固定)
             cat > .env <<EOF
             MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
             MYSQL_PASSWORD=$MYSQL_PASSWORD
-            MINIO_ROOT_USER=$MINIO_ROOT_USER
-            MINIO_ROOT_PASSWORD=$MINIO_SECRET_KEY
+            RUSTFS_ACCESS_KEY=$RUSTFS_ACCESS_KEY
+            RUSTFS_SECRET_KEY=$RUSTFS_SECRET_KEY
             GRAFANA_CLOUD_URL=$GRAFANA_CLOUD_URL
             GRAFANA_CLOUD_USER=$GRAFANA_CLOUD_USER
             GRAFANA_CLOUD_TOKEN=$GRAFANA_CLOUD_TOKEN

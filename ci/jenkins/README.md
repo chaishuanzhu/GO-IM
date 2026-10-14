@@ -18,6 +18,8 @@ git tag kmp-v1.2.0 && git push origin kmp-v1.2.0
 
 `go-im-tags` 最多 3 分钟内发现新 tag，以 `TAG=kmp-v1.2.0` 启动 `go-im`：版本号与提交取自 tag，产物上传到同名 GitHub Release（发布脚本见 [kmp/ci/publish-github-release.sh](../../kmp/ci/publish-github-release.sh)）。落地页（[site/](../../site/)）运行时读取最新 Release，无需重新部署。
 
+镜像推送后，`go-im` 用 [deploy/dockerhub/sync-readme.sh](../../deploy/dockerhub/sync-readme.sh) 把 `deploy/dockerhub/*.md` 同步为 Docker Hub 仓库的 Overview；同步失败只告警，不影响构建。
+
 ## 任务参数
 
 **go-im**：`TAG`（设置后忽略 `BRANCH` / `VERSION`）、`BRANCH`、`VERSION`（MAJOR ≥ 1，DMG / MSI 的限制）、`BUILD_ANDROID`、`BUILD_DESKTOP`（macOS）、`BUILD_IOS`、`BUILD_WINDOWS`、`BUILD_LINUX`、`BUILD_IMAGES`、`DOCKERHUB_NAMESPACE`（留空 = Docker Hub 凭据的用户名）、`PUBLISH`、`PRERELEASE`、`DEPLOY_TEST`

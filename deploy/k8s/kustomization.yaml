@@ -1,0 +1,41 @@
+# GO-IM — Kubernetes 全量部署
+#   kubectl apply -k deploy/k8s
+# 说明见 deploy/README.md。上线前至少修改：
+#   - config.json 的 jwt.secret
+#   - 下方 goim-infra 的密码（同步改 config.json 里的 MySQL DSN / object_storage.secret_key）
+#   - ingress.yaml 的域名和 ingressClassName
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: go-im
+
+resources:
+  - namespace.yaml
+  - mysql.yaml
+  - redis.yaml
+  - kafka.yaml
+  - rustfs.yaml
+  - logic.yaml
+  - gateway.yaml
+  - web.yaml
+  - ingress.yaml
+
+# 名字带内容哈希，修改后 apply 会自动滚动重启引用它的 Pod。
+secretGenerator:
+  - name: goim-config
+    files:
+      - config.json
+  - name: goim-infra
+    literals:
+      - MYSQL_ROOT_PASSWORD=im-root
+      - MYSQL_PASSWORD=im-dev
+      - RUSTFS_ACCESS_KEY=rustfsadmin
+      - RUSTFS_SECRET_KEY=rustfsadmin
+
+images:
+  - name: 870027381/go-im-gateway
+    newTag: "1.0.0"
+  - name: 870027381/go-im-logic
+    newTag: "1.0.0"
+  - name: 870027381/go-im-web
+    newTag: "1.0.0"

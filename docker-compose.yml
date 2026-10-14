@@ -9,7 +9,7 @@
 #   nginx (:80)     → 前端静态资源 + API/WS 反向代理
 #   gateway (:8080)  → 连接层 (WebSocket/TCP) + HTTP API
 #   logic (:50051)   → 业务层 (gRPC) + Kafka consumer
-#   mysql / redis / kafka / minio  → 数据层
+#   mysql / redis / kafka / rustfs → 数据层
 
 services:
   # -----------------------------------------------------------------------
@@ -79,21 +79,21 @@ services:
       retries: 15
       start_period: 30s
 
-  minio:
-    image: minio/minio:latest
-    container_name: im-minio
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: im-rustfs
     ports:
-      - "9000:9000"   # API
+      - "9000:9000"   # S3 API
       - "9001:9001"   # Web Console
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command: server /data --console-address ":9001"
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_CONSOLE_ENABLE: "true"
     volumes:
-      - minio-data:/data
+      - rustfs-data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -151,7 +151,7 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
       logic:
         condition: service_started
@@ -184,4 +184,4 @@ volumes:
   redis-data:
   mysql-data:
   kafka-data:
-  minio-data:
+  rustfs-data:

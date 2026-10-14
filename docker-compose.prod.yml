@@ -1,7 +1,7 @@
 # IM 项目 — 生产环境 Docker Compose(2C2G 最小栈,8 个服务)
 #
 # 与开发环境 (docker-compose.yml) 的区别：
-#   1. 不对外暴露内部服务端口（MySQL、Redis、MinIO、Gateway）
+#   1. 不对外暴露内部服务端口（MySQL、Redis、RustFS、Gateway）
 #   2. 新增 proxy 服务（nginx + SSL 终止）
 #   3. 新增 certbot 服务（Let's Encrypt 自动续期）
 #   4. 省略 Kafka + Logic：网关直连 MySQL 异步持久化（router.doPersist 双路径），
@@ -53,21 +53,18 @@ services:
       timeout: 5s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
-    container_name: im-minio
-    # GOMEMLIMIT 限制 Go 运行时内存上限,防其抢占 MySQL/Redis 配额
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: im-rustfs
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      GOMEMLIMIT: 256MiB
-    mem_limit: 256m
-    command: server /data --console-address ":9001"
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+    mem_limit: 512m
     volumes:
-      - minio-data:/data
+      - rustfs-data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -94,7 +91,7 @@ services:
         condition: service_healthy
       mysql:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
     restart: unless-stopped
 
@@ -177,4 +174,4 @@ services:
 volumes:
   redis-data:
   mysql-data:
-  minio-data:
+  rustfs-data:

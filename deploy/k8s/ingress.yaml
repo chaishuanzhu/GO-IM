@@ -1,0 +1,31 @@
+# /ws 和 /upload 直达 Gateway（长连接、大请求体），其余经 web 容器的 nginx。
+# nginx.ingress.kubernetes.io/* 注解只对 ingress-nginx 生效，其它控制器会忽略。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: go-im
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 20m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  # ingressClassName: nginx   # 或 traefik；不填则用集群默认 IngressClass
+  # tls:
+  #   - hosts: [im.example.com]
+  #     secretName: go-im-tls
+  rules:
+    - host: im.example.com
+      http:
+        paths:
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service: { name: gateway, port: { name: http } }
+          - path: /upload
+            pathType: Prefix
+            backend:
+              service: { name: gateway, port: { name: http } }
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: web, port: { name: http } }

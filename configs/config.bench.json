@@ -62,8 +62,8 @@
         "object_storage": {
             "enabled": true,
             "endpoint": "127.0.0.1:9000",
-            "access_key": "minioadmin",
-            "secret_key": "minioadmin",
+            "access_key": "rustfsadmin",
+            "secret_key": "rustfsadmin",
             "bucket": "im-files",
             "use_ssl": false,
             "max_upload": 10485760

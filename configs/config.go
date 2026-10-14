@@ -69,7 +69,7 @@ type GatewayConfig struct {
 	Kafka         KafkaConfig         `json:"kafka"`          // Kafka（Enabled=false = 直接写 MySQL）
 	LogicGateway  LogicConfig         `json:"logic"`          // Gateway→Logic 的 gRPC 客户端（Addr）；与顶层 Config.Logic 不同
 	Grpc          GrpcConfig          `json:"grpc"`           // 网关自身的 gRPC 服务器（用于跨网关，未来扩展）
-	ObjectStorage ObjectStorageConfig `json:"object_storage"` // 用于文件/图片消息的 MinIO/S3
+	ObjectStorage ObjectStorageConfig `json:"object_storage"` // 用于文件/图片消息的 S3 兼容存储（RustFS）
 
 	// 运行参数（之前为硬编码常量）。
 	RecallWindowMs      int64    `json:"recall_window_ms"`      // 消息撤回时间窗口（毫秒），默认 120000
@@ -116,13 +116,13 @@ type LogicConfig struct {
 	WorkerID   int64       `json:"worker_id"`   // 用于群组 ID 的 Snowflake worker ID；默认 2（网关使用 1）
 }
 
-// ObjectStorageConfig 保存文件/图片消息的对象存储（MinIO/S3）设置。
+// ObjectStorageConfig 保存文件/图片消息的对象存储（S3 兼容，默认 RustFS）设置。
 // Enabled=false 表示回退到内存模式（不持久化）。
 type ObjectStorageConfig struct {
 	Enabled   bool   `json:"enabled"`    // false = 回退到内存模式
 	Endpoint  string `json:"endpoint"`   // 例如 "localhost:9000"
-	AccessKey string `json:"access_key"` // MinIO 访问密钥
-	SecretKey string `json:"secret_key"` // MinIO 密钥
+	AccessKey string `json:"access_key"` // S3 访问密钥
+	SecretKey string `json:"secret_key"` // S3 密钥
 	Bucket    string `json:"bucket"`     // 默认 "im-files"
 	UseSSL    bool   `json:"use_ssl"`    // 默认 false（开发环境）
 	MaxUpload int64  `json:"max_upload"` // 最大上传大小（字节），默认 10 MB
@@ -247,8 +247,8 @@ func Default() *Config {
 			ObjectStorage: ObjectStorageConfig{
 				Enabled:   false, // 默认使用内存模式（无需 Docker）
 				Endpoint:  "localhost:9000",
-				AccessKey: "minioadmin",
-				SecretKey: "minioadmin",
+				AccessKey: "rustfsadmin",
+				SecretKey: "rustfsadmin",
 				Bucket:    "im-files",
 				UseSSL:    false,
 				MaxUpload: 10 * 1024 * 1024, // 10 MB

@@ -15,7 +15,7 @@
                                            Logic
                                               │
                                  ┌────────────┼────────────┐
-                               MySQL        Redis        Kafka      MinIO
+                               MySQL        Redis        Kafka      RustFS
 ```
 
 ```mermaid
@@ -39,7 +39,7 @@ flowchart TD
         MYSQL["MySQL<br/>users / messages / groups"]
         REDIS["Redis<br/>离线队列 / 集群服务发现"]
         KAFKA["Kafka<br/>im.message.persist"]
-        MINIO["MinIO (S3)<br/>im-files 对象存储 + 缩略图"]
+        RUSTFS["RustFS (S3)<br/>im-files 对象存储 + 缩略图"]
     end
 
     Client -->|HTTP| HTTP
@@ -54,7 +54,7 @@ flowchart TD
     CONS --> MYSQL
     GRPC --> MYSQL
     Hub --> REDIS
-    Router --> MINIO
+    Router --> RUSTFS
 ```
 
 > 图中是当前代码的真实运行视图。更多图（热路径 / 群聊扇出 / 跨网关转发 / 集群拓扑 / 部署拓扑等）见 [docs/08-architecture-diagrams.md](docs/08-architecture-diagrams.md)。
@@ -75,7 +75,7 @@ flowchart TD
 | 未读计数 | 按会话追踪未读消息数，已读回执实时清除 |
 | 消息历史 | 分页查询历史消息（MySQL 持久化 + Kafka 异步写入） |
 | 全文搜索 | CmdSearch 协议 + REST API，支持按关键词、会话、消息类型过滤 |
-| 文件上传 | 图片 / 文件上传到 MinIO（S3），自动生成 200px 缩略图 |
+| 文件上传 | 图片 / 文件上传到 RustFS（S3 兼容），自动生成 200px 缩略图 |
 | 消息撤回 | 2 分钟撤回窗口，撤回通知实时推送给对端 |
 | 多网关集群 | 一致性哈希路由（CRC32 + 150 虚拟节点），跨节点 gRPC 转发 |
 | 动态集群 | gRPC 健康探测 + Redis 服务发现，自动上下线 |
@@ -83,6 +83,8 @@ flowchart TD
 | 管理后台 | 系统统计、用户管理、消息浏览，仅 admin 角色可见 |
 
 ## 快速开始
+
+> 只想部署使用、不改代码：直接用 Docker Hub 预构建镜像，见 [部署指南](deploy/README.md)（Docker 最小化 / Docker 全量 / Kubernetes 全量）。下文是从源码构建。
 
 ### 前置要求
 
@@ -153,7 +155,7 @@ docker-compose down -v --rmi all # 同时删除构建的镜像
 | `:6379` | Redis | 离线消息 / 集群发现 |
 | `:3307` | MySQL | 用户 / 消息持久化 |
 | `:9093` / `:9094` | Kafka | 容器内 / 宿主机 listener |
-| `:9000` / `:9001` | MinIO API / Console | 对象存储 |
+| `:9000` / `:9001` | RustFS S3 API / Console | 对象存储 |
 
 ## 项目结构
 
@@ -201,8 +203,8 @@ im/
 ### 运行依赖服务
 
 ```bash
-# 只启动中间件（Redis, MySQL, Kafka, MinIO）
-docker-compose up -d redis mysql kafka minio
+# 只启动中间件（Redis, MySQL, Kafka, RustFS）
+docker-compose up -d redis mysql kafka rustfs
 ```
 
 ### 启动 Gateway / Logic / 前端
@@ -293,7 +295,7 @@ go run ./bench/loadtest -scenario heartbeat -connections 2000 -duration 10m -int
     "mysql":  { "enabled": true, "dsn": "..." },
     "kafka":  { "enabled": true, "brokers": ["kafka:9093"] },
     "redis":  { "addr": "redis:6379" },
-    "object_storage": { "enabled": true, "endpoint": "minio:9000" },
+    "object_storage": { "enabled": true, "endpoint": "rustfs:9000" },
     "rate_limit": { "enabled": true, "rate": 10, "burst": 20 },
     "auth": { "dev_mode": false }
   },
@@ -354,11 +356,13 @@ message Message {
 
 ### 持续部署（CD）
 
-> CD 流水线（[.github/workflows/cd.yml](.github/workflows/cd.yml)：push main → GHCR 镜像 → SSH 部署 + 健康检查）已接入生产服务器（goimchat.site）。需配置 **11 个必配 secrets**：SSH_HOST / SSH_USER / SSH_KEY / SSH_PORT / DOMAIN / JWT_SECRET / MYSQL_ROOT_PASSWORD / MYSQL_PASSWORD / MINIO_ROOT_USER / MINIO_SECRET_KEY / ADMIN_UID。**GHCR_USER / GHCR_TOKEN 可选**——镜像公开时匿名拉取即可，配了才执行 `docker login`（镜像转私有后按需补）。
+> CD 流水线（[.github/workflows/cd.yml](.github/workflows/cd.yml)：push main → GHCR 镜像 → SSH 部署 + 健康检查）已接入生产服务器（goimchat.site）。需配置 **11 个必配 secrets**：SSH_HOST / SSH_USER / SSH_KEY / SSH_PORT / DOMAIN / JWT_SECRET / MYSQL_ROOT_PASSWORD / MYSQL_PASSWORD / RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY / ADMIN_UID（旧名 MINIO_ROOT_USER / MINIO_SECRET_KEY 仍兼容）。**GHCR_USER / GHCR_TOKEN 可选**——镜像公开时匿名拉取即可，配了才执行 `docker login`（镜像转私有后按需补）。
 
 ## 生产部署
 
-生产编排 [docker-compose.prod.yml](docker-compose.prod.yml)：仅 `proxy`（nginx + SSL 终止）对外暴露 80/443，内部服务（MySQL / Redis / MinIO / Gateway / Frontend）走 Docker 内网；`certbot` 每 12h 自动续期证书。
+> 使用预构建镜像的 Docker / Kubernetes 部署见 [部署指南](deploy/README.md)；本节是带 HTTPS 的源码构建单机部署。
+
+生产编排 [docker-compose.prod.yml](docker-compose.prod.yml)：仅 `proxy`（nginx + SSL 终止）对外暴露 80/443，内部服务（MySQL / Redis / RustFS / Gateway / Frontend）走 Docker 内网；`certbot` 每 12h 自动续期证书。
 
 > **2C2G 最小栈**：为适配 2GB 内存云服务器，生产形态省略了 Kafka 与 Logic——网关直连 MySQL 异步持久化（`router.doPersist` 双路径），历史 / 群聊 / 搜索 / 未读不受影响，基线内存约 500-600MB，全部服务带 `mem_limit`（上限合计 ~1.6G，含可观测 agent alloy）。换大服务器可恢复完整形态（加回 kafka / logic 服务与 `config.prod.json` 的对应配置）。
 
@@ -382,20 +386,20 @@ message Message {
 # 1. 获取 Let's Encrypt 证书（HTTP-01 验证，先跑 dry-run 再正式获取）
 bash deploy/init-ssl.sh your-domain.com
 
-# 2. 生成凭据并写入 .env（compose 的 MySQL / MinIO 环境变量，密码自拟）
+# 2. 生成凭据并写入 .env（compose 的 MySQL / RustFS 环境变量，密码自拟）
 cat > .env <<EOF
 MYSQL_ROOT_PASSWORD=<root 密码>
 MYSQL_PASSWORD=<应用密码>
-MINIO_ROOT_PASSWORD=<MinIO 密码>
+RUSTFS_SECRET_KEY=<RustFS 密码>
 EOF
 
 # 3. 渲染生产配置（生成 gitignore 的 configs/config.prod.generated.json；
-#    与 CD 流水线同一渲染管线。注意 MYSQL_PASSWORD / MINIO_ROOT_PASSWORD
-#    必须与第 2 步 .env 一致——应用即用 root 访问 MinIO）
+#    与 CD 流水线同一渲染管线。注意 MYSQL_PASSWORD / RUSTFS_SECRET_KEY
+#    必须与第 2 步 .env 一致——应用即用管理员凭据访问 RustFS）
 DOMAIN=your-domain.com \
 JWT_SECRET=$(openssl rand -base64 64) \
 MYSQL_PASSWORD=<应用密码> \
-MINIO_SECRET_KEY=<MinIO 密码> \
+RUSTFS_SECRET_KEY=<RustFS 密码> \
 ADMIN_UID=<你的 UID> \
 bash deploy/render-config.sh
 
@@ -410,7 +414,7 @@ curl -I https://your-domain.com/health
 ### 安全注意事项
 
 - 生产必须 `auth.dev_mode: false`（启用 bcrypt 密码校验）
-- 修改 JWT secret、MySQL / MinIO 密码，勿用默认值
+- 修改 JWT secret、MySQL / RustFS 密码，勿用默认值
 - `admin_uids` 仅配置可信账号
 - SSL 证书首次由 `init-ssl.sh` 获取，之后 certbot 自动续期
 
@@ -465,7 +469,7 @@ curl -s localhost:8080/metrics | grep '^im_'   # im_online_connections / im_mess
 | 消息队列 | Apache Kafka（segmentio/kafka-go） |
 | 数据库 | MySQL 8.4（database/sql） |
 | 缓存 | Redis 7（go-redis/v9） |
-| 对象存储 | MinIO（S3 兼容） |
+| 对象存储 | RustFS（S3 兼容） |
 | 认证 | JWT HS256 + bcrypt |
 | 反向代理 | nginx（SPA 静态服务 + API 代理） |
 | 容器化 | Docker + Docker Compose |

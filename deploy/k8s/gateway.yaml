@@ -1,0 +1,76 @@
+# 8081 是原生 TCP 长连接端口，Ingress 不转发；需要时把 Service 改为 LoadBalancer / NodePort。
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+spec:
+  selector:
+    app: gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: tcp
+      port: 8081
+      targetPort: tcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+spec:
+  # 单副本：连接表与群组在进程内，多副本需配置 grpc 集群（见 configs/config.example.json）。
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      initContainers:
+        - name: wait-deps
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - for d in mysql:3306 redis:6379 kafka:9093 rustfs:9000 logic:50051; do until nc -z -w 2 ${d%:*} ${d#*:}; do echo "waiting for $d"; sleep 2; done; done
+          resources:
+            requests: { cpu: 5m, memory: 8Mi }
+            limits: { cpu: 100m, memory: 32Mi }
+      containers:
+        - name: gateway
+          image: 870027381/go-im-gateway
+          env:
+            - { name: CONFIG_PATH, value: /etc/im/config.json }
+            - { name: TZ, value: Asia/Shanghai }
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: tcp
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          volumeMounts:
+            - name: config
+              mountPath: /etc/im
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: goim-config
