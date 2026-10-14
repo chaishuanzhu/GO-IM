@@ -27,5 +27,8 @@ export const RECALL_WINDOW_MS = 2 * 60 * 1000;
 /** 消息编辑时间窗口 (ms) —— 5 分钟 */
 export const EDIT_WINDOW_MS = 5 * 60 * 1000;
 
-/** 最大文件上传大小 (10 MB) */
-export const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+/** 直传对象存储的最大文件大小 (100 MB)，与服务端 object_storage.max_upload 一致 */
+export const MAX_UPLOAD_SIZE = 100 * 1024 * 1024;
+
+/** 服务端未开启直传时经网关 POST /upload 中转的上限 (10 MB) */
+export const LEGACY_UPLOAD_SIZE = 10 * 1024 * 1024;

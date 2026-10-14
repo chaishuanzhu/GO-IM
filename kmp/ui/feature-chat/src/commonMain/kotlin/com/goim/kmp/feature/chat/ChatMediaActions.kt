@@ -78,10 +78,10 @@ class ChatMediaActions internal constructor(
         pending.forEach { message -> uploadLater(message) }
     }
 
-    /** 读入待发送文件；超过 10MB 或读取失败时提示并返回 null。 */
+    /** 读入待发送文件；超过 [MAX_FILE_BYTES] 或读取失败时提示并返回 null。 */
     suspend fun read(file: PlatformFile): PickedFile? {
         if (file.size() > MAX_FILE_BYTES) {
-            onError("文件超过 10MB，无法发送")
+            onError("文件超过 ${MAX_FILE_BYTES / 1024 / 1024}MB，无法发送")
             return null
         }
         return try {
@@ -228,6 +228,6 @@ class ChatMediaActions internal constructor(
     companion object {
         const val MAX_IMAGES = 9
         const val MIN_VOICE_MILLIS = 500L
-        const val MAX_FILE_BYTES = 10L * 1024 * 1024
+        const val MAX_FILE_BYTES = SendFileMessageUseCase.MAX_UPLOAD_BYTES.toLong()
     }
 }

@@ -80,7 +80,14 @@
             "secret_key": "rustfsadmin",
             "bucket": "im-files",
             "use_ssl": false,
-            "max_upload": 10485760
+            "_direct_upload_comment": "public_endpoint 非空即开启客户端直传：网关按该地址签发预签名 PUT/GET URL(需客户端可达，独立域名或 CDN)。cors_allowed_origins 非空时启动时写入桶 CORS。max_upload 为直传上限，legacy_max_upload 为经网关中转的 POST /upload 上限。",
+            "max_upload": 104857600,
+            "legacy_max_upload": 10485760,
+            "public_endpoint": "http://localhost:9000",
+            "region": "us-east-1",
+            "cors_allowed_origins": ["http://localhost:5173"],
+            "presign_upload_ttl": "15m",
+            "presign_download_ttl": "1h"
         },
 
         "_tunables_comment": "运行时调优参数 —— 之前为硬编码，现改为可配置。删除后使用默认值。",

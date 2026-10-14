@@ -9,20 +9,28 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.onUpload
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.forms.formData
+import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.get
 import io.ktor.client.request.prepareGet
+import io.ktor.client.request.request
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.URLBuilder
+import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.contentLength
 import io.ktor.http.isSuccess
+import io.ktor.http.parameters
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -40,7 +48,19 @@ internal data class UploadResponseDto(
     @SerialName("thumb_height") val thumbHeight: Int? = null,
 )
 
-/** `/upload` + `/file`：multipart 上传（带进度）与流式下载，鉴权同其它 REST 接口（`uid` + `token`）。 */
+@Serializable
+internal data class PresignResponseDto(
+    @SerialName("file_id") val fileId: String,
+    @SerialName("upload_url") val uploadUrl: String,
+    val method: String = "PUT",
+    val headers: Map<String, String> = emptyMap(),
+)
+
+/**
+ * 文件上传与下载，鉴权同其它 REST 接口（`uid` + `token`）。
+ * 上传优先 `/file/presign` → PUT 直传对象存储 → `/file/complete`；
+ * 服务端未开启直传或对象存储不可达时，对不超过 [LEGACY_MAX_BYTES] 的文件回退到 multipart `/upload`。
+ */
 class GoImFileApi(
     private val client: HttpClient,
     private val baseUrl: () -> String,
@@ -52,6 +72,82 @@ class GoImFileApi(
         fileName: String,
         mime: String,
         onProgress: (Float) -> Unit = {},
+    ): FileMeta {
+        val direct = try {
+            uploadDirect(bytes, fileName, mime, onProgress)
+        } catch (_: DirectUploadUnavailable) {
+            null
+        }
+        if (direct != null) return direct
+        if (bytes.size > LEGACY_MAX_BYTES) {
+            throw DomainError.InvalidState("当前服务器仅支持 ${LEGACY_MAX_BYTES / 1024 / 1024}MB 以内的文件")
+        }
+        return uploadViaGateway(bytes, fileName, mime, onProgress)
+    }
+
+    private suspend fun uploadDirect(
+        bytes: ByteArray,
+        fileName: String,
+        mime: String,
+        onProgress: (Float) -> Unit,
+    ): FileMeta {
+        val presignResponse = postForm(
+            "file/presign",
+            "name" to fileName,
+            "size" to bytes.size.toString(),
+            "mime" to mime,
+        )
+        if (presignResponse.status.value in DIRECT_UNSUPPORTED) throw DirectUploadUnavailable()
+        ensureSuccess(presignResponse)
+        val presign = decode(presignResponse, PresignResponseDto.serializer())
+
+        val contentType = presign.headers.entries
+            .firstOrNull { it.key.equals(HttpHeaders.ContentType, ignoreCase = true) }?.value
+            ?.let { runCatching { ContentType.parse(it) }.getOrNull() }
+            ?: ContentType.Application.OctetStream
+        val putResponse = try {
+            client.request(presign.uploadUrl) {
+                method = HttpMethod.parse(presign.method.uppercase())
+                setBody(ByteArrayContent(bytes, contentType))
+                timeout { requestTimeoutMillis = TRANSFER_TIMEOUT_MS }
+                onUpload { sent, total ->
+                    val all = total ?: bytes.size.toLong()
+                    if (all > 0) onProgress((sent.toFloat() / all).coerceIn(0f, 0.99f))
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // 对象存储域名不可达：交给调用方回退到网关中转
+            throw DirectUploadUnavailable()
+        }
+        ensureSuccess(putResponse)
+
+        val completeResponse = postForm("file/complete", "file_id" to presign.fileId)
+        ensureSuccess(completeResponse)
+        return toFileMeta(completeResponse, bytes.size.toLong(), fileName, mime)
+    }
+
+    private suspend fun postForm(path: String, vararg fields: Pair<String, String>): HttpResponse = try {
+        client.submitForm(
+            url = url(path),
+            formParameters = parameters {
+                append("uid", user.uid)
+                append("token", user.token)
+                fields.forEach { (k, v) -> append(k, v) }
+            },
+        )
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        throw DomainError.Network(e.message ?: e::class.simpleName ?: "network error")
+    }
+
+    private suspend fun uploadViaGateway(
+        bytes: ByteArray,
+        fileName: String,
+        mime: String,
+        onProgress: (Float) -> Unit,
     ): FileMeta {
         val response = request {
             client.submitFormWithBinaryData(
@@ -76,19 +172,25 @@ class GoImFileApi(
                 }
             }
         }
-        val dto = try {
-            apiJson.decodeFromString(UploadResponseDto.serializer(), response.bodyAsText())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            throw DomainError.Server(response.status.value, "响应解析失败: ${e.message}")
-        }
+        return toFileMeta(response, bytes.size.toLong(), fileName, mime)
+    }
+
+    private suspend fun <T> decode(response: HttpResponse, serializer: KSerializer<T>): T = try {
+        apiJson.decodeFromString(serializer, response.bodyAsText())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        throw DomainError.Server(response.status.value, "响应解析失败: ${e.message}")
+    }
+
+    private suspend fun toFileMeta(response: HttpResponse, size: Long, fileName: String, mime: String): FileMeta {
+        val dto = decode(response, UploadResponseDto.serializer())
         val fileId = (dto.fileId as? JsonPrimitive)?.content?.takeIf { it.isNotEmpty() && it != "null" }
             ?: throw DomainError.Server(response.status.value, "上传响应缺少 file_id")
         return FileMeta(
             fileId = fileId,
             name = dto.name?.takeIf { it.isNotEmpty() } ?: fileName,
-            size = dto.size ?: bytes.size.toLong(),
+            size = dto.size ?: size,
             mime = dto.mime?.takeIf { it.isNotEmpty() } ?: mime,
             width = dto.width?.takeIf { it > 0 },
             height = dto.height?.takeIf { it > 0 },
@@ -170,9 +272,16 @@ class GoImFileApi(
         return response
     }
 
-    private companion object {
-        const val TRANSFER_TIMEOUT_MS = 120_000L
-        const val CHUNK = 64 * 1024
+    private class DirectUploadUnavailable : Exception()
+
+    companion object {
+        /** 服务端默认 `object_storage.legacy_max_upload`（经网关中转的上限）。 */
+        const val LEGACY_MAX_BYTES = 10 * 1024 * 1024
+        private const val TRANSFER_TIMEOUT_MS = 600_000L
+        private const val CHUNK = 64 * 1024
+
+        /** presign 返回这些状态码表示服务端不支持直传。 */
+        private val DIRECT_UNSUPPORTED = setOf(404, 405, 501)
     }
 }
 

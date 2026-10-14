@@ -74,7 +74,9 @@ class MediaFlowTest {
     }
 
     private fun files(scope: CoroutineScope): FileRepositoryImpl {
-        val engine = MockEngine {
+        val engine = MockEngine { request ->
+            // 服务端未开启直传：走 multipart /upload
+            if (request.url.encodedPath == "/file/presign") return@MockEngine respond("", HttpStatusCode.NotImplemented)
             val (status, body) = uploadResponse()
             respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
         }

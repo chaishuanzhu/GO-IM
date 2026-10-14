@@ -23,7 +23,7 @@ flowchart TD
     Client["Web (React) / PC / Mobile<br/>客户端"]
 
     subgraph GW["Gateway 接入层 (单体 · :8080 HTTP/WS · :8081 TCP)"]
-        HTTP["HTTP API<br/>/login /register /online /health /upload /file /search /unread /group/*"]
+        HTTP["HTTP API<br/>/login /register /online /health /upload /file /file/presign /search /unread /group/*"]
         WS["WebSocket 长连接<br/>(gorilla/websocket)"]
         TCP["gnet TCP 长连接<br/>4字节长度前缀 + Protobuf"]
         Hub["Connection Hub<br/>UID → *Client + 离线队列"]
@@ -370,7 +370,7 @@ message Message {
 
 - Ubuntu + Docker + Compose v2
 - 开放端口 80/443（云安全组 + 防火墙）
-- 域名 A 记录已解析到服务器 IP
+- 域名及 `oss.<域名>`（文件直传的对象存储入口，证书与 nginx 一并配置）A 记录均已解析到服务器 IP
 - 2G 内存机器先配 swap（防启动峰值 OOM）：
 
   ```bash

@@ -68,6 +68,7 @@ docker compose down -v                          # 停止并删除所有数据
 | `TCP_PORT` | `8081` | 原生 TCP 长连接端口 |
 | `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` | `im-root` / `im-dev` | 改 `MYSQL_PASSWORD` 需同步改配置里两处 `dsn` |
 | `RUSTFS_SECRET_KEY` | `rustfsadmin` | 对象存储密钥，需同步改配置里的 `object_storage.secret_key` |
+| `OSS_BIND` / `OSS_PORT` | `127.0.0.1` / `9000` | RustFS S3 端口的宿主机映射，供 OSS 域名的反向代理接入（见下文「文件直传」） |
 
 数据库密码只在**首次**创建数据卷时生效，之后修改需进 MySQL 手动改。
 
@@ -95,6 +96,7 @@ kubectl -n go-im get pods -w
 | mysql / redis / kafka / rustfs | StatefulSet | PVC 10Gi / 1Gi / 5Gi / 20Gi |
 | logic / gateway / web | Deployment | — |
 | go-im | Ingress | `/ws`、`/upload` → gateway，其余 → web |
+| go-im-oss | Ingress | `oss.example.com` → rustfs，文件直传入口（见下文「文件直传」） |
 | goim-config | Secret（由 `config.json` 生成） | 挂载到 gateway、logic 的 `/etc/im/config.json` |
 | goim-infra | Secret | MySQL、RustFS 的账号密码 |
 
@@ -121,9 +123,33 @@ Gateway 和 Logic 只读一个 JSON 配置文件（容器内 `/etc/im/config.jso
 | `gateway.auth.dev_mode` | `true` 时登录无需密码，仅限开发 |
 | `gateway.mysql` / `gateway.redis` / `gateway.object_storage` | 存储依赖；`enabled: false` 或地址为空时降级为内存实现，重启丢数据 |
 | `gateway.kafka.enabled` + `gateway.logic.addr` | 全量部署为 `true` + `logic:50051`；最小化部署为 `false` + 空 |
-| `gateway.object_storage.max_upload` | 单文件上限，默认 10 MB |
+| `gateway.object_storage.public_endpoint` | 客户端可访问的对象存储地址（如 `https://oss.example.com`），非空即开启文件直传 |
+| `gateway.object_storage.cors_allowed_origins` | Web 站点来源列表，启动时写入桶 CORS；直传开启时 Web 端必填 |
+| `gateway.object_storage.max_upload` / `legacy_max_upload` | 直传上限（默认 100 MB）/ 经网关 `POST /upload` 中转的上限（默认 10 MB） |
 | `admin_uids` | 管理员 UID 列表 |
 | `logic.worker_id` | 雪花 ID 机器号，须与 `snowflake.worker_id` 不同 |
+
+## 文件直传
+
+默认客户端经网关 `POST /upload` 上传，单文件上限 10 MB。开启直传后，客户端先向网关申请预签名 URL，再把文件直接 `PUT` 到对象存储（上限 100 MB），下载也由网关 302 到对象存储，大文件不再经过网关。未开启或对象存储不可达时，Web / KMP 客户端自动回退到网关上传。
+
+开启步骤：
+
+1. 为对象存储准备一个独立域名（如 `oss.example.com`）或 CDN，反向代理到 RustFS 的 `9000` 端口，**`Host` 头原样透传**（预签名按该域名计算），并放开请求体大小（≥ 100 MB）。
+   - Docker：RustFS 已映射到宿主机 `127.0.0.1:9000`（`OSS_BIND` / `OSS_PORT`），用宿主机上的 Caddy / nginx 代理即可，例如 Caddy：`oss.example.com { reverse_proxy 127.0.0.1:9000 }`。
+   - Kubernetes：修改 `ingress.yaml` 中 `go-im-oss` 的域名与 TLS。
+2. 修改配置的 `object_storage`：
+
+   ```json
+   "public_endpoint": "https://oss.example.com",
+   "cors_allowed_origins": ["https://im.example.com"]
+   ```
+
+3. 重启 gateway，日志出现 `direct upload enabled` 即生效。
+
+RustFS 的 S3 端口对外暴露后，务必修改默认的 `RUSTFS_SECRET_KEY`（同步改 `object_storage.secret_key`）。存储桶本身不开放匿名访问，客户端只能通过网关签发的短期 URL 读写。
+
+文件按会话鉴权：只有上传者和文件被发送到的会话成员可以下载。
 
 ## 端口
 
@@ -133,6 +159,7 @@ Gateway 和 Logic 只读一个 JSON 配置文件（容器内 `/etc/im/config.jso
 | `8080` | gateway | HTTP API + WebSocket（`/ws`），健康检查 `GET /health` |
 | `8081` | gateway | 原生 TCP（4 字节大端长度前缀 + protobuf），客户端可选 |
 | `50051` | logic | gRPC，仅集群内部 |
+| `9000` | rustfs | S3 API；开启直传时经 OSS 域名对外，默认只映射到本机 |
 
 ## 生产建议
 

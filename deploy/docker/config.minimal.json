@@ -58,7 +58,14 @@
             "secret_key": "rustfsadmin",
             "bucket": "im-files",
             "use_ssl": false,
-            "max_upload": 10485760
+            "_direct_upload_comment": "客户端直传：把 public_endpoint 设为浏览器/App 可访问的 RustFS 域名(如 https://oss.example.com)，cors_allowed_origins 设为 Web 站点来源；留空则客户端经网关 POST /upload 中转(上限 legacy_max_upload)。",
+            "max_upload": 104857600,
+            "legacy_max_upload": 10485760,
+            "public_endpoint": "",
+            "region": "us-east-1",
+            "cors_allowed_origins": [],
+            "presign_upload_ttl": "15m",
+            "presign_download_ttl": "1h"
         },
         "recall_window_ms": 120000,
         "history_default_limit": 30,

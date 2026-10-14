@@ -125,7 +125,17 @@ type ObjectStorageConfig struct {
 	SecretKey string `json:"secret_key"` // S3 密钥
 	Bucket    string `json:"bucket"`     // 默认 "im-files"
 	UseSSL    bool   `json:"use_ssl"`    // 默认 false（开发环境）
-	MaxUpload int64  `json:"max_upload"` // 最大上传大小（字节），默认 10 MB
+	MaxUpload int64  `json:"max_upload"` // 客户端直传对象存储的单文件上限（字节），默认 100 MB
+
+	// 客户端直传：网关签发预签名 URL，文件不经过网关。
+	// PublicEndpoint 为客户端可访问的对象存储地址（如 "https://oss.example.com"），
+	// 预签名 URL 按它签名；为空则不提供直传，客户端回退到 POST /upload。
+	PublicEndpoint     string   `json:"public_endpoint"`
+	Region             string   `json:"region"`               // 签名用区域，默认 "us-east-1"
+	CORSAllowedOrigins []string `json:"cors_allowed_origins"` // 启动时写入桶 CORS（Web 端跨域直传需要）；空 = 不修改
+	PresignUploadTTL   Duration `json:"presign_upload_ttl"`   // 上传 URL 有效期，默认 15m
+	PresignDownloadTTL Duration `json:"presign_download_ttl"` // 下载 URL 有效期，默认 1h
+	LegacyMaxUpload    int64    `json:"legacy_max_upload"`    // 经网关中转的 POST /upload 上限（字节），默认 10 MB
 }
 
 // GrpcConfig 保存网关自身的 gRPC 服务器设置，用于跨网关转发。
@@ -245,13 +255,17 @@ func Default() *Config {
 				},
 			},
 			ObjectStorage: ObjectStorageConfig{
-				Enabled:   false, // 默认使用内存模式（无需 Docker）
-				Endpoint:  "localhost:9000",
-				AccessKey: "rustfsadmin",
-				SecretKey: "rustfsadmin",
-				Bucket:    "im-files",
-				UseSSL:    false,
-				MaxUpload: 10 * 1024 * 1024, // 10 MB
+				Enabled:            false, // 默认使用内存模式（无需 Docker）
+				Endpoint:           "localhost:9000",
+				AccessKey:          "rustfsadmin",
+				SecretKey:          "rustfsadmin",
+				Bucket:             "im-files",
+				UseSSL:             false,
+				MaxUpload:          100 * 1024 * 1024,
+				Region:             "us-east-1",
+				PresignUploadTTL:   Duration(15 * time.Minute),
+				PresignDownloadTTL: Duration(time.Hour),
+				LegacyMaxUpload:    10 * 1024 * 1024,
 			},
 
 			// 运行参数。

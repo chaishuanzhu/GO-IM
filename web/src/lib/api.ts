@@ -4,6 +4,7 @@
 
 import type { LoginResponse, User, GroupInfo, GroupListItem, UploadResponse, SearchResponse, SearchParams, AdminStats, AdminUsersResponse, AdminBrowseResponse } from '@/types';
 import { getToken, getStoredUid } from './auth';
+import { LEGACY_UPLOAD_SIZE, MAX_UPLOAD_SIZE } from './constants';
 
 type RequestMethod = 'GET' | 'POST';
 
@@ -138,7 +139,115 @@ export async function getGroupList(): Promise<{ groups: GroupListItem[] }> {
 
 // ---- 文件 ----
 
+interface PresignResponse {
+  file_id: string;
+  upload_url: string;
+  method: string;
+  headers: Record<string, string>;
+}
+
+/** 直传不可用（服务端未开启或对象存储不可达），可回退到网关中转上传。 */
+class DirectUploadUnavailable extends Error {}
+
+/**
+ * 上传文件：优先 presign → PUT 直传对象存储 → complete；
+ * 服务端未开启直传或对象存储不可达时，对不超过 LEGACY_UPLOAD_SIZE 的文件回退到 POST /upload。
+ */
 export async function uploadFile(
+  file: File,
+  uid: string,
+  token: string,
+  onProgress?: (pct: number) => void,
+): Promise<UploadResponse> {
+  if (file.size > MAX_UPLOAD_SIZE) {
+    throw new Error(`文件大小超过限制（最大 ${MAX_UPLOAD_SIZE / 1024 / 1024}MB）`);
+  }
+  try {
+    return await uploadDirect(file, uid, token, onProgress);
+  } catch (err) {
+    if (!(err instanceof DirectUploadUnavailable)) throw err;
+    if (file.size > LEGACY_UPLOAD_SIZE) {
+      throw new Error(`当前服务器仅支持 ${LEGACY_UPLOAD_SIZE / 1024 / 1024}MB 以内的文件`);
+    }
+    return uploadViaGateway(file, uid, token, onProgress);
+  }
+}
+
+async function postAuthForm(path: string, uid: string, token: string, fields: Record<string, string>): Promise<Response> {
+  const body = new URLSearchParams({ ...fields, uid, token });
+  return fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+}
+
+async function uploadDirect(
+  file: File,
+  uid: string,
+  token: string,
+  onProgress?: (pct: number) => void,
+): Promise<UploadResponse> {
+  const presignRes = await postAuthForm('/file/presign', uid, token, {
+    name: file.name,
+    size: String(file.size),
+    mime: file.type,
+  });
+  if (presignRes.status === 501 || presignRes.status === 404 || presignRes.status === 405) {
+    throw new DirectUploadUnavailable('direct upload not enabled');
+  }
+  if (!presignRes.ok) {
+    throw new Error(`上传失败 (${presignRes.status}): ${(await presignRes.text()) || '未知错误'}`);
+  }
+  const presign: PresignResponse = await presignRes.json();
+
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(presign.method || 'PUT', presign.upload_url);
+    Object.entries(presign.headers ?? {}).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.min(99, Math.round((e.loaded / e.total) * 100)));
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`上传失败 (${xhr.status})`));
+    };
+    // 网络错误多为对象存储域名不可达或 CORS 未配置
+    xhr.onerror = () => reject(new DirectUploadUnavailable('object storage unreachable'));
+    xhr.send(file);
+  });
+
+  const dims = file.type.startsWith('image/') ? await imageDimensions(file) : null;
+  const completeRes = await postAuthForm('/file/complete', uid, token, {
+    file_id: presign.file_id,
+    ...(dims ? { width: String(dims.width), height: String(dims.height) } : {}),
+  });
+  if (!completeRes.ok) {
+    throw new Error(`上传失败 (${completeRes.status}): ${(await completeRes.text()) || '未知错误'}`);
+  }
+  return completeRes.json();
+}
+
+/** 读取图片尺寸，供服务端无法从文件头解析时使用；失败返回 null。 */
+function imageDimensions(file: File): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      resolve(null);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  });
+}
+
+function uploadViaGateway(
   file: File,
   uid: string,
   token: string,

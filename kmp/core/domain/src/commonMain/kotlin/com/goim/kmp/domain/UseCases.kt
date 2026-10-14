@@ -100,7 +100,7 @@ class SendFileMessageUseCase(
         probe: (stagedPath: String?) -> LocalMediaInfo = { LocalMediaInfo() },
     ): Message {
         if (bytes.isEmpty()) throw DomainError.InvalidState("文件为空")
-        if (bytes.size > MAX_UPLOAD_BYTES) throw DomainError.InvalidState("文件超过 10MB，无法发送")
+        if (bytes.size > MAX_UPLOAD_BYTES) throw DomainError.InvalidState("文件超过 ${MAX_UPLOAD_BYTES / 1024 / 1024}MB，无法发送")
         val localId = files.stage(bytes, fileName)
         val local = runCatching { probe(files.localPath(localId)) }.getOrDefault(LocalMediaInfo())
         val placeholder = FileMeta(localId, fileName, bytes.size.toLong(), mime, local.width, local.height, duration = local.duration)
@@ -167,8 +167,8 @@ class SendFileMessageUseCase(
     }
 
     companion object {
-        /** 服务端默认 `object_storage.max_upload`。 */
-        const val MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+        /** 服务端默认 `object_storage.max_upload`（直传上限）。 */
+        const val MAX_UPLOAD_BYTES = 100 * 1024 * 1024
     }
 }
 

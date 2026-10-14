@@ -45,6 +45,9 @@ type Router struct {
 	// 好友关系管理(nil = 好友系统禁用)。
 	friendStore repo.FriendStore // MySQL 禁用时为 nil
 
+	// 文件元数据与会话引用(nil = 不校验文件消息)。
+	fileStore repo.FileStore
+
 	// Prometheus 指标记录器(nil = 未接入,所有指标调用为 no-op)。
 	metrics *observability.Metrics
 
@@ -501,6 +504,10 @@ func (r *Router) handleChat(ctx context.Context, sender *Client, msg *proto.Mess
 	// --- 限流 ---
 	if r.checkRateLimit(sender.UID) {
 		slog.Warn("rate limited", "uid", sender.UID)
+		return
+	}
+
+	if !r.authorizeFileMessage(ctx, sender, msg) {
 		return
 	}
 
@@ -1727,6 +1734,10 @@ func (r *Router) handleForward(ctx context.Context, sender *Client, msg *proto.M
 
 	// 用已认证的发送方覆盖 From(安全)。
 	msg.From = sender.UID
+
+	if !r.authorizeFileMessage(ctx, sender, msg) {
+		return
+	}
 
 	// 分配新的 MsgID 和时间戳。
 	msg.MsgId = r.snow.Next()

@@ -134,7 +134,29 @@ func (s *MySQLStore) migrate() error {
 			INDEX idx_friend_status (friend_uid, status)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
 
-	for _, ddl := range []string{userTable, msgTable, groupTable, groupMembersTable, unreadTable, friendsTable} {
+	filesTable := `
+		CREATE TABLE IF NOT EXISTS files (
+			file_id    BIGINT       PRIMARY KEY,
+			owner_uid  VARCHAR(64)  NOT NULL,
+			name       VARCHAR(255) NOT NULL,
+			size       BIGINT       NOT NULL,
+			mime       VARCHAR(128) NOT NULL,
+			width      INT          NOT NULL DEFAULT 0,
+			height     INT          NOT NULL DEFAULT 0,
+			has_thumb  TINYINT      NOT NULL DEFAULT 0,
+			status     TINYINT      NOT NULL DEFAULT 0,
+			created_at BIGINT       NOT NULL,
+			INDEX idx_status_created (status, created_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
+
+	fileRefsTable := `
+		CREATE TABLE IF NOT EXISTS file_refs (
+			file_id  BIGINT       NOT NULL,
+			conv_key VARCHAR(160) NOT NULL,
+			PRIMARY KEY (file_id, conv_key)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
+
+	for _, ddl := range []string{userTable, msgTable, groupTable, groupMembersTable, unreadTable, friendsTable, filesTable, fileRefsTable} {
 		if _, err := s.db.Exec(ddl); err != nil {
 			return fmt.Errorf("exec ddl: %w", err)
 		}

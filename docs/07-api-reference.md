@@ -352,7 +352,68 @@ GET /group/list?uid=alice
 
 ### 3.4 文件上传与下载
 
-#### POST /upload — 上传文件
+上传有两种方式：
+
+1. **直传对象存储（推荐，最大 100 MB）**：`POST /file/presign` 取预签名 URL → 客户端 `PUT` 文件到对象存储 → `POST /file/complete` 确认 → 发送 `CmdFile` 消息。需服务端配置 `object_storage.public_endpoint`，未配置时 presign 返回 `501`。
+2. **经网关中转（兼容，最大 10 MB）**：`POST /upload` multipart 上传。
+
+文件访问权限：上传者本人，以及文件被发送到的会话成员（单聊双方 / 群成员）。发送 `CmdFile` / `CmdForward` 时服务端校验发送者对 `content.file_id` 的访问权，无权或未完成上传的文件消息被丢弃（不回 ACK）。直传功能上线前上传的文件（无文件记录）保持登录可读。
+
+#### POST /file/presign — 申请直传 URL
+
+**请求**（`application/x-www-form-urlencoded`）
+
+| 字段 | 必需 | 说明 |
+|------|------|------|
+| `uid` / `token` | 是 | 身份 |
+| `name` | 否 | 文件名（去除路径，最长 200 字符，默认 `file`） |
+| `size` | 是 | 文件字节数，`1 ≤ size ≤ max_upload`（默认 100 MB） |
+| `mime` | 否 | 文件类型；`text/html`、`image/svg+xml`、JavaScript 等可执行类型统一改为 `application/octet-stream` |
+
+**响应** `200`
+```json
+{
+  "file_id": "368662284068720640",
+  "upload_url": "https://oss.example.com/im-files/368662284068720640?X-Amz-Algorithm=...",
+  "method": "PUT",
+  "headers": { "Content-Type": "image/jpeg" },
+  "expires_at": 1792051200000,
+  "max_size": 104857600
+}
+```
+
+客户端用 `method` 请求 `upload_url`，请求头原样带上 `headers`，body 为文件原始字节。`Content-Type` 与 `Content-Length`（须等于申请的 `size`）参与签名，不一致时对象存储返回 `403`。URL 默认 15 分钟有效；24 小时内未 complete 的文件会被清理。
+
+| 状态码 | 说明 |
+|--------|------|
+| 400 | `size` 缺失或非正整数 |
+| 401 / 403 | Token 无效 / uid 与 token 不匹配 |
+| 413 | 超过 `max_upload` |
+| 429 | 触发限流 |
+| 501 | 服务端未开启直传，客户端应回退到 `POST /upload` |
+
+#### POST /file/complete — 确认直传完成
+
+**请求**（`application/x-www-form-urlencoded`）
+
+| 字段 | 必需 | 说明 |
+|------|------|------|
+| `uid` / `token` | 是 | 身份，须为 presign 的申请者 |
+| `file_id` | 是 | presign 返回的 ID |
+| `width` / `height` | 否 | 客户端已知的图片尺寸，服务端无法从文件头解析时采用 |
+
+服务端核对对象大小、嗅探文件头（声明为图片但内容不是图片时类型降级为 `application/octet-stream`），并对 ≤ 20 MB、≤ 4096px 的图片异步生成缩略图。重复调用幂等。
+
+**响应** `200`：与 `POST /upload` 相同结构；`thumb_width` / `thumb_height` 为 `0`（缩略图异步生成，生成前 `/file?thumb=1` 返回原图）。
+
+| 状态码 | 说明 |
+|--------|------|
+| 400 | 已上传大小与申请的 `size` 不一致（对象与记录被删除，需重新 presign） |
+| 404 | 文件不存在或不属于当前用户 |
+| 409 | 对象尚未上传 |
+| 501 | 服务端未开启直传 |
+
+#### POST /upload — 经网关上传文件
 
 **请求**
 ```
@@ -366,7 +427,7 @@ uid=alice&token=eyJhbG...&file=@photo.jpg
 |------|------|------|
 | `uid` | 是 | 上传者 UID |
 | `token` | 是 | JWT Token |
-| `file` | 是 | 文件数据（最大 10MB 可配置） |
+| `file` | 是 | 文件数据（最大 10 MB，`object_storage.legacy_max_upload`） |
 
 **响应** `200`
 ```json
@@ -410,15 +471,19 @@ GET /file?id=337501598508912642&thumb=1&uid=alice&token=eyJhbG...
 | `token` | 是 | JWT Token |
 | `thumb` | 否 | `1` = 下载缩略图（仅图片） |
 
-**响应**：直接返回文件二进制数据，`Content-Type` 为原始 MIME 类型。
+**响应**：
+- 开启直传时返回 `302`，`Location` 为对象存储的预签名下载地址（默认 1 小时有效，`Cache-Control: private, max-age=1800`）；图片/音视频内联显示，其他文件以原文件名作为附件下载。客户端需跟随重定向。
+- 未开启直传时直接返回文件数据，支持 `Range` 断点续传。
+
+请求缩略图但缩略图不存在（非图片、过大或尚未生成）时返回原文件。
 
 **错误**
 | 状态码 | 说明 |
 |--------|------|
-| 400 | 缺少 id/uid/token |
-| 401 | Token 无效 |
+| 400 | 缺少 id |
+| 401 | 缺少 uid/token 或 Token 无效 |
 | 403 | uid 与 token 不匹配 |
-| 404 | 文件不存在 |
+| 404 | 文件不存在、未完成上传或无权访问 |
 | 503 | 对象存储不可用 |
 
 ---

@@ -66,7 +66,14 @@ CmdUnreadCount → Router.handleUnreadCount → UnreadTracker.GetCounts(uid) →
 # File upload/download (Phase 4)
 HTTP /upload   → Server.HandleUpload      → JWT validate → ObjectStore.Put(fileID, data, mime)
                                           → Thumbnail generation (images, max 4096px, 200px output)
-HTTP /file     → Server.HandleDownload    → JWT validate → ObjectStore.Get(fileID or fileID_thumb)
+HTTP /file     → Server.HandleDownload    → JWT validate → files-row ACL (owner or file_refs conversation member; no row = legacy, any logged-in user)
+  → direct upload enabled: 302 to presigned GET; otherwise ObjectStore.Get + http.ServeContent (Range)
+
+# Direct-to-OSS upload (object_storage.public_endpoint set; clients fall back to /upload on 501)
+HTTP /file/presign  → pending files row + MinioStore.PresignPut (Content-Type + Content-Length signed) → client PUTs to OSS
+HTTP /file/complete → Stat size check + sniff head → MarkFileReady → async thumbnail → same JSON as /upload
+CmdFile / CmdForward → Router.authorizeFileMessage → sender must be able to access content.file_id → AddFileRef(convKey)
+Server.StartFileJanitor → deletes pending files older than 24h
 
 # Fulltext search (Phase 4)
 CmdSearch      → Router.handleSearch     → MessageStore.SearchMessages(params) → paginated results + completion signal

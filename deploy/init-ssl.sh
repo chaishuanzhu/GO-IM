@@ -4,7 +4,7 @@
 #
 # 用途: 首次获取 SSL 证书（之后由 Docker certbot 自动续期）
 # 用法:
-#   1. 确保你的域名 DNS 已解析到本服务器 IP
+#   1. 确保你的域名及 oss.<域名>(文件直传的对象存储入口)DNS 均已解析到本服务器 IP
 #   2. 确保端口 80 已开放（云服务商安全组 + 服务器防火墙）
 #   3. 替换 YOUR_DOMAIN 为实际域名
 #   4. bash deploy/init-ssl.sh your-domain.com
@@ -52,7 +52,8 @@ docker run --rm \
     --email "$EMAIL" \
     --agree-tos \
     --no-eff-email \
-    -d "$DOMAIN" \
+    --cert-name "$DOMAIN" \
+    -d "$DOMAIN" -d "oss.$DOMAIN" \
     --dry-run
 
 echo ""
@@ -67,7 +68,8 @@ docker run --rm \
     --email "$EMAIL" \
     --agree-tos \
     --no-eff-email \
-    -d "$DOMAIN" \
+    --cert-name "$DOMAIN" --expand \
+    -d "$DOMAIN" -d "oss.$DOMAIN" \
     --force-renewal
 
 echo ""
@@ -77,7 +79,7 @@ if [ -f "$CERTBOT_DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
     echo "  证书路径: $CERTBOT_DIR/certbot/conf/live/$DOMAIN/"
 else
     echo "  ❌ 证书获取失败，请检查："
-    echo "    1. 域名 DNS 是否已解析到本服务器 IP"
+    echo "    1. 域名与 oss.$DOMAIN 的 DNS 是否已解析到本服务器 IP"
     echo "    2. 端口 80 是否已开放（云服务商安全组）"
     echo "    3. 服务器防火墙是否放行 80 端口"
     exit 1

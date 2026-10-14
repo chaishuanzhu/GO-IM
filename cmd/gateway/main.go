@@ -283,9 +283,25 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		cfg.Gateway.HeartbeatFail,
 		cfg.Gateway.Conn,
 		cfg.Gateway.CheckOrigin,
-		snow, objectStore, cfg.Gateway.ObjectStorage.MaxUpload,
+		snow, objectStore, cfg.Gateway.ObjectStorage.LegacyMaxUpload,
 		cfg.AdminUIDs,
 	)
+
+	// --- 文件记录(按会话鉴权)与客户端直传 ---
+	var fileStore repo.FileStore = gateway.NewInMemoryFileStore()
+	if mysqlStore != nil {
+		fileStore = mysqlStore
+	}
+	server.SetFileStore(fileStore)
+	router.SetFileStore(fileStore)
+	if ms, ok := objectStore.(*gateway.MinioStore); ok && ms.DirectEnabled() {
+		osCfg := cfg.Gateway.ObjectStorage
+		server.SetDirectUpload(ms, osCfg.MaxUpload,
+			time.Duration(osCfg.PresignUploadTTL), time.Duration(osCfg.PresignDownloadTTL))
+		log.Printf("[main] direct upload enabled via %s (max %d bytes)", osCfg.PublicEndpoint, osCfg.MaxUpload)
+	} else {
+		log.Printf("[main] direct upload disabled (object_storage.public_endpoint not set), clients use POST /upload")
+	}
 
 	// 为 /health 端点注册依赖健康检查。
 	if rdb != nil {
@@ -413,6 +429,9 @@ func (app *App) Run(ctx context.Context) error {
 	// 文件/图片上传与下载。
 	mux.HandleFunc("/upload", app.Server.HandleUpload)
 	mux.HandleFunc("/file", app.Server.HandleDownload)
+	mux.HandleFunc("/file/presign", app.Server.HandlePresign)
+	mux.HandleFunc("/file/complete", app.Server.HandleComplete)
+	app.Server.StartFileJanitor(ctx, time.Hour)
 
 	// 消息全文搜索。
 	mux.HandleFunc("/search", app.Server.HandleSearch)

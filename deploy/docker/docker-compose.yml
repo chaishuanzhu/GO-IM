@@ -76,6 +76,10 @@ services:
     environment:
       RUSTFS_ACCESS_KEY: rustfsadmin
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+    # 文件直传入口：由反向代理/CDN 把 OSS 域名转发到这里（Host 原样透传），
+    # 并在 config.json 设置 object_storage.public_endpoint；默认只监听本机。
+    ports:
+      - "${OSS_BIND:-127.0.0.1}:${OSS_PORT:-9000}:9000"
     volumes:
       - rustfs-data:/data
     healthcheck:

@@ -4,11 +4,13 @@ import com.goim.kmp.common.DomainError
 import com.goim.kmp.model.User
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.OutgoingContent
+import io.ktor.http.decodeURLQueryComponent
 import io.ktor.http.headersOf
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
@@ -25,25 +27,99 @@ class GoImFileApiTest {
 
     private fun api(engine: MockEngine) = GoImFileApi(createHttpClient(engine), { "http://host:8080/" }, me)
 
+    private val json = headersOf(HttpHeaders.ContentType, "application/json")
+    private val metaJson =
+        """{"file_id":366821983901454336,"name":"pic.png","size":88,"mime":"image/png","width":64,"height":48,"thumb_width":0,"thumb_height":0}"""
+
     @Test
-    fun uploadSendsMultipartAndParsesNumericId() = runTest {
+    fun uploadDirectPresignPutComplete() = runTest {
+        val payload = ByteArray(88) { it.toByte() }
+        var putBody = ByteArray(0)
         val engine = MockEngine { request ->
             requests += request
-            respond(
-                """{"file_id":366821983901454336,"name":"pic.png","size":88,"mime":"image/png","width":64,"height":48,"thumb_width":0,"thumb_height":0}""",
-                headers = headersOf(HttpHeaders.ContentType, "application/json"),
-            )
+            when (request.url.encodedPath) {
+                "/file/presign" -> respond(
+                    """{"file_id":"366821983901454336","upload_url":"https://oss.test/im-files/366821983901454336?X-Amz-Signature=abc",
+                       "method":"PUT","headers":{"Content-Type":"image/png"},"expires_at":1,"max_size":104857600}""",
+                    headers = json,
+                )
+                "/im-files/366821983901454336" -> {
+                    putBody = request.body.toByteArray()
+                    respond("", HttpStatusCode.OK)
+                }
+                "/file/complete" -> respond(metaJson, headers = json)
+                else -> error("unexpected ${request.url}")
+            }
         }
-        val progress = mutableListOf<Float>()
-        val meta = api(engine).upload(ByteArray(88), "pic.png", "image/png") { progress += it }
+        val meta = api(engine).upload(payload, "pic.png", "image/png")
         assertEquals("366821983901454336", meta.fileId)
         assertEquals(64, meta.width)
         assertNull(meta.thumbWidth, "0 视为缺失")
-        val request = requests.single()
-        assertEquals(HttpMethod.Post, request.method)
-        assertEquals("http://host:8080/upload", request.url.toString())
-        val body = (request.body as OutgoingContent).contentType.toString()
-        assertTrue(body.startsWith("multipart/form-data"), body)
+
+        assertEquals(listOf("/file/presign", "/im-files/366821983901454336", "/file/complete"), requests.map { it.url.encodedPath })
+        val presign = formOf(requests[0])
+        assertEquals(mapOf("uid" to "alice", "token" to "jwt", "name" to "pic.png", "size" to "88", "mime" to "image/png"), presign)
+        val put = requests[1]
+        assertEquals(HttpMethod.Put, put.method)
+        assertEquals("https://oss.test/im-files/366821983901454336?X-Amz-Signature=abc", put.url.toString())
+        assertEquals("image/png", put.body.contentType.toString())
+        assertContentEquals(payload, putBody)
+        assertEquals("366821983901454336", formOf(requests[2])["file_id"])
+    }
+
+    @Test
+    fun uploadFallsBackToMultipartWhenDirectDisabled() = runTest {
+        val engine = MockEngine { request ->
+            requests += request
+            when (request.url.encodedPath) {
+                "/file/presign" -> respond("direct upload not enabled", HttpStatusCode.NotImplemented)
+                "/upload" -> respond(metaJson, headers = json)
+                else -> error("unexpected ${request.url}")
+            }
+        }
+        val meta = api(engine).upload(ByteArray(88), "pic.png", "image/png")
+        assertEquals("366821983901454336", meta.fileId)
+        val upload = requests.last()
+        assertEquals(HttpMethod.Post, upload.method)
+        assertEquals("http://host:8080/upload", upload.url.toString())
+        val type = (upload.body as OutgoingContent).contentType.toString()
+        assertTrue(type.startsWith("multipart/form-data"), type)
+    }
+
+    @Test
+    fun uploadFallsBackWhenObjectStorageUnreachable() = runTest {
+        val engine = MockEngine { request ->
+            requests += request
+            when (request.url.host) {
+                "oss.test" -> throw IllegalStateException("connect refused")
+                else -> when (request.url.encodedPath) {
+                    "/file/presign" -> respond(
+                        """{"file_id":"1","upload_url":"https://oss.test/im-files/1","headers":{"Content-Type":"image/png"}}""",
+                        headers = json,
+                    )
+                    "/upload" -> respond(metaJson, headers = json)
+                    else -> error("unexpected ${request.url}")
+                }
+            }
+        }
+        assertEquals("366821983901454336", api(engine).upload(ByteArray(88), "pic.png", "image/png").fileId)
+        assertEquals("/upload", requests.last().url.encodedPath)
+    }
+
+    @Test
+    fun largeFileWithoutDirectUploadIsRejected() = runTest {
+        val engine = MockEngine { respond("", HttpStatusCode.NotImplemented) }
+        assertFailsWith<DomainError.InvalidState> {
+            api(engine).upload(ByteArray(GoImFileApi.LEGACY_MAX_BYTES + 1), "big.bin", "application/octet-stream")
+        }
+    }
+
+    private fun formOf(request: HttpRequestData): Map<String, String> {
+        val text = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+        return text.split('&').associate {
+            val (k, v) = it.split('=', limit = 2)
+            k.decodeURLQueryComponent() to v.decodeURLQueryComponent(plusIsSpace = true)
+        }
     }
 
     @Test

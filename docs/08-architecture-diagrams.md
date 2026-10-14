@@ -32,7 +32,7 @@ flowchart TD
     Client["Web (React) / PC / Mobile<br/>客户端"]
 
     subgraph GW["Gateway 接入层 (单体 · :8080 HTTP/WS · :8081 TCP)"]
-        HTTP["HTTP API<br/>/login /register /online /health /upload /file /search /unread /group/*"]
+        HTTP["HTTP API<br/>/login /register /online /health /upload /file /file/presign /search /unread /group/*"]
         WS["WebSocket 长连接<br/>(gorilla/websocket)"]
         TCP["gnet TCP 长连接<br/>4字节长度前缀 + Protobuf"]
         Hub["Connection Hub<br/>UID → *Client + 离线队列"]

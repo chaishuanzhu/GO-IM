@@ -40,6 +40,14 @@ type Server struct {
 	objectStore ObjectStore          // 文件上传禁用时为 nil
 	maxUpload   int64                // 最大上传大小(字节)
 
+	// 文件记录与直传(nil = 未启用)。
+	fileStore   repo.FileStore
+	direct      DirectUploader
+	directMax   int64
+	uploadTTL   time.Duration
+	downloadTTL time.Duration
+	thumbSem    chan struct{} // 限制直传图片缩略图的并发生成
+
 	// WebSocket
 	upgrader websocket.Upgrader
 
@@ -1124,18 +1132,18 @@ func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 从内容中检测 MIME 类型。
-	mime := http.DetectContentType(data)
-	fileName := header.Filename
+	mime := safeUploadMIME(http.DetectContentType(data))
+	fileName := sanitizeFileName(header.Filename)
 
 	// 生成文件 ID。
-	fileID := strconv.FormatInt(s.snow.Next(), 10)
+	fileNum := s.snow.Next()
+	fileID := strconv.FormatInt(fileNum, 10)
 
 	// 获取图片尺寸。
 	width, height := ImageDimensions(data)
 
 	// 为图片生成缩略图。如果尺寸过大则跳过
 	// (解压炸弹防御 —— image.Decode 会分配 W×H×4 字节)。
-	const maxImageDim = 4096
 	var thumbW, thumbH int
 	if IsImageMIME(mime) {
 		if width > maxImageDim || height > maxImageDim {
@@ -1170,6 +1178,17 @@ func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[server] upload %s: name=%s size=%d mime=%s dims=%dx%d thumb=%dx%d",
 		fileID, fileName, len(data), mime, width, height, thumbW, thumbH)
+
+	s.recordUploadedFile(r.Context(), &repo.File{
+		FileID:   fileNum,
+		OwnerUID: uid,
+		Name:     fileName,
+		Size:     int64(len(data)),
+		Mime:     mime,
+		Width:    width,
+		Height:   height,
+		HasThumb: thumbW > 0,
+	})
 
 	resp, _ := json.Marshal(map[string]interface{}{
 		"file_id":      fileID,
@@ -1274,55 +1293,6 @@ func (s *Server) HandleSearch(w http.ResponseWriter, r *http.Request) {
 		"next_cursor": result.NextCursor,
 	})
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
-}
-
-// HandleDownload 从对象存储提供文件/图片数据。
-// GET /file?id={file_id}[&thumb=1][&uid=uid&token=token]
-func (s *Server) HandleDownload(w http.ResponseWriter, r *http.Request) {
-	if s.objectStore == nil {
-		http.Error(w, "object store not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	fileID := r.URL.Query().Get("id")
-	if fileID == "" {
-		http.Error(w, "id required", http.StatusBadRequest)
-		return
-	}
-
-	// 校验 JWT 令牌。
-	uid := r.URL.Query().Get("uid")
-	token := r.URL.Query().Get("token")
-	if uid == "" || token == "" {
-		http.Error(w, "uid and token required", http.StatusBadRequest)
-		return
-	}
-	claims, err := s.jwtMgr.Validate(token)
-	if err != nil {
-		http.Error(w, "invalid token: "+err.Error(), http.StatusUnauthorized)
-		return
-	}
-	if claims.UID != uid {
-		http.Error(w, "uid does not match token", http.StatusForbidden)
-		return
-	}
-
-	// 如果请求了缩略图则提供缩略图。
-	key := fileID
-	if r.URL.Query().Get("thumb") == "1" {
-		key = fileID + "_thumb"
-	}
-
-	data, contentType, err := s.objectStore.Get(r.Context(), key)
-	if err != nil {
-		log.Printf("[server] download %s failed: %v", key, err)
-		http.Error(w, "file not found", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.Write(data)
 }
 

@@ -83,7 +83,13 @@
             "secret_key": "CHANGE_ME_RUSTFS_SECRET",
             "bucket": "im-files",
             "use_ssl": false,
-            "max_upload": 10485760
+            "max_upload": 104857600,
+            "legacy_max_upload": 10485760,
+            "public_endpoint": "https://oss.YOUR_DOMAIN",
+            "region": "us-east-1",
+            "cors_allowed_origins": ["https://YOUR_DOMAIN", "https://www.YOUR_DOMAIN"],
+            "presign_upload_ttl": "15m",
+            "presign_download_ttl": "1h"
         },
 
         "recall_window_ms": 120000,

@@ -5,6 +5,7 @@ import { Cmd, ChatType, MsgType } from '@/types';
 import type { ChatTypeValue } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 import { wsManager } from '@/lib/ws';
+import { MAX_UPLOAD_SIZE } from '@/lib/constants';
 import MentionSuggestions from './MentionSuggestions';
 import EmojiPicker from './EmojiPicker';
 
@@ -28,8 +29,6 @@ interface ChatInputProps {
   /** 取消当前回复 */
   onCancelReply?: () => void;
 }
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 export default function ChatInput({
   onSend,
@@ -183,8 +182,8 @@ export default function ChatInput({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > MAX_FILE_SIZE) {
-      alert('文件大小超过限制（最大 10MB）');
+    if (file.size > MAX_UPLOAD_SIZE) {
+      alert(`文件大小超过限制（最大 ${MAX_UPLOAD_SIZE / 1024 / 1024}MB）`);
       return;
     }
 

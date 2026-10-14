@@ -91,6 +91,43 @@ type FriendStore interface {
 	GetPendingRequests(ctx context.Context, uid string) ([]*FriendRequest, error)
 }
 
+// FileStatus 表示上传文件的状态。
+type FileStatus int8
+
+const (
+	FileStatusPending FileStatus = 0 // 已签发上传 URL，尚未确认
+	FileStatusReady   FileStatus = 1 // 已上传并校验，可在消息中引用
+)
+
+// File 是一个上传到对象存储的文件的元数据。对象 key 即 FileID 的十进制字符串。
+type File struct {
+	FileID    int64
+	OwnerUID  string
+	Name      string
+	Size      int64
+	Mime      string
+	Width     int
+	Height    int
+	HasThumb  bool
+	Status    FileStatus
+	CreatedAt int64 // 毫秒
+}
+
+// FileStore 管理文件元数据与文件被哪些会话引用（用于下载鉴权）。
+// 会话 key：单聊为两端 UID 排序后以 ":" 连接，群聊为群 ID。
+type FileStore interface {
+	CreateFile(ctx context.Context, f *File) error
+	// GetFile 在文件不存在时返回 (nil, nil)。
+	GetFile(ctx context.Context, fileID int64) (*File, error)
+	MarkFileReady(ctx context.Context, fileID int64, mime string, width, height int) error
+	SetFileThumb(ctx context.Context, fileID int64) error
+	AddFileRef(ctx context.Context, fileID int64, convKey string) error
+	FileConvKeys(ctx context.Context, fileID int64) ([]string, error)
+	// StalePendingFiles 返回 createdBefore（毫秒）之前创建、仍未确认的文件 ID。
+	StalePendingFiles(ctx context.Context, createdBefore int64, limit int) ([]int64, error)
+	DeleteFile(ctx context.Context, fileID int64) error
+}
+
 // MessageStore 管理消息历史记录的持久化。
 type MessageStore interface {
 	Save(ctx context.Context, msg *proto.Message) error
