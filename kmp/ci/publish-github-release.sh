@@ -43,6 +43,12 @@ notes="GO-IM KMP 客户端 ${VERSION}（commit ${GIT_COMMIT:0:7}，Jenkins #${BU
 for attempt in $(seq 1 $ATTEMPTS); do
     if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
         echo "Release $TAG 已存在，覆盖上传产物"
+        # 预发布标记只在创建时设置过；重新发布时按本次参数同步，否则转正式版后仍显示为预发布
+        prerelease="${PRERELEASE:-false}"
+        for edit_attempt in $(seq 1 $ATTEMPTS); do
+            gh release edit "$TAG" -R "$REPO" --prerelease="$prerelease" >/dev/null && break
+            backoff "$edit_attempt" "同步 Release $TAG 的预发布标记"
+        done
         break
     fi
     if gh release create "$TAG" -R "$REPO" --target "$GIT_COMMIT" \
