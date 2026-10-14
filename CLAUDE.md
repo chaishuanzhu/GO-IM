@@ -308,6 +308,10 @@ docker-compose up -d
 docker-compose down
 ```
 
+## Release
+
+Follow `ci/jenkins/README.md` → 「发布新版本」 exactly: update docs and version references first, merge to `main`, then push a `vX.Y.Z` tag on the `main` commit. Jenkins (`go-im-tags`) starts the build automatically — do not also start `go-im` by hand. Everything in the release (images, installers, Docker Hub overview) comes from the tagged commit.
+
 ## Go environment
 
 This project uses Go 1.26.5 at `E:\develop\Golang1.26.5`. If `GOROOT` is set to a different (empty) directory, override it:
