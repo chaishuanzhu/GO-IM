@@ -189,9 +189,23 @@ class FriendRepositoryImpl(
         }
     }
 
-    /** 对方接受了我的请求：先落库让列表立即出现，再全量刷新。 */
+    override suspend fun remove(uid: String) {
+        try {
+            api.removeFriend(uid)
+        } catch (e: DomainError.Server) {
+            // 404：服务端已无该好友关系（对方先删了），本地照常移除
+            if (e.code != 404) throw e
+        }
+        persist { dao.deleteFriend(uid) }
+        runCatching { refresh() }
+    }
+
+    /** 对方接受请求或删除了我：先改本地让列表立即变化，再全量刷新。 */
     internal suspend fun onResponded(event: InboundEvent.FriendResponded) {
-        if (event.accepted) persist { dao.upsertFriends(listOf(Friend(event.peerUid).toEntity())) }
+        when {
+            event.removed -> persist { dao.deleteFriend(event.peerUid) }
+            event.accepted -> persist { dao.upsertFriends(listOf(Friend(event.peerUid).toEntity())) }
+        }
         runCatching { refresh() }
     }
 

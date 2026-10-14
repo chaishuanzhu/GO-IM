@@ -172,6 +172,9 @@ interface FriendRepository {
     suspend fun sendRequest(to: String)
 
     suspend fun respond(fromUid: String, accept: Boolean)
+
+    /** 删除好友（双向解除），对方在线时会收到通知。 */
+    suspend fun remove(uid: String)
 }
 
 interface SearchRepository {

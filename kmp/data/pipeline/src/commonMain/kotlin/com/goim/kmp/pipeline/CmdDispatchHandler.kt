@@ -34,7 +34,11 @@ class CmdDispatchHandler(
             Cmd.UNREAD_COUNT -> parseUnreadCounts(msg.content)?.let { onEvent(InboundEvent.Unread(it)) }
             Cmd.FRIEND_REQUEST -> onEvent(mapFriendRequest(msg))
             Cmd.FRIEND_RESPONSE -> onEvent(
-                InboundEvent.FriendResponded(peerUid = msg.from, accepted = parseFriendAction(msg.content)),
+                InboundEvent.FriendResponded(
+                    peerUid = msg.from,
+                    accepted = parseFriendAction(msg.content),
+                    removed = parseObject(msg.content)?.string("action") == "remove",
+                ),
             )
             Cmd.HEARTBEAT -> onHeartbeat()
             Cmd.LOGIN_RESP -> onLoginResp()

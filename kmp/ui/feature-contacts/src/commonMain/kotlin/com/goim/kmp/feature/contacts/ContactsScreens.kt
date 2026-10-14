@@ -2,6 +2,7 @@ package com.goim.kmp.feature.contacts
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -67,6 +69,10 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import com.goim.kmp.designsystem.EmptyState
 import com.goim.kmp.designsystem.GoImIcons
@@ -115,6 +121,7 @@ fun ContactsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    var confirmRemove by remember { mutableStateOf<Friend?>(null) }
     MessageSnackbar(viewModel, snackbar)
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -159,9 +166,62 @@ fun ContactsScreen(
                     )
                 }
                 items(section.friends, key = { "friend-${it.uid}" }) { friend ->
-                    PersonRow(friend.displayName, subtitle = friend.uid.takeIf { it != friend.displayName }, onClick = { onOpenFriend(friend) })
+                    SwipeToLeave(label = "删除", onLeave = { confirmRemove = friend }) {
+                        FriendRow(friend, onClick = { onOpenFriend(friend) }, onRemove = { confirmRemove = friend })
+                    }
                 }
             }
+        }
+    }
+
+    confirmRemove?.let { friend ->
+        ConfirmDialog(
+            text = "确定删除好友「${friend.displayName}」？对方的好友列表中也会移除你，聊天记录会保留。",
+            confirmLabel = "删除",
+            onConfirm = {
+                confirmRemove = null
+                viewModel.remove(friend)
+            },
+            onDismiss = { confirmRemove = null },
+        )
+    }
+}
+
+/** 长按（触屏）或右键（桌面）弹出菜单。 */
+@Composable
+private fun FriendRow(friend: Friend, onClick: () -> Unit, onRemove: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        ListItem(
+            headlineContent = { Text(friend.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            supportingContent = friend.uid.takeIf { it != friend.displayName }?.let {
+                { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            },
+            leadingContent = { MonogramAvatar(friend.displayName, size = 40.dp) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                                event.changes.forEach { it.consume() }
+                                menuOpen = true
+                            }
+                        }
+                    }
+                }
+                .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true }, onLongClickLabel = "更多操作"),
+        )
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("删除好友", color = MaterialTheme.colorScheme.error) },
+                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    menuOpen = false
+                    onRemove()
+                },
+            )
         }
     }
 }
@@ -358,7 +418,7 @@ fun GroupsScreen(viewModel: GroupsViewModel, onBack: () -> Unit, onOpenGroup: (G
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeToLeave(onLeave: () -> Unit, content: @Composable () -> Unit) {
+private fun SwipeToLeave(label: String = "退出", onLeave: () -> Unit, content: @Composable () -> Unit) {
     val dismiss = rememberSwipeToDismissBoxState()
     LaunchedEffect(dismiss.currentValue) {
         // 只弹确认，不真正划走；确认后由列表数据驱动移除。
@@ -375,7 +435,7 @@ private fun SwipeToLeave(onLeave: () -> Unit, content: @Composable () -> Unit) {
                 Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(end = 24.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {
-                Text("退出", color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.labelLarge)
+                Text(label, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.labelLarge)
             }
         },
     ) {

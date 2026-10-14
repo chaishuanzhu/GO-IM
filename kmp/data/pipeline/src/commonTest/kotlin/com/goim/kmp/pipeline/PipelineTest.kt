@@ -114,6 +114,28 @@ class PipelineTest {
     }
 
     @Test
+    fun friendResponseActionsMapToEvent() = runTest {
+        val events = mutableListOf<InboundEvent>()
+        val pipeline = IMPipeline {}
+            .addLast(ProtobufDecodeHandler())
+            .addLast(CmdDispatchHandler("alice", onEvent = { events += it }))
+
+        for (action in listOf("accept", "reject", "remove")) {
+            val content = """{"action":"$action","from_uid":"bob"}"""
+            pipeline.fireChannelRead(MessageCodec.encode(WireMessage(cmd = Cmd.FRIEND_RESPONSE, from = "bob", to = "alice", content = content)))
+        }
+
+        assertEquals<List<InboundEvent>>(
+            listOf(
+                InboundEvent.FriendResponded("bob", accepted = true, removed = false),
+                InboundEvent.FriendResponded("bob", accepted = false, removed = false),
+                InboundEvent.FriendResponded("bob", accepted = false, removed = true),
+            ),
+            events,
+        )
+    }
+
+    @Test
     fun unreadCountsParsing() {
         assertEquals(mapOf("a" to 1), CmdDispatchHandler.parseUnreadCounts("""{"counts":{"a":1.0}}"""))
         assertEquals(null, CmdDispatchHandler.parseUnreadCounts("not json"))

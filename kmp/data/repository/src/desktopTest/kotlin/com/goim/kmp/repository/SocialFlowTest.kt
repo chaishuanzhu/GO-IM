@@ -199,6 +199,51 @@ class SocialFlowTest {
     }
 
     @Test
+    fun removeFriendDeletesLocallyAndToleratesAlreadyRemoved() = runBlocking<Unit> {
+        val friends = FriendRepositoryImpl(api, db, FakeConnection(connected = true), me.uid)
+        routes = mapOf(
+            "/friend/list" to (
+                HttpStatusCode.OK to
+                    """{"friends":[{"uid":"bob","friend_uid":"alice"},{"uid":"carol","friend_uid":"alice"}],"pending_requests":[]}"""
+                ),
+        )
+        friends.refresh()
+
+        routes = mapOf(
+            "/friend/remove" to (HttpStatusCode.OK to """{"status":"ok"}"""),
+            "/friend/list" to (HttpStatusCode.BadGateway to "upstream down"),
+        )
+        friends.remove("bob")
+        assertEquals(listOf("carol"), friends.observeFriends().first().map { it.uid })
+
+        // 对方已先删除：服务端 404，本地照常移除
+        routes = mapOf("/friend/remove" to (HttpStatusCode.NotFound to "not friends"))
+        friends.remove("carol")
+        assertTrue(friends.observeFriends().first().isEmpty())
+
+        routes = mapOf("/friend/remove" to (HttpStatusCode.ServiceUnavailable to "friend system not available"))
+        assertFailsWith<DomainError.Server> { friends.remove("dave") }
+    }
+
+    @Test
+    fun removedByPeerDropsFriend() = runBlocking<Unit> {
+        val connection = FakeConnection(connected = true)
+        val friends = FriendRepositoryImpl(api, db, connection, me.uid)
+        val messages = MessageRepositoryImpl(db, connection, this)
+        val conversations = ConversationRepositoryImpl(db)
+        val pumps = CoroutineScope(coroutineContext + Job())
+        SessionCoordinator(me, connection, messages, conversations, pumps, friends = friends) {}.start()
+
+        routes = mapOf("/friend/list" to (HttpStatusCode.BadGateway to "upstream down"))
+        connection.events.send(InboundEvent.FriendResponded("bob", accepted = true))
+        eventually { friends.observeFriends().first().map { it.uid } == listOf("bob") }
+
+        connection.events.send(InboundEvent.FriendResponded("bob", accepted = false, removed = true))
+        eventually { friends.observeFriends().first().isEmpty() }
+        pumps.cancel()
+    }
+
+    @Test
     fun groupRefreshSyncsTitlesAndDropsLeftGroups() = runBlocking<Unit> {
         val conversations = ConversationRepositoryImpl(db)
         val groups = GroupRepositoryImpl(api, db, conversations)

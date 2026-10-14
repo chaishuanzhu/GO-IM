@@ -23,8 +23,8 @@ sealed interface InboundEvent {
     /** 自己发出 CmdFriendRequest 后网关的回执；[error] 为 null 表示已送达。 */
     data class FriendRequestResult(val peerUid: String, val error: String?) : InboundEvent
 
-    /** 对方处理了我发出的好友请求。 */
-    data class FriendResponded(val peerUid: String, val accepted: Boolean) : InboundEvent
+    /** 对方处理了我发出的好友请求；[removed] 表示对方删除了与我的好友关系。 */
+    data class FriendResponded(val peerUid: String, val accepted: Boolean, val removed: Boolean = false) : InboundEvent
 }
 
 /** 出站信封（对应 iOS `OutboundEnvelope`）。 */

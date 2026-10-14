@@ -1025,6 +1025,7 @@ func (s *Server) HandleFriendRemove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	s.router.NotifyFriendResponse(r.Context(), claims.UID, friendUID, "remove")
 
 	data, _ := json.Marshal(map[string]string{"status": "ok"})
 	w.Header().Set("Content-Type", "application/json")

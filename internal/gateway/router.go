@@ -1676,7 +1676,7 @@ func (r *Router) NotifyFriendRequest(ctx context.Context, fromUID, fromName, toU
 	})
 }
 
-// NotifyFriendResponse 把接受/拒绝结果推送给原始请求者 toUID。
+// NotifyFriendResponse 把好友关系变化推送给 toUID：action 为 accept / reject（处理了 toUID 的请求）或 remove（删除了 toUID）。
 func (r *Router) NotifyFriendResponse(ctx context.Context, fromUID, toUID, action string) {
 	content, _ := json.Marshal(map[string]string{"action": action, "from_uid": fromUID})
 	r.deliverToUser(ctx, toUID, &proto.Message{

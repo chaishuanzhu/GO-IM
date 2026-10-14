@@ -214,6 +214,9 @@ abstract class FriendDao {
     @Upsert
     abstract suspend fun upsertFriends(entities: List<FriendEntity>)
 
+    @Query("DELETE FROM friends WHERE uid = :uid")
+    abstract suspend fun deleteFriend(uid: String)
+
     @Query("DELETE FROM friend_requests WHERE to_uid = :toUid AND status = 'pending'")
     protected abstract suspend fun deletePending(toUid: String)
 

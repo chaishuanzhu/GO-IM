@@ -524,21 +524,65 @@ func escapeBooleanMode(s string) string {
 // ---------- FriendStore 实现 ----------
 
 // SendRequest 发送一条从 fromUID 到 toUID 的好友请求。
+// 双方已是好友或任一方向已有待处理请求时返回错误；被拒绝的旧记录（任一方向）会被清除后重新发起。
 func (s *MySQLStore) SendRequest(ctx context.Context, fromUID, toUID string) error {
-	now := timeNow()
-	// 以 status=pending 插入。UNIQUE KEY 防止重复请求。
-	// 反向已存在的请求也会被捕获。
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO friends (uid, friend_uid, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		fromUID, toUID, FriendStatusPending, now, now,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin friend request: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx,
+		`SELECT uid, status FROM friends
+		 WHERE (uid = ? AND friend_uid = ?) OR (uid = ? AND friend_uid = ?)
+		 FOR UPDATE`,
+		fromUID, toUID, toUID, fromUID,
 	)
 	if err != nil {
+		return fmt.Errorf("query friendship: %w", err)
+	}
+	for rows.Next() {
+		var uid string
+		var raw int32
+		if err := rows.Scan(&uid, &raw); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan friendship: %w", err)
+		}
+		status := FriendStatus(raw)
+		switch {
+		case status == FriendStatusAccepted:
+			rows.Close()
+			return fmt.Errorf("%s and %s are already friends", fromUID, toUID)
+		case status == FriendStatusPending && uid == fromUID:
+			rows.Close()
+			return fmt.Errorf("friend request already pending from %s to %s", fromUID, toUID)
+		case status == FriendStatusPending:
+			rows.Close()
+			return fmt.Errorf("%s has already sent a friend request to %s", toUID, fromUID)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("read friendship: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM friends WHERE ((uid = ? AND friend_uid = ?) OR (uid = ? AND friend_uid = ?)) AND status = ?`,
+		fromUID, toUID, toUID, fromUID, FriendStatusRejected,
+	); err != nil {
+		return fmt.Errorf("clear rejected request: %w", err)
+	}
+
+	now := timeNow()
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO friends (uid, friend_uid, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		fromUID, toUID, FriendStatusPending, now, now,
+	); err != nil {
 		if strings.Contains(err.Error(), "Error 1062") || strings.Contains(err.Error(), "Duplicate entry") {
 			return fmt.Errorf("friend request already exists between %s and %s", fromUID, toUID)
 		}
 		return fmt.Errorf("insert friend request: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // AcceptRequest 接受一条待处理的好友请求。

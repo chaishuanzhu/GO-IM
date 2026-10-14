@@ -329,8 +329,8 @@ export function useWebSocket() {
               }),
             };
             addMessage(data.from_uid || msg.from, chatMsg, uid);
-          } else if (data.action === 'reject') {
-            // 被拒绝 —— 不做特殊处理
+          } else if (data.action === 'remove') {
+            friendStore.removeFriend(data.from_uid || msg.from);
           }
         } catch { /* 忽略解析错误 */ }
         break;

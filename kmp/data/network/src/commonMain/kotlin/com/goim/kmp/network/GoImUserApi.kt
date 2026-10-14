@@ -135,6 +135,10 @@ class GoImUserApi(
         post(if (accept) "friend/accept" else "friend/reject", "from_uid" to fromUid)
     }
 
+    suspend fun removeFriend(friendUid: String) {
+        post("friend/remove", "friend_uid" to friendUid)
+    }
+
     suspend fun search(query: String, limit: Int): List<SearchHit> =
         get("search", "q" to query, "limit" to limit.toString()).decode<SearchResponseDto>().messages.orEmpty().map { m ->
             val chatType = ChatType.from(m.chatType)

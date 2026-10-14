@@ -76,6 +76,8 @@ class ContactsViewModel(private val friends: FriendRepository) : ActionViewModel
 
     fun refresh() = action(block = { friends.refresh() })
 
+    fun remove(friend: Friend) = action(success = "已删除好友 ${friend.displayName}", block = { friends.remove(friend.uid) })
+
     companion object {
         /** 按首字母分组（同 iOS 通讯录），非拉丁字母归入 "#" 并排在最后。 */
         fun sectionize(list: List<Friend>): List<FriendSection> = list
