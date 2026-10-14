@@ -40,6 +40,7 @@ import com.goim.kmp.designsystem.MonogramAvatar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -98,7 +99,7 @@ import kotlinx.coroutines.flow.filter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenGroupInfo: (() -> Unit)? = null) {
+fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() -> Unit)? = null) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val draft by viewModel.draft.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -173,8 +174,12 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenGroupInfo:
                     }
                 },
                 actions = {
-                    if (onOpenGroupInfo != null) {
-                        IconButton(onClick = onOpenGroupInfo) { Icon(GoImIcons.Group, contentDescription = "群信息") }
+                    if (onOpenInfo != null) {
+                        if (conversation.chatType == ChatType.GROUP) {
+                            IconButton(onClick = onOpenInfo) { Icon(GoImIcons.Group, contentDescription = "群信息") }
+                        } else {
+                            IconButton(onClick = onOpenInfo) { Icon(Icons.Filled.Person, contentDescription = "好友信息") }
+                        }
                     }
                 },
             )

@@ -76,8 +76,6 @@ class ContactsViewModel(private val friends: FriendRepository) : ActionViewModel
 
     fun refresh() = action(block = { friends.refresh() })
 
-    fun remove(friend: Friend) = action(success = "已删除好友 ${friend.displayName}", block = { friends.remove(friend.uid) })
-
     companion object {
         /** 按首字母分组（同 iOS 通讯录），非拉丁字母归入 "#" 并排在最后。 */
         fun sectionize(list: List<Friend>): List<FriendSection> = list
@@ -105,6 +103,29 @@ class NewFriendsViewModel(private val friends: FriendRepository) : ActionViewMod
         success = if (accept) "已添加 ${request.displayName} 为好友" else "已拒绝",
         block = { friends.respond(request.fromUid, accept) },
     )
+}
+
+/** [friend] 为 null 表示已不是好友（被对方删除或尚未同步）。 */
+data class FriendInfoUiState(
+    val friend: Friend? = null,
+    val loaded: Boolean = false,
+)
+
+class FriendInfoViewModel(
+    val uid: String,
+    private val fallbackName: String,
+    private val friends: FriendRepository,
+) : ActionViewModel() {
+    val state: StateFlow<FriendInfoUiState> = friends.observeFriends()
+        .map { list -> FriendInfoUiState(list.firstOrNull { it.uid == uid }, loaded = true) }
+        .catch { emit(FriendInfoUiState(loaded = true)) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FriendInfoUiState())
+
+    val displayName: String get() = state.value.friend?.displayName ?: fallbackName.ifBlank { uid }
+
+    fun remove(onRemoved: () -> Unit) = action(block = { friends.remove(uid) }, then = onRemoved)
+
+    fun copied() = notify("用户 ID 已复制")
 }
 
 class GroupsViewModel(

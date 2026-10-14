@@ -27,6 +27,10 @@ data object GroupsRoute
 @Serializable
 data class GroupInfoRoute(val groupId: String, val name: String)
 
+/** [fromChat]：从该好友的聊天页进入，「发消息」直接返回即可。 */
+@Serializable
+data class FriendInfoRoute(val uid: String, val name: String, val fromChat: Boolean = false)
+
 /** `focus*` 来自搜索跳转：打开后定位并高亮该条消息。 */
 @Serializable
 data class ChatRoute(

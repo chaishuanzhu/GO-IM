@@ -87,6 +87,8 @@ import com.goim.kmp.feature.chat.ChatScreen
 import com.goim.kmp.feature.chat.ChatViewModel
 import com.goim.kmp.feature.contacts.ContactsScreen
 import com.goim.kmp.feature.contacts.ContactsViewModel
+import com.goim.kmp.feature.contacts.FriendInfoScreen
+import com.goim.kmp.feature.contacts.FriendInfoViewModel
 import com.goim.kmp.feature.contacts.GroupInfoScreen
 import com.goim.kmp.feature.contacts.GroupInfoViewModel
 import com.goim.kmp.feature.contacts.GroupsScreen
@@ -107,6 +109,7 @@ import com.goim.kmp.feature.settings.SettingsViewModel
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.Conversation
 import com.goim.kmp.model.ConversationId
+import com.goim.kmp.model.Friend
 import com.goim.kmp.repository.SessionManager
 import com.goim.kmp.repository.UserSession
 import kotlinx.coroutines.Dispatchers
@@ -188,7 +191,11 @@ fun MainNavHost(session: UserSession) {
             }
         }
 
-        fun openGroupInfo(route: ChatRoute) = nav.navigate(GroupInfoRoute(route.peer, route.title))
+        fun openInfo(route: ChatRoute) = if (route.chatType == ChatType.GROUP.value) {
+            nav.navigate(GroupInfoRoute(route.peer, route.title))
+        } else {
+            nav.navigate(FriendInfoRoute(route.peer, route.title, fromChat = true))
+        }
 
         // 窗口跨档位时在「右栏」与「全屏入栈」之间迁移当前聊天
         LaunchedEffect(twoPane) {
@@ -215,7 +222,8 @@ fun MainNavHost(session: UserSession) {
                     selected = selected,
                     onOpenChat = ::openChat,
                     onCloseChat = { selected = null },
-                    onOpenGroupInfo = ::openGroupInfo,
+                    onOpenInfo = ::openInfo,
+                    onOpenFriend = { friend -> nav.navigate(FriendInfoRoute(friend.uid, friend.displayName)) },
                     onOpenNewFriends = { nav.navigate(NewFriendsRoute) },
                     onOpenGroups = { nav.navigate(GroupsRoute) },
                     onOpenDeveloper = { nav.navigate(DeveloperRoute) },
@@ -223,7 +231,22 @@ fun MainNavHost(session: UserSession) {
             }
             composable<ChatRoute> { entry ->
                 val route = entry.toRoute<ChatRoute>()
-                ChatPane(session, route, onBack = { nav.popBackStack() }, onOpenGroupInfo = { openGroupInfo(route) })
+                ChatPane(session, route, onBack = { nav.popBackStack() }, onOpenInfo = { openInfo(route) })
+            }
+            composable<FriendInfoRoute> { entry ->
+                val route = entry.toRoute<FriendInfoRoute>()
+                val vm = viewModel { FriendInfoViewModel(route.uid, route.name, session.friends) }
+                FriendInfoScreen(
+                    vm,
+                    onBack = { nav.popBackStack() },
+                    onSendMessage = {
+                        nav.popBackStack()
+                        if (!route.fromChat) {
+                            openChat(ChatRoute.of(Conversation(ConversationId.dm(selfUid, route.uid), ChatType.SINGLE, vm.displayName, route.uid)))
+                        }
+                    },
+                    onRemoved = { nav.popBackStack() },
+                )
             }
             composable<NewFriendsRoute> {
                 val vm = viewModel { NewFriendsViewModel(session.friends) }
@@ -261,7 +284,7 @@ fun MainNavHost(session: UserSession) {
 
 /** 聊天页：全屏入栈时用导航条目的 ViewModel 作用域，右栏时由 [ScopedViewModelStore] 提供。 */
 @Composable
-private fun ChatPane(session: UserSession, route: ChatRoute, onBack: (() -> Unit)?, onOpenGroupInfo: () -> Unit) {
+private fun ChatPane(session: UserSession, route: ChatRoute, onBack: (() -> Unit)?, onOpenInfo: () -> Unit) {
     val conversation = route.toConversation()
     val vm = viewModel {
         ChatViewModel(
@@ -293,7 +316,7 @@ private fun ChatPane(session: UserSession, route: ChatRoute, onBack: (() -> Unit
     ChatScreen(
         vm,
         onBack = onBack,
-        onOpenGroupInfo = if (conversation.chatType == ChatType.GROUP) onOpenGroupInfo else null,
+        onOpenInfo = onOpenInfo,
     )
 }
 
@@ -343,7 +366,8 @@ private fun HomeScreen(
     selected: ChatRoute?,
     onOpenChat: (ChatRoute) -> Unit,
     onCloseChat: () -> Unit,
-    onOpenGroupInfo: (ChatRoute) -> Unit,
+    onOpenInfo: (ChatRoute) -> Unit,
+    onOpenFriend: (Friend) -> Unit,
     onOpenNewFriends: () -> Unit,
     onOpenGroups: () -> Unit,
     onOpenDeveloper: () -> Unit,
@@ -395,9 +419,7 @@ private fun HomeScreen(
                 onOpenChat = { onOpenChat(ChatRoute.of(it)) },
                 selectedId = selected?.conversationId?.takeIf { twoPane },
             )
-            HomeTab.CONTACTS -> ContactsScreen(contactsVm, onOpenNewFriends, onOpenGroups) { friend ->
-                onOpenChat(ChatRoute.of(Conversation(ConversationId.dm(selfUid, friend.uid), ChatType.SINGLE, friend.displayName, friend.uid)))
-            }
+            HomeTab.CONTACTS -> ContactsScreen(contactsVm, onOpenNewFriends, onOpenGroups, onOpenFriend)
             HomeTab.SEARCH -> SearchScreen(searchVm) { hit, title -> onOpenChat(ChatRoute.of(hit, title)) }
             HomeTab.SETTINGS -> SettingsScreen(settingsVm, onOpenDeveloper = onOpenDeveloper)
         }
@@ -495,7 +517,7 @@ private fun HomeScreen(
                             EmptyState(GoImIcons.Chat, "选择一个会话开始聊天", "或按 ⌘/Ctrl+F 搜索消息")
                         } else {
                             ScopedViewModelStore(route) {
-                                ChatPane(session, route, onBack = null, onOpenGroupInfo = { onOpenGroupInfo(route) })
+                                ChatPane(session, route, onBack = null, onOpenInfo = { onOpenInfo(route) })
                             }
                         }
                     }
