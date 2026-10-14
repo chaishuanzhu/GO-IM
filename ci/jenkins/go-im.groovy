@@ -219,6 +219,9 @@ if (params.BUILD_IMAGES) {
                                     sleep 15
                                 done
                             done
+                            if [ -f deploy/dockerhub/sync-readme.sh ]; then
+                                DH_NAMESPACE="$NS" bash deploy/dockerhub/sync-readme.sh || echo "WARN: Docker Hub overview 同步失败"
+                            fi
                         '''
                     }
                     images = ['gateway', 'logic', 'web'].collect { "${ns}/go-im-${it}:${version}" }

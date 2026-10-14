@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: logic
+spec:
+  selector:
+    app: logic
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logic
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: logic
+  template:
+    metadata:
+      labels:
+        app: logic
+    spec:
+      initContainers:
+        - name: wait-deps
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - for d in mysql:3306 kafka:9093; do until nc -z -w 2 ${d%:*} ${d#*:}; do echo "waiting for $d"; sleep 2; done; done
+          resources:
+            requests: { cpu: 5m, memory: 8Mi }
+            limits: { cpu: 100m, memory: 32Mi }
+      containers:
+        - name: logic
+          image: 870027381/go-im-logic
+          env:
+            - { name: CONFIG_PATH, value: /etc/im/config.json }
+            - { name: TZ, value: Asia/Shanghai }
+          ports:
+            - name: grpc
+              containerPort: 50051
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: "1", memory: 256Mi }
+          volumeMounts:
+            - name: config
+              mountPath: /etc/im
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: goim-config
