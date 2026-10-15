@@ -93,6 +93,8 @@ import com.goim.kmp.feature.contacts.GroupInfoScreen
 import com.goim.kmp.feature.contacts.GroupInfoViewModel
 import com.goim.kmp.feature.contacts.GroupsScreen
 import com.goim.kmp.feature.contacts.GroupsViewModel
+import com.goim.kmp.feature.contacts.AddFriendScreen
+import com.goim.kmp.feature.contacts.AddFriendViewModel
 import com.goim.kmp.feature.contacts.NewFriendsScreen
 import com.goim.kmp.feature.contacts.NewFriendsViewModel
 import com.goim.kmp.feature.conversations.ConversationListScreen
@@ -263,8 +265,12 @@ private fun MainNavContent(session: UserSession) {
                 )
             }
             composable<NewFriendsRoute> {
-                val vm = viewModel { NewFriendsViewModel(session.friends, session.profiles) }
-                NewFriendsScreen(vm, selfUid, onBack = { nav.popBackStack() })
+                val vm = viewModel { NewFriendsViewModel(session.friends) }
+                NewFriendsScreen(vm, onAddFriend = { nav.navigate(AddFriendRoute) }, onBack = { nav.popBackStack() })
+            }
+            composable<AddFriendRoute> {
+                val vm = viewModel { AddFriendViewModel(session.friends, session.profiles) }
+                AddFriendScreen(vm, selfUid, onBack = { nav.popBackStack() })
             }
             composable<GroupsRoute> {
                 val vm = viewModel { GroupsViewModel(session.groups, session.friends) }

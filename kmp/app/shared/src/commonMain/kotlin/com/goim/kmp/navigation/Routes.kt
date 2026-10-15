@@ -19,6 +19,9 @@ data object HomeRoute
 data object NewFriendsRoute
 
 @Serializable
+data object AddFriendRoute
+
+@Serializable
 data object DeveloperRoute
 
 @Serializable

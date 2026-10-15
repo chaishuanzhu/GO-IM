@@ -209,12 +209,10 @@ private fun ShortcutRow(title: String, icon: ImageVector, badge: Int, onClick: (
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewFriendsScreen(viewModel: NewFriendsViewModel, selfUid: String, onBack: () -> Unit) {
+fun NewFriendsScreen(viewModel: NewFriendsViewModel, onAddFriend: () -> Unit, onBack: () -> Unit) {
     val requests by viewModel.requests.collectAsStateWithLifecycle()
-    val friendUids by viewModel.friendUids.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    var showAdd by remember { mutableStateOf(false) }
     MessageSnackbar(viewModel, snackbar)
 
     Scaffold(
@@ -234,10 +232,7 @@ fun NewFriendsScreen(viewModel: NewFriendsViewModel, selfUid: String, onBack: ()
                         "添加好友",
                         value = "按昵称、邮箱或用户 ID 搜索",
                         icon = Icons.Filled.Add,
-                        onClick = {
-                            viewModel.resetSearch()
-                            showAdd = true
-                        },
+                        onClick = onAddFriend,
                     )
                 }
             }
@@ -267,93 +262,75 @@ fun NewFriendsScreen(viewModel: NewFriendsViewModel, selfUid: String, onBack: ()
             }
         }
     }
-
-    if (showAdd) {
-        UserSearchDialog(
-            viewModel = viewModel,
-            selfUid = selfUid,
-            friendUids = friendUids,
-            busy = busy,
-            onAdd = { viewModel.sendRequest(it.uid) },
-            onDismiss = { showAdd = false },
-        )
-    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun UserSearchDialog(
-    viewModel: NewFriendsViewModel,
-    selfUid: String,
-    friendUids: Set<String>,
-    busy: Boolean,
-    onAdd: (UserProfile) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val state by viewModel.search.collectAsStateWithLifecycle()
-    val requested = remember { mutableStateListOf<String>() }
+fun AddFriendScreen(viewModel: AddFriendViewModel, selfUid: String, onBack: () -> Unit) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val friendUids by viewModel.friendUids.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
     val focus = remember { FocusRequester() }
+    MessageSnackbar(viewModel, snackbar)
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("添加好友") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = state.query,
-                    onValueChange = viewModel::onQueryChange,
-                    placeholder = { Text("昵称 / 邮箱 / 用户 ID") },
-                    singleLine = true,
-                    trailingIcon = {
-                        IconButton(onClick = viewModel::searchUsers, enabled = state.query.isNotBlank() && !state.searching) {
-                            Icon(Icons.Filled.Search, contentDescription = "搜索")
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, autoCorrectEnabled = false),
-                    keyboardActions = KeyboardActions(onSearch = { viewModel.searchUsers() }),
-                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
-                )
-                when {
-                    state.searching -> LinearProgressIndicator(Modifier.fillMaxWidth())
-                    state.error != null -> Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                    state.searched && state.results.isEmpty() ->
-                        Text("没有找到用户", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (state.results.isNotEmpty()) {
-                    LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                        items(state.results, key = { it.uid }) { user ->
-                            val label = when {
-                                user.uid == selfUid -> "自己"
-                                user.uid in friendUids -> "已是好友"
-                                user.uid in requested -> "已发送"
-                                else -> null
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("添加好友") },
+                navigationIcon = { BackButton(onBack) },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            OutlinedTextField(
+                value = state.query,
+                onValueChange = viewModel::onQueryChange,
+                placeholder = { Text("昵称 / 邮箱 / 用户 ID") },
+                singleLine = true,
+                trailingIcon = {
+                    IconButton(onClick = viewModel::search, enabled = state.query.isNotBlank() && !state.searching) {
+                        Icon(Icons.Filled.Search, contentDescription = "搜索")
+                    }
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, autoCorrectEnabled = false),
+                keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).focusRequester(focus),
+            )
+            if (state.searching) LinearProgressIndicator(Modifier.fillMaxWidth())
+            when {
+                state.error != null -> EmptyState(GoImIcons.PersonAdd, state.error.orEmpty(), modifier = Modifier.padding(top = 32.dp))
+                state.searched && !state.searching && state.results.isEmpty() ->
+                    EmptyState(GoImIcons.PersonAdd, "没有找到用户", modifier = Modifier.padding(top = 32.dp))
+            }
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(state.results, key = { it.uid }) { user ->
+                    val label = when {
+                        user.uid == selfUid -> "自己"
+                        user.uid in friendUids -> "已是好友"
+                        user.uid in state.sent -> "已发送"
+                        else -> null
+                    }
+                    PersonRow(
+                        user.displayName,
+                        subtitle = "ID：${user.uid}",
+                        uid = user.uid,
+                        avatarUrl = user.avatarUrl,
+                    ) {
+                        if (label != null) {
+                            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+                        } else {
+                            val sending = user.uid in state.sending
+                            FilledTonalButton(onClick = { viewModel.sendRequest(user.uid) }, enabled = !sending) {
+                                Text(if (sending) "发送中" else "添加")
                             }
-                            ListItem(
-                                headlineContent = { Text(user.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                supportingContent = { Text("ID：${user.uid}", maxLines = 1) },
-                                leadingContent = { UserAvatar(user.uid, user.displayName, size = 40.dp, avatarUrl = user.avatarUrl) },
-                                trailingContent = {
-                                    if (label != null) {
-                                        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-                                    } else {
-                                        FilledTonalButton(
-                                            onClick = {
-                                                requested.add(user.uid)
-                                                onAdd(user)
-                                            },
-                                            enabled = !busy,
-                                        ) { Text("添加") }
-                                    }
-                                },
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            )
                         }
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
-    )
+        }
+    }
 }
 
 // endregion
