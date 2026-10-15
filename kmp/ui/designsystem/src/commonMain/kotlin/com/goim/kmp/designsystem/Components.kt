@@ -23,7 +23,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -84,7 +83,7 @@ fun TonalIcon(
     modifier: Modifier = Modifier,
     container: Color = MaterialTheme.colorScheme.secondaryContainer,
     content: Color = MaterialTheme.colorScheme.onSecondaryContainer,
-    size: Dp = 40.dp,
+    size: Dp = GoImSize.iconLg,
 ) {
     Box(modifier.size(size).background(container, CircleShape), contentAlignment = Alignment.Center) {
         Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(size * 0.55f))
@@ -94,19 +93,19 @@ fun TonalIcon(
 /** 空状态：图标 + 标题 + 说明，居中显示。 */
 @Composable
 fun EmptyState(icon: ImageVector, title: String, body: String? = null, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+    Box(modifier.fillMaxSize().padding(GoImSpacing.s8), contentAlignment = Alignment.Center) {
         Column(
             Modifier.widthIn(max = 320.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(GoImSpacing.s2),
         ) {
             TonalIcon(
                 icon,
-                size = 72.dp,
+                size = GoImSize.iconXl,
                 container = MaterialTheme.colorScheme.surfaceContainerHighest,
                 content = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(GoImSpacing.s1))
             Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
             if (body != null) {
                 Text(
@@ -127,13 +126,13 @@ fun SettingsSection(
     footer: String? = null,
     content: @Composable () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = GoImSpacing.s2)) {
         if (title != null) {
             Text(
                 title,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
+                modifier = Modifier.padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s2).semantics { heading() },
             )
         }
         content()
@@ -142,7 +141,7 @@ fun SettingsSection(
                 footer,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s1),
             )
         }
     }
@@ -199,15 +198,14 @@ fun TextInputDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(GoImSpacing.s4)) {
                 if (message != null) Text(message, style = MaterialTheme.typography.bodyMedium)
-                OutlinedTextField(
+                GoImTextField(
                     value = text,
                     onValueChange = { text = it; error = null },
-                    label = placeholder.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
-                    singleLine = true,
+                    placeholder = placeholder.ifEmpty { title },
                     isError = error != null,
-                    supportingText = error?.let { { Text(it) } },
+                    supportingText = error,
                     keyboardOptions = KeyboardOptions(keyboardType = keyboardType, autoCorrectEnabled = false),
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 )
@@ -262,11 +260,11 @@ fun <T> ChoiceDialog(
                         Modifier
                             .fillMaxWidth()
                             .selectable(selected = option == selected, role = Role.RadioButton) { onSelect(option) }
-                            .padding(vertical = 12.dp),
+                            .padding(vertical = GoImSpacing.s3),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         RadioButton(selected = option == selected, onClick = null)
-                        Spacer(Modifier.width(16.dp))
+                        Spacer(Modifier.width(GoImSpacing.s4))
                         Text(label(option), style = MaterialTheme.typography.bodyLarge)
                     }
                 }

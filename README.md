@@ -478,6 +478,7 @@ curl -s localhost:8080/metrics | grep '^im_'   # im_online_connections / im_mess
 | [docs/09-load-test-report.md](docs/09-load-test-report.md) | 完整栈压测报告 |
 | [docs/10-ci-cd-guide.md](docs/10-ci-cd-guide.md) | CI/CD 入门指南（push 到线上的全流程） |
 | [docs/15-kmp-client-architecture.md](docs/15-kmp-client-architecture.md) | KMP 客户端架构与里程碑 |
+| [kmp/designtoken.md](kmp/designtoken.md) | KMP 客户端设计规范（色彩、字体、间距、圆角、高度、组件令牌） |
 | [CLAUDE.md](CLAUDE.md) | AI 辅助开发指南 |
 
 ## License

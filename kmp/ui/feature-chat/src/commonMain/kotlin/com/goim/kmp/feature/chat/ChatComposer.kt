@@ -23,7 +23,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
@@ -55,8 +54,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.graphics.Color
 import com.goim.kmp.designsystem.UserAvatar
 import com.goim.kmp.designsystem.rememberDisplayName
@@ -101,10 +98,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.goim.kmp.common.userMessage
 import com.goim.kmp.designsystem.GoImIcons
+import com.goim.kmp.designsystem.GoImDimens
+import com.goim.kmp.designsystem.GoImSpacing
+import com.goim.kmp.designsystem.GoImSize
+import com.goim.kmp.designsystem.GoImElevation
 import com.goim.kmp.platform.VoiceRecorder
 import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.dialogs.FileKitMode
@@ -200,39 +200,45 @@ internal fun ChatComposer(
     } else Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
     Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = if (media == null) 8.dp else 0.dp),
+            Modifier.fillMaxWidth().padding(start = GoImSpacing.s3, end = GoImSpacing.s2, top = GoImSpacing.s2, bottom = if (media == null) GoImSpacing.s2 else 0.dp),
             verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2),
         ) {
-            TextField(
+            BasicTextField(
                 value = draft,
                 onValueChange = ::onInput,
-                placeholder = { Text("发消息") },
                 maxLines = 5,
-                shape = RoundedCornerShape(24.dp),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                ),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 modifier = Modifier
                     .weight(1f)
                     .onFocusChanged { if (it.isFocused) panel = ComposerPanel.NONE }
                     .enterToSend(onSend),
+                decorationBox = { input ->
+                    Box(
+                        Modifier
+                            .heightIn(min = GoImDimens.inputHeight)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.shapes.extraLarge)
+                            .padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s2),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (draft.isEmpty()) {
+                            Text("发消息", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        input()
+                    }
+                },
             )
             FilledIconButton(
                 onClick = onSend,
                 enabled = draft.isNotBlank(),
-                modifier = Modifier.padding(bottom = 4.dp).size(48.dp),
+                modifier = Modifier.size(GoImDimens.inputHeight),
             ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
             }
         }
         if (media != null) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceAround) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = GoImSpacing.s2, vertical = GoImSpacing.s1), horizontalArrangement = Arrangement.SpaceAround) {
                 ToolButton(if (panel == ComposerPanel.VOICE) GoImIcons.Keyboard else GoImIcons.Mic, "语音", panel == ComposerPanel.VOICE) {
                     toggle(ComposerPanel.VOICE)
                 }
@@ -241,7 +247,7 @@ internal fun ChatComposer(
                     toggle(ComposerPanel.EMOJI)
                 }
                 IconButton(onClick = ::openMentions, modifier = Modifier.semantics { contentDescription = "提及成员" }) {
-                    Text("@", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("@", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 ToolButton(GoImIcons.Image, "图片", false) { imagePicker.launch() }
                 ToolButton(Icons.Filled.Add, "更多", panel == ComposerPanel.MORE) { toggle(ComposerPanel.MORE) }
@@ -337,7 +343,7 @@ private fun DesktopComposer(
             if (media != null) {
                 Box {
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = GoImSpacing.s2, vertical = GoImSpacing.s1),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         ToolButton(GoImIcons.Emoji, "表情", panel == ComposerPanel.EMOJI) {
@@ -346,7 +352,7 @@ private fun DesktopComposer(
                         }
                         if (isGroup) {
                             IconButton(onClick = onMention, modifier = Modifier.semantics { contentDescription = "提及成员" }) {
-                                Text("@", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("@", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                         ToolButton(GoImIcons.Image, "图片", false, onPickImage)
@@ -363,7 +369,7 @@ private fun DesktopComposer(
                             Surface(
                                 shape = MaterialTheme.shapes.large,
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shadowElevation = 8.dp,
+                                shadowElevation = GoImElevation.level4,
                                 modifier = Modifier.width(if (panel == ComposerPanel.EMOJI) 400.dp else 300.dp),
                             ) {
                                 if (panel == ComposerPanel.EMOJI) {
@@ -380,7 +386,7 @@ private fun DesktopComposer(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(min = 72.dp, max = 200.dp)
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s1),
             ) {
                 BasicTextField(
                     value = draft,
@@ -403,7 +409,7 @@ private fun DesktopComposer(
                 )
             }
             Row(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                Modifier.fillMaxWidth().padding(start = GoImSpacing.s4, end = GoImSpacing.s4, bottom = GoImSpacing.s3),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -456,22 +462,22 @@ private fun EmojiStickerPanel(media: ChatMediaActions, onEmoji: (String) -> Unit
     var tab by remember { mutableIntStateOf(0) }
     val tabs = listOf("表情", "最近") + packs.map { it.name }
     Column(Modifier.fillMaxWidth().height(PANEL_HEIGHT)) {
-        PrimaryScrollableTabRow(selectedTabIndex = tab.coerceAtMost(tabs.lastIndex), edgePadding = 8.dp) {
+        PrimaryScrollableTabRow(selectedTabIndex = tab.coerceAtMost(tabs.lastIndex), edgePadding = GoImSpacing.s2) {
             tabs.forEachIndexed { i, title ->
                 Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title, maxLines = 1) })
             }
         }
         when (tab) {
             0 -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(44.dp),
-                contentPadding = PaddingValues(8.dp),
+                columns = GridCells.Adaptive(GoImSize.touchTarget),
+                contentPadding = PaddingValues(GoImSpacing.s2),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 items(EMOJIS.size) { i ->
                     Box(
-                        Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).clickable { onEmoji(EMOJIS[i]) },
+                        Modifier.size(GoImSize.touchTarget).clip(MaterialTheme.shapes.small).clickable { onEmoji(EMOJIS[i]) },
                         contentAlignment = Alignment.Center,
-                    ) { Text(EMOJIS[i], fontSize = 26.sp) }
+                    ) { Text(EMOJIS[i], style = MaterialTheme.typography.headlineSmall) }
                 }
             }
             1 -> if (recent.isEmpty()) {
@@ -508,9 +514,9 @@ private fun EmojiStickerPanel(media: ChatMediaActions, onEmoji: (String) -> Unit
 private fun StickerGrid(count: Int, cell: @Composable (Int) -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(72.dp),
-        contentPadding = PaddingValues(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        contentPadding = PaddingValues(GoImSpacing.s2),
+        horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s1),
+        verticalArrangement = Arrangement.spacedBy(GoImSpacing.s1),
         modifier = Modifier.fillMaxSize(),
     ) {
         items(count) { i -> Box(Modifier.aspectRatio(1f), contentAlignment = Alignment.Center) { cell(i) } }
@@ -609,7 +615,7 @@ private fun VoicePanel(media: ChatMediaActions, recorder: VoiceRecorder, onError
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             val p = change.position
-                            val margin = 24.dp.toPx()
+                            val margin = GoImSpacing.s6.toPx()
                             cancelling = p.x < -margin || p.y < -margin || p.x > size.width + margin || p.y > size.height + margin
                             if (!change.pressed) break
                         }
@@ -635,7 +641,7 @@ private fun VoicePanel(media: ChatMediaActions, recorder: VoiceRecorder, onError
                 Icon(
                     GoImIcons.Mic,
                     contentDescription = "按住说话",
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(GoImSize.iconLg),
                     tint = if (recording) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
                 )
             }
@@ -653,20 +659,20 @@ private fun MorePanel(onImage: () -> Unit, onCamera: (() -> Unit)?, onVideo: () 
     }
     LazyVerticalGrid(
         columns = GridCells.Fixed(4),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(GoImSpacing.s4),
+        verticalArrangement = Arrangement.spacedBy(GoImSpacing.s4),
         modifier = Modifier.fillMaxWidth().height(PANEL_HEIGHT),
     ) {
         items(actions) { (icon, label, action) ->
             Column(
-                Modifier.clip(MaterialTheme.shapes.large).clickable(role = Role.Button, onClick = action).padding(4.dp),
+                Modifier.clip(MaterialTheme.shapes.large).clickable(role = Role.Button, onClick = action).padding(GoImSpacing.s1),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
                     Modifier.size(56.dp).background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.large),
                     contentAlignment = Alignment.Center,
                 ) { Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onSecondaryContainer) }
-                Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+                Text(label, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = GoImSpacing.s2))
             }
         }
     }
@@ -680,18 +686,18 @@ private fun ImageConfirmDialog(images: List<PickedFile>, onDismiss: () -> Unit, 
         title = { Text("发送 ${images.size} 张图片") },
         text = {
             Column {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2)) {
                     items(images) { img ->
                         AsyncImage(
                             model = img.bytes,
                             contentDescription = img.name,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(96.dp).clip(RoundedCornerShape(8.dp)),
+                            modifier = Modifier.size(96.dp).clip(MaterialTheme.shapes.small),
                         )
                     }
                 }
                 Row(
-                    Modifier.padding(top = 8.dp).clickable { original = !original },
+                    Modifier.padding(top = GoImSpacing.s2).clickable { original = !original },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Checkbox(checked = original, onCheckedChange = { original = it })
@@ -719,7 +725,7 @@ private fun MentionDialog(candidates: List<String>, onDismiss: () -> Unit, onPic
                         ListItem(
                             headlineContent = { Text(name, maxLines = 1) },
                             supportingContent = if (name != uid) ({ Text("ID：$uid", maxLines = 1) }) else null,
-                            leadingContent = { UserAvatar(uid, name, size = 36.dp) },
+                            leadingContent = { UserAvatar(uid, name, size = GoImSize.avatarMd) },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             modifier = Modifier.clip(MaterialTheme.shapes.medium).clickable { onPick(uid) },
                         )

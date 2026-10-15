@@ -31,7 +31,29 @@ data object ProfileRoute
 data object GroupsRoute
 
 @Serializable
+data object CreateGroupRoute
+
+@Serializable
+data object JoinGroupRoute
+
+@Serializable
 data class GroupInfoRoute(val groupId: String, val name: String)
+
+/** 宽屏通讯录右栏的内容；窄屏时对应 [NewFriendsRoute] / [GroupsRoute] / [FriendInfoRoute] 二级页。 */
+@Serializable
+sealed interface ContactDetail {
+    @Serializable
+    data object NewFriends : ContactDetail
+
+    @Serializable
+    data object Groups : ContactDetail
+
+    @Serializable
+    data class Person(val uid: String, val name: String) : ContactDetail
+}
+
+/** 宽屏以弹窗打开的表单；窄屏时对应各自的二级页。 */
+enum class ContactDialog { ADD_FRIEND, CREATE_GROUP, JOIN_GROUP }
 
 /** [fromChat]：从该好友的聊天页进入，「发消息」直接返回即可。 */
 @Serializable

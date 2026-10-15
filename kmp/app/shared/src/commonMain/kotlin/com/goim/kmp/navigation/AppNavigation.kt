@@ -53,11 +53,9 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hasRoute
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -93,6 +91,10 @@ import com.goim.kmp.feature.contacts.GroupInfoScreen
 import com.goim.kmp.feature.contacts.GroupInfoViewModel
 import com.goim.kmp.feature.contacts.GroupsScreen
 import com.goim.kmp.feature.contacts.GroupsViewModel
+import com.goim.kmp.feature.contacts.CreateGroupScreen
+import com.goim.kmp.feature.contacts.CreateGroupViewModel
+import com.goim.kmp.feature.contacts.JoinGroupScreen
+import com.goim.kmp.feature.contacts.JoinGroupViewModel
 import com.goim.kmp.feature.contacts.AddFriendScreen
 import com.goim.kmp.feature.contacts.AddFriendViewModel
 import com.goim.kmp.feature.contacts.NewFriendsScreen
@@ -111,10 +113,12 @@ import com.goim.kmp.feature.settings.ProfileScreen
 import com.goim.kmp.feature.settings.ProfileViewModel
 import com.goim.kmp.designsystem.LocalProfileLookup
 import com.goim.kmp.designsystem.ProfileLookup
+import com.goim.kmp.designsystem.GoImSpacing
 import androidx.compose.runtime.CompositionLocalProvider
 import com.goim.kmp.feature.settings.SettingsViewModel
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.Conversation
+import com.goim.kmp.model.Group
 import com.goim.kmp.model.ConversationId
 import com.goim.kmp.model.Friend
 import com.goim.kmp.repository.SessionManager
@@ -126,6 +130,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import org.koin.compose.koinInject
+import com.goim.kmp.feature.contacts.Presentation
+import com.goim.kmp.feature.contacts.ContactsSelection
+import com.goim.kmp.designsystem.GoImElevation
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Dialog
 
 /** 未登录：登录 ⇄ 服务器设置；登录页列出本机已保存的账号可直接切换。 */
 @Composable
@@ -171,9 +183,15 @@ private val ChatRouteSaver = Saver<ChatRoute?, String>(
     restore = { Json.decodeFromString(ChatRoute.serializer(), it) },
 )
 
+private val ContactDetailSaver = Saver<ContactDetail?, String>(
+    save = { detail -> detail?.let { Json.encodeToString(ContactDetail.serializer(), it) } },
+    restore = { Json.decodeFromString(ContactDetail.serializer(), it) },
+)
+
 /**
  * 已登录：首页（聊天 / 通讯录 / 搜索 / 设置）→ 聊天、群组、好友等二级页。整个图随 [session] 重建。
- * 宽屏（≥ 840dp）首页为「导航栏 + 列表 + 聊天」三栏，聊天不入栈；窄屏时聊天全屏入栈。
+ * 宽屏（≥ 840dp）首页为「导航栏 + 列表 + 详情」三栏：聊天、通讯录详情显示在右栏，群 / 好友信息是聊天旁的侧边面板，
+ * 添加好友、创建 / 加入群聊是弹窗；窄屏时它们都是全屏入栈的二级页。
  */
 @Composable
 fun MainNavHost(session: UserSession) {
@@ -190,41 +208,132 @@ private fun MainNavContent(session: UserSession) {
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val mode = when {
-            maxWidth >= 840.dp -> LayoutMode.EXPANDED
-            maxWidth >= 600.dp -> LayoutMode.MEDIUM
+            maxWidth >= GoImDimens.expandedBreakpoint -> LayoutMode.EXPANDED
+            maxWidth >= GoImDimens.mediumBreakpoint -> LayoutMode.MEDIUM
             else -> LayoutMode.COMPACT
         }
         val twoPane = mode == LayoutMode.EXPANDED
+        var tab by rememberSaveable { mutableStateOf(HomeTab.CHATS) }
         var selected by rememberSaveable(stateSaver = ChatRouteSaver) { mutableStateOf<ChatRoute?>(null) }
+        var chatInfoOpen by rememberSaveable { mutableStateOf(false) }
+        var contactDetail by rememberSaveable(stateSaver = ContactDetailSaver) { mutableStateOf<ContactDetail?>(null) }
+        var dialog by rememberSaveable { mutableStateOf<ContactDialog?>(null) }
 
         fun openChat(route: ChatRoute) {
             if (twoPane) {
                 nav.popBackStack(HomeRoute, inclusive = false)
+                if (selected?.conversationId != route.conversationId) chatInfoOpen = false
                 selected = route
+                if (tab == HomeTab.CONTACTS) tab = HomeTab.CHATS
             } else {
                 nav.navigate(route)
             }
         }
 
-        fun openInfo(route: ChatRoute) = if (route.chatType == ChatType.GROUP.value) {
+        fun openGroupChat(group: Group) =
+            openChat(ChatRoute.of(Conversation(ConversationId.group(group.groupId), ChatType.GROUP, group.displayName, group.groupId)))
+
+        fun openDirectChat(uid: String, name: String) =
+            openChat(ChatRoute.of(Conversation(ConversationId.dm(selfUid, uid), ChatType.SINGLE, name, uid)))
+
+        fun navigateInfo(route: ChatRoute) = if (route.chatType == ChatType.GROUP.value) {
             nav.navigate(GroupInfoRoute(route.peer, route.title))
         } else {
             nav.navigate(FriendInfoRoute(route.peer, route.title, fromChat = true))
         }
 
-        // 窗口跨档位时在「右栏」与「全屏入栈」之间迁移当前聊天
+        fun openInfo(route: ChatRoute) = if (twoPane) chatInfoOpen = !chatInfoOpen else navigateInfo(route)
+
+        fun navigateContact(detail: ContactDetail) = when (detail) {
+            ContactDetail.NewFriends -> nav.navigate(NewFriendsRoute)
+            ContactDetail.Groups -> nav.navigate(GroupsRoute)
+            is ContactDetail.Person -> nav.navigate(FriendInfoRoute(detail.uid, detail.name))
+        }
+
+        fun openContact(detail: ContactDetail) = if (twoPane) contactDetail = detail else navigateContact(detail)
+
+        fun navigateDialog(form: ContactDialog) = when (form) {
+            ContactDialog.ADD_FRIEND -> nav.navigate(AddFriendRoute)
+            ContactDialog.CREATE_GROUP -> nav.navigate(CreateGroupRoute)
+            ContactDialog.JOIN_GROUP -> nav.navigate(JoinGroupRoute)
+        }
+
+        fun openDialog(form: ContactDialog) = if (twoPane) dialog = form else navigateDialog(form)
+
+        // 窗口跨档位时在「右栏 / 侧边面板 / 弹窗」与「全屏入栈」之间迁移当前页面
         LaunchedEffect(twoPane) {
             if (twoPane) {
-                val top = nav.currentBackStackEntry
-                if (top != null && top.destination.hasRoute<ChatRoute>()) {
-                    val route = top.toRoute<ChatRoute>()
-                    nav.popBackStack()
-                    selected = route
+                val top = nav.currentBackStackEntry ?: return@LaunchedEffect
+                val destination = top.destination
+                when {
+                    destination.hasRoute<ChatRoute>() -> selected = top.toRoute<ChatRoute>()
+                    destination.hasRoute<GroupInfoRoute>() ||
+                        (destination.hasRoute<FriendInfoRoute>() && top.toRoute<FriendInfoRoute>().fromChat) -> {
+                        val chat = nav.previousBackStackEntry?.takeIf { it.destination.hasRoute<ChatRoute>() }
+                        selected = chat?.toRoute<ChatRoute>() ?: return@LaunchedEffect
+                        chatInfoOpen = true
+                    }
+                    destination.hasRoute<FriendInfoRoute>() -> top.toRoute<FriendInfoRoute>().let {
+                        contactDetail = ContactDetail.Person(it.uid, it.name)
+                    }
+                    destination.hasRoute<NewFriendsRoute>() -> contactDetail = ContactDetail.NewFriends
+                    destination.hasRoute<AddFriendRoute>() -> {
+                        contactDetail = ContactDetail.NewFriends
+                        dialog = ContactDialog.ADD_FRIEND
+                    }
+                    destination.hasRoute<GroupsRoute>() -> contactDetail = ContactDetail.Groups
+                    destination.hasRoute<CreateGroupRoute>() || destination.hasRoute<JoinGroupRoute>() -> {
+                        contactDetail = ContactDetail.Groups
+                        dialog = if (destination.hasRoute<CreateGroupRoute>()) ContactDialog.CREATE_GROUP else ContactDialog.JOIN_GROUP
+                    }
+                    else -> return@LaunchedEffect
                 }
+                nav.popBackStack(HomeRoute, inclusive = false)
+            } else if (tab == HomeTab.CONTACTS) {
+                contactDetail?.let(::navigateContact)
+                dialog?.let(::navigateDialog)
+                contactDetail = null
+                dialog = null
             } else {
                 selected?.let {
                     selected = null
                     nav.navigate(it)
+                    if (chatInfoOpen) navigateInfo(it)
+                }
+                chatInfoOpen = false
+            }
+        }
+
+        val chatDetail: @Composable () -> Unit = {
+            val route = selected
+            if (route == null) {
+                EmptyState(GoImIcons.Chat, "选择一个会话开始聊天", "或按 ⌘/Ctrl+F 搜索消息")
+            } else {
+                ChatWithInfoPanel(
+                    session = session,
+                    route = route,
+                    infoOpen = chatInfoOpen,
+                    onToggleInfo = { chatInfoOpen = !chatInfoOpen },
+                    onLeftGroup = {
+                        chatInfoOpen = false
+                        selected = null
+                    },
+                )
+            }
+        }
+
+        val contactsDetail: @Composable () -> Unit = {
+            when (val detail = contactDetail) {
+                null -> EmptyState(GoImIcons.Contacts, "选择联系人查看详情", "也可以打开「新的朋友」或「群组」")
+                else -> ScopedViewModelStore(detail) {
+                    ContactDetailPane(
+                        session = session,
+                        detail = detail,
+                        onClose = { contactDetail = null },
+                        onOpenDialog = ::openDialog,
+                        onOpenGroupChat = ::openGroupChat,
+                        onOpenDirectChat = ::openDirectChat,
+                    )
                 }
             }
         }
@@ -234,15 +343,26 @@ private fun MainNavContent(session: UserSession) {
                 HomeScreen(
                     session = session,
                     mode = mode,
-                    selected = selected,
+                    tab = tab,
+                    onTabChange = { tab = it },
+                    selectedChatId = selected?.conversationId,
+                    contactsSelection = contactDetail?.toSelection(),
                     onOpenChat = ::openChat,
-                    onCloseChat = { selected = null },
-                    onOpenInfo = ::openInfo,
-                    onOpenFriend = { friend -> nav.navigate(FriendInfoRoute(friend.uid, friend.displayName)) },
-                    onOpenNewFriends = { nav.navigate(NewFriendsRoute) },
-                    onOpenGroups = { nav.navigate(GroupsRoute) },
+                    onOpenFriend = { friend -> openContact(ContactDetail.Person(friend.uid, friend.displayName)) },
+                    onOpenNewFriends = { openContact(ContactDetail.NewFriends) },
+                    onOpenGroups = { openContact(ContactDetail.Groups) },
                     onOpenDeveloper = { nav.navigate(DeveloperRoute) },
                     onOpenProfile = { nav.navigate(ProfileRoute) },
+                    onEscape = {
+                        when {
+                            tab == HomeTab.CONTACTS && contactDetail != null -> contactDetail = null
+                            tab != HomeTab.CONTACTS && chatInfoOpen -> chatInfoOpen = false
+                            tab != HomeTab.CONTACTS && selected != null -> selected = null
+                            else -> return@HomeScreen false
+                        }
+                        true
+                    },
+                    detailPane = if (tab == HomeTab.CONTACTS) contactsDetail else chatDetail,
                 )
             }
             composable<ChatRoute> { entry ->
@@ -257,9 +377,7 @@ private fun MainNavContent(session: UserSession) {
                     onBack = { nav.popBackStack() },
                     onSendMessage = {
                         nav.popBackStack()
-                        if (!route.fromChat) {
-                            openChat(ChatRoute.of(Conversation(ConversationId.dm(selfUid, route.uid), ChatType.SINGLE, vm.displayName, route.uid)))
-                        }
+                        if (!route.fromChat) openDirectChat(route.uid, vm.displayName)
                     },
                     onRemoved = { nav.popBackStack() },
                 )
@@ -273,14 +391,28 @@ private fun MainNavContent(session: UserSession) {
                 AddFriendScreen(vm, selfUid, onBack = { nav.popBackStack() })
             }
             composable<GroupsRoute> {
-                val vm = viewModel { GroupsViewModel(session.groups, session.friends) }
+                val vm = viewModel { GroupsViewModel(session.groups) }
                 GroupsScreen(
                     vm,
                     onBack = { nav.popBackStack() },
-                    onOpenGroup = { group ->
-                        openChat(ChatRoute.of(Conversation(ConversationId.group(group.groupId), ChatType.GROUP, group.displayName, group.groupId)))
-                    },
+                    onOpenGroup = ::openGroupChat,
+                    onCreateGroup = { nav.navigate(CreateGroupRoute) },
+                    onJoinGroup = { nav.navigate(JoinGroupRoute) },
                 )
+            }
+            composable<CreateGroupRoute> {
+                val vm = viewModel { CreateGroupViewModel(session.groups, session.friends) }
+                CreateGroupScreen(vm, onBack = { nav.popBackStack() }, onCreated = { group ->
+                    nav.popBackStack()
+                    openGroupChat(group)
+                })
+            }
+            composable<JoinGroupRoute> {
+                val vm = viewModel { JoinGroupViewModel(session.groups) }
+                JoinGroupScreen(vm, onBack = { nav.popBackStack() }, onJoined = { group ->
+                    nav.popBackStack()
+                    openGroupChat(group)
+                })
             }
             composable<GroupInfoRoute> { entry ->
                 val route = entry.toRoute<GroupInfoRoute>()
@@ -288,11 +420,8 @@ private fun MainNavContent(session: UserSession) {
                 GroupInfoScreen(
                     vm,
                     onBack = { nav.popBackStack() },
-                    // 退群后回到进入群聊之前的页面（同 iOS）；双栏时关闭右侧群聊
-                    onLeft = {
-                        if (selected?.peer == route.groupId) selected = null
-                        if (!nav.popBackStack<ChatRoute>(inclusive = true)) nav.popBackStack()
-                    },
+                    // 退群后回到进入群聊之前的页面（同 iOS）
+                    onLeft = { if (!nav.popBackStack<ChatRoute>(inclusive = true)) nav.popBackStack() },
                 )
             }
             composable<ProfileRoute> {
@@ -303,6 +432,164 @@ private fun MainNavContent(session: UserSession) {
                 DeveloperDestination(session, onBack = { nav.popBackStack() })
             }
         }
+
+        val form = dialog
+        if (twoPane && form != null) {
+            FormDialog(form, onDismiss = { dialog = null }) {
+                ScopedViewModelStore(form) {
+                    ContactFormDialogContent(
+                        session = session,
+                        form = form,
+                        onDismiss = { dialog = null },
+                        onOpenGroupChat = { group ->
+                            dialog = null
+                            openGroupChat(group)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun ContactDetail.toSelection(): ContactsSelection = when (this) {
+    ContactDetail.NewFriends -> ContactsSelection.NewFriends
+    ContactDetail.Groups -> ContactsSelection.Groups
+    is ContactDetail.Person -> ContactsSelection.Person(uid)
+}
+
+/** 宽屏右栏的聊天；群 / 好友信息作为侧边面板，聊天栏够宽时并排，否则浮在聊天右侧。 */
+@Composable
+private fun ChatWithInfoPanel(
+    session: UserSession,
+    route: ChatRoute,
+    infoOpen: Boolean,
+    onToggleInfo: () -> Unit,
+    onLeftGroup: () -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val inline = maxWidth >= GoImDimens.chatWithPanelMinWidth
+        val panel: @Composable () -> Unit = {
+            ScopedViewModelStore(route.conversationId to "info") {
+                ChatInfoPanel(session, route, onClose = onToggleInfo, onLeftGroup = onLeftGroup)
+            }
+        }
+        Row(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                ScopedViewModelStore(route) {
+                    ChatPane(session, route, onBack = null, onOpenInfo = onToggleInfo)
+                }
+            }
+            if (infoOpen && inline) {
+                VerticalDivider()
+                Box(Modifier.width(GoImDimens.sidePanelWidth).fillMaxHeight()) { panel() }
+            }
+        }
+        if (infoOpen && !inline) {
+            Surface(
+                Modifier.align(Alignment.CenterEnd).width(GoImDimens.sidePanelWidth).fillMaxHeight(),
+                shadowElevation = GoImElevation.level3,
+            ) { panel() }
+        }
+    }
+}
+
+@Composable
+private fun ChatInfoPanel(session: UserSession, route: ChatRoute, onClose: () -> Unit, onLeftGroup: () -> Unit) {
+    if (route.chatType == ChatType.GROUP.value) {
+        val vm = viewModel {
+            GroupInfoViewModel(route.peer, route.title, session.user.uid, session.groups, session.friends)
+        }
+        GroupInfoScreen(vm, onBack = onClose, onLeft = onLeftGroup, presentation = Presentation.Overlay)
+    } else {
+        val vm = viewModel { FriendInfoViewModel(route.peer, route.title, session.friends) }
+        FriendInfoScreen(vm, onBack = onClose, onSendMessage = null, onRemoved = onClose, presentation = Presentation.Overlay)
+    }
+}
+
+/** 宽屏通讯录右栏：新的朋友、群组、好友信息。 */
+@Composable
+private fun ContactDetailPane(
+    session: UserSession,
+    detail: ContactDetail,
+    onClose: () -> Unit,
+    onOpenDialog: (ContactDialog) -> Unit,
+    onOpenGroupChat: (Group) -> Unit,
+    onOpenDirectChat: (uid: String, name: String) -> Unit,
+) {
+    when (detail) {
+        ContactDetail.NewFriends -> {
+            val vm = viewModel { NewFriendsViewModel(session.friends) }
+            NewFriendsScreen(
+                vm,
+                onAddFriend = { onOpenDialog(ContactDialog.ADD_FRIEND) },
+                onBack = onClose,
+                presentation = Presentation.Pane,
+            )
+        }
+        ContactDetail.Groups -> {
+            val vm = viewModel { GroupsViewModel(session.groups) }
+            GroupsScreen(
+                vm,
+                onBack = onClose,
+                onOpenGroup = onOpenGroupChat,
+                onCreateGroup = { onOpenDialog(ContactDialog.CREATE_GROUP) },
+                onJoinGroup = { onOpenDialog(ContactDialog.JOIN_GROUP) },
+                presentation = Presentation.Pane,
+            )
+        }
+        is ContactDetail.Person -> {
+            val vm = viewModel { FriendInfoViewModel(detail.uid, detail.name, session.friends) }
+            FriendInfoScreen(
+                vm,
+                onBack = onClose,
+                onSendMessage = { onOpenDirectChat(detail.uid, vm.displayName) },
+                onRemoved = onClose,
+                presentation = Presentation.Pane,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContactFormDialogContent(
+    session: UserSession,
+    form: ContactDialog,
+    onDismiss: () -> Unit,
+    onOpenGroupChat: (Group) -> Unit,
+) {
+    when (form) {
+        ContactDialog.ADD_FRIEND -> {
+            val vm = viewModel { AddFriendViewModel(session.friends, session.profiles) }
+            AddFriendScreen(vm, session.user.uid, onBack = onDismiss, presentation = Presentation.Overlay)
+        }
+        ContactDialog.CREATE_GROUP -> {
+            val vm = viewModel { CreateGroupViewModel(session.groups, session.friends) }
+            CreateGroupScreen(vm, onBack = onDismiss, onCreated = onOpenGroupChat, presentation = Presentation.Overlay)
+        }
+        ContactDialog.JOIN_GROUP -> {
+            val vm = viewModel { JoinGroupViewModel(session.groups) }
+            JoinGroupScreen(vm, onBack = onDismiss, onJoined = onOpenGroupChat, presentation = Presentation.Overlay)
+        }
+    }
+}
+
+/** 宽屏表单弹窗：固定宽度，高度随表单类型；窗口太小时贴边留 s6。 */
+@Composable
+private fun FormDialog(form: ContactDialog, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    val height = if (form == ContactDialog.JOIN_GROUP) GoImDimens.compactDialogHeight else GoImDimens.dialogMaxHeight
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            Modifier
+                .padding(GoImSpacing.s6)
+                .widthIn(max = GoImDimens.dialogWidth)
+                .heightIn(max = height)
+                .fillMaxWidth()
+                .fillMaxHeight(),
+            shape = MaterialTheme.shapes.extraLarge,
+            shadowElevation = GoImElevation.level3,
+            content = content,
+        )
     }
 }
 
@@ -387,20 +674,21 @@ private enum class HomeTab(val label: String) { CHATS("聊天"), CONTACTS("通�
 private fun HomeScreen(
     session: UserSession,
     mode: LayoutMode,
-    selected: ChatRoute?,
+    tab: HomeTab,
+    onTabChange: (HomeTab) -> Unit,
+    selectedChatId: String?,
+    contactsSelection: ContactsSelection?,
     onOpenChat: (ChatRoute) -> Unit,
-    onCloseChat: () -> Unit,
-    onOpenInfo: (ChatRoute) -> Unit,
     onOpenFriend: (Friend) -> Unit,
     onOpenNewFriends: () -> Unit,
     onOpenGroups: () -> Unit,
     onOpenDeveloper: () -> Unit,
     onOpenProfile: () -> Unit,
+    onEscape: () -> Boolean,
+    detailPane: @Composable () -> Unit,
 ) {
     val manager = koinInject<SessionManager>()
     val settings = koinInject<ServerSettingsRepository>()
-    var tab by rememberSaveable { mutableStateOf(HomeTab.CHATS) }
-    val selfUid = session.user.uid
     val twoPane = mode == LayoutMode.EXPANDED
 
     val totalUnread by remember(session) { session.conversations.observeTotalUnread() }.collectAsState(0)
@@ -443,15 +731,21 @@ private fun HomeScreen(
             HomeTab.CHATS -> ConversationListScreen(
                 conversationsVm,
                 onOpenChat = { onOpenChat(ChatRoute.of(it)) },
-                selectedId = selected?.conversationId?.takeIf { twoPane },
+                selectedId = selectedChatId?.takeIf { twoPane },
             )
-            HomeTab.CONTACTS -> ContactsScreen(contactsVm, onOpenNewFriends, onOpenGroups, onOpenFriend)
+            HomeTab.CONTACTS -> ContactsScreen(
+                contactsVm,
+                onOpenNewFriends,
+                onOpenGroups,
+                onOpenFriend,
+                selection = contactsSelection.takeIf { twoPane },
+            )
             HomeTab.SEARCH -> SearchScreen(searchVm) { hit, title -> onOpenChat(ChatRoute.of(hit, title)) }
             HomeTab.SETTINGS -> SettingsScreen(settingsVm, onOpenDeveloper = onOpenDeveloper, profile = me, onOpenProfile = onOpenProfile)
         }
     }
 
-    // 桌面 / 硬件键盘：⌘/Ctrl+1…4 切 Tab，⌘/Ctrl+F 搜索，Esc 关闭右栏聊天
+    // 桌面 / 硬件键盘：⌘/Ctrl+1…4 切 Tab，⌘/Ctrl+F 搜索，Esc 逐层关闭侧边面板与右栏
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val shortcuts = Modifier
@@ -469,13 +763,10 @@ private fun HomeScreen(
             }
             when {
                 target != null -> {
-                    tab = target
+                    onTabChange(target)
                     true
                 }
-                event.key == Key.Escape && twoPane && selected != null -> {
-                    onCloseChat()
-                    true
-                }
+                event.key == Key.Escape && twoPane -> onEscape()
                 else -> false
             }
         }
@@ -499,7 +790,7 @@ private fun HomeScreen(
                     HomeTab.entries.forEach { t ->
                         NavigationBarItem(
                             selected = tab == t,
-                            onClick = { tab = t },
+                            onClick = { onTabChange(t) },
                             icon = { TabIcon(t, badge(t)) },
                             label = { Text(t.label) },
                         )
@@ -520,12 +811,12 @@ private fun HomeScreen(
                 NavigationRail(
                     containerColor = if (twoPane) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface,
                     // 面板顶到窗口顶部，导航栏单独避开 macOS 红绿灯
-                    modifier = Modifier.padding(top = 8.dp + (titleBar?.height ?: 0.dp)),
+                    modifier = Modifier.padding(top = GoImSpacing.s2 + (titleBar?.height ?: 0.dp)),
                 ) {
                     HomeTab.entries.forEach { t ->
                         NavigationRailItem(
                             selected = tab == t,
-                            onClick = { tab = t },
+                            onClick = { onTabChange(t) },
                             icon = { TabIcon(t, badge(t)) },
                             label = { Text(t.label) },
                         )
@@ -533,22 +824,13 @@ private fun HomeScreen(
                 }
             }
             if (twoPane) {
-                val paneModifier = Modifier.fillMaxHeight().padding(vertical = 8.dp)
+                val paneModifier = Modifier.fillMaxHeight().padding(vertical = GoImSpacing.s2)
                 if (tab != HomeTab.SETTINGS) {
                     PaneSurface(paneModifier.width(GoImDimens.listPaneWidth)) { list() }
-                    Spacer(Modifier.width(8.dp))
-                    PaneSurface(paneModifier.weight(1f).padding(end = 8.dp)) {
-                        val route = selected
-                        if (route == null) {
-                            EmptyState(GoImIcons.Chat, "选择一个会话开始聊天", "或按 ⌘/Ctrl+F 搜索消息")
-                        } else {
-                            ScopedViewModelStore(route) {
-                                ChatPane(session, route, onBack = null, onOpenInfo = { onOpenInfo(route) })
-                            }
-                        }
-                    }
+                    Spacer(Modifier.width(GoImSpacing.s2))
+                    PaneSurface(paneModifier.weight(1f).padding(end = GoImSpacing.s2)) { detailPane() }
                 } else {
-                    PaneSurface(paneModifier.weight(1f).padding(end = 8.dp)) { list() }
+                    PaneSurface(paneModifier.weight(1f).padding(end = GoImSpacing.s2)) { list() }
                 }
             } else {
                 Box(Modifier.weight(1f).fillMaxHeight()) { list() }

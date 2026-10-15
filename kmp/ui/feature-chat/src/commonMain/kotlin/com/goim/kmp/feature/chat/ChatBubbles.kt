@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
@@ -60,6 +59,10 @@ import coil3.compose.AsyncImage
 import com.goim.kmp.common.userMessage
 import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.GoImIcons
+import com.goim.kmp.designsystem.GoImSpacing
+import com.goim.kmp.designsystem.GoImSize
+import com.goim.kmp.designsystem.GoImDimens
+import com.goim.kmp.designsystem.GoImMediaColors
 import com.goim.kmp.domain.FileDownloadEvent
 import com.goim.kmp.domain.FileRepository
 import com.goim.kmp.domain.StickerRepository
@@ -106,7 +109,7 @@ internal fun ImageBubble(meta: FileMeta, files: FileRepository, onOpen: (model: 
     Box(
         Modifier
             .size(w, h)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(enabled = full != null, role = Role.Image, onClickLabel = "查看大图") { full?.let { onOpen(it, local) } },
         contentAlignment = Alignment.Center,
@@ -121,10 +124,10 @@ internal fun ImageBubble(meta: FileMeta, files: FileRepository, onOpen: (model: 
 @Composable
 private fun ProgressOverlay(progress: Float) {
     Box(
-        Modifier.size(44.dp).background(Color.Black.copy(alpha = 0.45f), CircleShape),
+        Modifier.size(GoImSize.touchTarget).background(GoImMediaColors.scrim, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        CircularProgressIndicator(progress = { progress }, color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
+        CircularProgressIndicator(progress = { progress }, color = GoImMediaColors.content, strokeWidth = GoImSize.strokeThin, modifier = Modifier.size(32.dp))
     }
 }
 
@@ -155,14 +158,14 @@ internal fun VoiceBubble(message: Message, meta: FileMeta, files: FileRepository
                     }
                 }
             }
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .padding(horizontal = GoImDimens.bubblePaddingHorizontal, vertical = GoImDimens.bubblePaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2),
     ) {
         when {
-            loading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
-            playing -> Icon(GoImIcons.Stop, contentDescription = "停止", modifier = Modifier.size(18.dp))
-            else -> Icon(Icons.Filled.PlayArrow, contentDescription = "播放", modifier = Modifier.size(20.dp))
+            loading -> CircularProgressIndicator(Modifier.size(GoImSize.iconSm), strokeWidth = GoImSize.strokeThin, color = LocalContentColor.current)
+            playing -> Icon(GoImIcons.Stop, contentDescription = "停止", modifier = Modifier.size(GoImSize.iconSm))
+            else -> Icon(Icons.Filled.PlayArrow, contentDescription = "播放", modifier = Modifier.size(GoImSize.iconSm))
         }
         VoiceWaveform(active = playing, level = if (playing) 1f else 0.6f)
         Spacer(Modifier.weight(1f))
@@ -181,7 +184,7 @@ internal fun VoiceWaveform(active: Boolean, level: Float, barHeight: Dp = 16.dp,
         WAVE_PATTERN.forEachIndexed { i, base ->
             val wobble = if (active) 0.35f + 0.65f * (if (i % 2 == 0) phase else 1f - phase) else 1f
             val fraction = (base * wobble * level.coerceIn(0.2f, 1f)).coerceIn(0.15f, 1f)
-            Box(Modifier.width(3.dp).height(barHeight * fraction).background(color, RoundedCornerShape(2.dp)))
+            Box(Modifier.width(3.dp).height(barHeight * fraction).background(color, CircleShape))
         }
     }
 }
@@ -227,17 +230,17 @@ internal fun FileCardBubble(
                     }
                 }
             }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = GoImDimens.bubblePaddingHorizontal, vertical = GoImDimens.bubblePaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s3),
     ) {
         Box(
-            Modifier.size(44.dp).background(LocalContentColor.current.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
+            Modifier.size(GoImSize.iconLg).background(LocalContentColor.current.copy(alpha = 0.12f), MaterialTheme.shapes.medium),
             contentAlignment = Alignment.Center,
         ) {
             val progress = upload ?: download
             if (progress != null) {
-                CircularProgressIndicator(progress = { progress }, strokeWidth = 2.dp, modifier = Modifier.size(26.dp), color = LocalContentColor.current)
+                CircularProgressIndicator(progress = { progress }, strokeWidth = GoImSize.strokeThin, modifier = Modifier.size(GoImSize.iconMd), color = LocalContentColor.current)
             } else {
                 Icon(if (isVideo) GoImIcons.Videocam else GoImIcons.File, contentDescription = null)
             }
@@ -258,7 +261,7 @@ internal fun StickerView(ref: StickerRef, stickers: StickerRepository, size: Dp,
         if (data != null) {
             AnimatedSticker(data, Modifier.fillMaxSize())
         } else {
-            Box(Modifier.size(size * 0.6f).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)))
+            Box(Modifier.size(size * 0.6f).background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.medium))
         }
     }
 }
@@ -269,7 +272,7 @@ internal fun ImagePreviewDialog(model: String, localPath: String?, onDismiss: ()
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(Modifier.fillMaxSize().background(GoImMediaColors.background)) {
             AsyncImage(
                 model = model,
                 contentDescription = "图片预览",
@@ -309,13 +312,13 @@ internal fun ImagePreviewDialog(model: String, localPath: String?, onDismiss: ()
                     }
                     .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
             )
-            Row(Modifier.align(Alignment.TopEnd).padding(12.dp)) {
+            Row(Modifier.align(Alignment.TopEnd).padding(GoImSpacing.s3)) {
                 if (localPath != null) {
                     IconButton(onClick = { openWithSystem(localPath, "image") }) {
-                        Icon(GoImIcons.Download, contentDescription = "用系统打开", tint = Color.White)
+                        Icon(GoImIcons.Download, contentDescription = "用系统打开", tint = GoImMediaColors.content)
                     }
                 }
-                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "关闭", tint = Color.White) }
+                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "关闭", tint = GoImMediaColors.content) }
             }
         }
     }

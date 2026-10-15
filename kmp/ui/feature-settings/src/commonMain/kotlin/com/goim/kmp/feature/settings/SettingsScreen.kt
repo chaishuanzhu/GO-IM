@@ -68,6 +68,8 @@ import com.goim.kmp.designsystem.TextInputDialog
 import com.goim.kmp.designsystem.displayName
 import com.goim.kmp.designsystem.isValidApiBaseUrl
 import com.goim.kmp.designsystem.title
+import com.goim.kmp.designsystem.GoImSpacing
+import com.goim.kmp.designsystem.GoImSize
 import com.goim.kmp.model.Appearance
 import com.goim.kmp.model.ConnectionState
 import com.goim.kmp.model.TransportKind
@@ -145,7 +147,7 @@ fun SettingsScreen(
                     SettingsRow(title = "开发者工具", value = "日志 · 网络 · 数据库", icon = Icons.Filled.Build, onClick = onOpenDeveloper)
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(GoImSpacing.s4))
         }
     }
 
@@ -202,13 +204,13 @@ private fun ProfileCard(profile: UserProfile, onClick: (() -> Unit)?) {
         shape = MaterialTheme.shapes.extraLarge,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s2)
             .clip(MaterialTheme.shapes.extraLarge)
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClickLabel = "编辑个人资料", onClick = onClick) else Modifier),
     ) {
-        Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            UserAvatar(profile.uid, name, size = 64.dp, avatarUrl = profile.avatarUrl)
-            Spacer(Modifier.width(16.dp))
+        Row(Modifier.padding(GoImSpacing.s5), verticalAlignment = Alignment.CenterVertically) {
+            UserAvatar(profile.uid, name, size = GoImSize.avatarXl, avatarUrl = profile.avatarUrl)
+            Spacer(Modifier.width(GoImSpacing.s4))
             Column(Modifier.weight(1f)) {
                 Text(name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("ID：${profile.uid}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -241,7 +243,7 @@ private fun AccountSwitcherDialog(
                     ListItem(
                         headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = { Text(if (isCurrent) "当前账号" else account.uid) },
-                        leadingContent = { UserAvatar(account.uid, name, size = 40.dp, avatarUrl = account.avatarUrl) },
+                        leadingContent = { UserAvatar(account.uid, name, size = GoImSize.avatarMd, avatarUrl = account.avatarUrl) },
                         trailingContent = {
                             if (isCurrent) {
                                 Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -263,7 +265,7 @@ private fun AccountSwitcherDialog(
                             },
                     )
                 }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(Modifier.padding(vertical = GoImSpacing.s2))
                 ListItem(
                     headlineContent = { Text("添加账号", color = MaterialTheme.colorScheme.primary) },
                     leadingContent = { TonalIcon(Icons.Filled.Add) },

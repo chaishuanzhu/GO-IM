@@ -23,7 +23,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -44,17 +43,19 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.goim.kmp.designsystem.SettingsRow
 import com.goim.kmp.designsystem.SettingsSection
 import com.goim.kmp.designsystem.TextInputDialog
 import com.goim.kmp.designsystem.UserAvatar
+import com.goim.kmp.designsystem.GoImSpacing
+import com.goim.kmp.designsystem.GoImSize
 import io.github.vinceglb.filekit.dialogs.FileKitType
 import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
 import io.github.vinceglb.filekit.name
 import io.github.vinceglb.filekit.readBytes
 import kotlinx.coroutines.launch
+import com.goim.kmp.designsystem.GoImTextField
 
 /** 个人资料：点头像更换，昵称 / 邮箱可修改，用户 ID 可复制。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,19 +94,19 @@ fun ProfileScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             Column(
-                Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                Modifier.fillMaxWidth().padding(vertical = GoImSpacing.s6),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(GoImSpacing.s2),
             ) {
                 Box(
                     Modifier
-                        .size(96.dp)
+                        .size(GoImSize.avatar3xl)
                         .clip(CircleShape)
                         .clickable(enabled = !busy, role = Role.Button, onClickLabel = "更换头像") { picker.launch() },
                     contentAlignment = Alignment.Center,
                 ) {
-                    UserAvatar(profile.uid, profile.displayName, size = 96.dp, avatarUrl = profile.avatarUrl)
-                    if (busy) CircularProgressIndicator(Modifier.size(40.dp))
+                    UserAvatar(profile.uid, profile.displayName, size = GoImSize.avatar3xl, avatarUrl = profile.avatarUrl)
+                    if (busy) CircularProgressIndicator(Modifier.size(GoImSize.iconLg))
                 }
                 TextButton(onClick = { picker.launch() }, enabled = !busy) { Text("更换头像") }
             }
@@ -169,25 +170,23 @@ private fun BindEmailDialog(viewModel: ProfileViewModel, current: String, onDism
         onDismissRequest = onDismiss,
         title = { Text(if (current.isEmpty()) "绑定邮箱" else "更换邮箱") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(GoImSpacing.s3)) {
                 if (current.isNotEmpty()) {
                     Text("当前邮箱：$current", style = MaterialTheme.typography.bodyMedium)
                 }
-                OutlinedTextField(
+                GoImTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text("邮箱") },
-                    singleLine = true,
+                    placeholder = "邮箱",
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
+                GoImTextField(
                     value = code,
                     onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                    label = { Text("验证码") },
-                    singleLine = true,
+                    placeholder = "验证码",
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    trailingIcon = {
+                    trailing = {
                         TextButton(
                             onClick = { viewModel.sendBindCode(email.trim()) },
                             enabled = emailValid && !state.sending && state.cooldown == 0,

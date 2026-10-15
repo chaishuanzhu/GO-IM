@@ -317,6 +317,10 @@ docker-compose up -d
 docker-compose down
 ```
 
+## KMP UI
+
+All client UI follows `kmp/designtoken.md` (implemented in `kmp/ui/designsystem`): colors via `MaterialTheme.colorScheme` roles, text via the 9 canonical typography roles, padding/gaps via `GoImSpacing`, sizes via `GoImSize` / `GoImDimens`, corners via `MaterialTheme.shapes`, inputs as 40dp borderless pills (`GoImTextField` / `SearchField` / `SearchEntry`; never raw `TextField` or `OutlinedTextField`), form buttons at the M3 default 40dp. On wide screens (≥ 840dp) nothing opens as a full-screen secondary page: details render in the right pane, chat info is a side panel, short forms are dialogs (`Presentation` = Page / Pane / Overlay). No raw `Color(...)`, `fontSize`, or off-scale `dp` in feature code.
+
 ## Release
 
 Follow `ci/jenkins/README.md` → 「发布新版本」 exactly: update docs and version references first, merge to `main`, then push a `vX.Y.Z` tag on the `main` commit. Jenkins (`go-im-tags`) starts the build automatically — do not also start `go-im` by hand. Everything in the release (images, installers, Docker Hub overview) comes from the tagged commit.

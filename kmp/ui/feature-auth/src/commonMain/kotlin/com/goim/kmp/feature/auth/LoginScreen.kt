@@ -36,7 +36,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -60,12 +59,15 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.goim.kmp.designsystem.GoImIcons
 import com.goim.kmp.designsystem.UserAvatar
 import com.goim.kmp.designsystem.TonalIcon
+import com.goim.kmp.designsystem.GoImSpacing
+import com.goim.kmp.designsystem.GoImSize
+import com.goim.kmp.designsystem.GoImDimens
 import com.goim.kmp.model.User
+import com.goim.kmp.designsystem.GoImTextField
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,21 +98,21 @@ fun LoginScreen(
             contentAlignment = Alignment.TopCenter,
         ) {
             Column(
-                Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                Modifier.widthIn(max = GoImDimens.formMaxWidth).fillMaxWidth().padding(horizontal = GoImSpacing.s6, vertical = GoImSpacing.s4),
+                verticalArrangement = Arrangement.spacedBy(GoImSpacing.s4),
             ) {
                 Column(
                     Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(GoImSpacing.s2),
                 ) {
                     TonalIcon(
                         GoImIcons.Chat,
-                        size = 72.dp,
+                        size = GoImSize.avatar2xl,
                         container = MaterialTheme.colorScheme.primaryContainer,
                         content = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
-                    Text("GO-IM", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
+                    Text("GO-IM", style = MaterialTheme.typography.displaySmall, modifier = Modifier.semantics { heading() })
                     Text(
                         when (state.mode) {
                             AuthMode.LOGIN -> "登录以继续"
@@ -135,12 +137,11 @@ fun LoginScreen(
                 }
 
                 if (state.mode == AuthMode.LOGIN) {
-                    OutlinedTextField(
+                    GoImTextField(
                         value = state.account,
                         onValueChange = viewModel::onAccountChange,
-                        label = { Text("邮箱或用户 ID") },
-                        leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
-                        singleLine = true,
+                        placeholder = "邮箱或用户 ID",
+                        leadingIcon = Icons.Filled.Person,
                         keyboardOptions = KeyboardOptions(
                             autoCorrectEnabled = false,
                             keyboardType = KeyboardType.Email,
@@ -149,12 +150,11 @@ fun LoginScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else {
-                    OutlinedTextField(
+                    GoImTextField(
                         value = state.email,
                         onValueChange = viewModel::onEmailChange,
-                        label = { Text("邮箱") },
-                        leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
-                        singleLine = true,
+                        placeholder = "邮箱",
+                        leadingIcon = Icons.Filled.Email,
                         keyboardOptions = KeyboardOptions(
                             autoCorrectEnabled = false,
                             keyboardType = KeyboardType.Email,
@@ -162,12 +162,12 @@ fun LoginScreen(
                         ),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
+                    GoImTextField(
                         value = state.code,
                         onValueChange = viewModel::onCodeChange,
-                        label = { Text("验证码") },
-                        leadingIcon = { Icon(Icons.Filled.CheckCircle, contentDescription = null) },
-                        trailingIcon = {
+                        placeholder = "验证码",
+                        leadingIcon = Icons.Filled.CheckCircle,
+                        trailing = {
                             TextButton(onClick = viewModel::sendCode, enabled = state.canSendCode) {
                                 Text(
                                     when {
@@ -178,18 +178,17 @@ fun LoginScreen(
                                 )
                             }
                         },
-                        singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Next),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                OutlinedTextField(
+                GoImTextField(
                     value = state.password,
                     onValueChange = viewModel::onPasswordChange,
-                    label = { Text(if (state.mode == AuthMode.RESET) "新密码" else "密码") },
-                    supportingText = if (state.mode == AuthMode.LOGIN) null else ({ Text("至少 6 位") }),
-                    leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
-                    trailingIcon = {
+                    placeholder = if (state.mode == AuthMode.RESET) "新密码" else "密码",
+                    supportingText = if (state.mode == AuthMode.LOGIN) null else "至少 6 位",
+                    leadingIcon = Icons.Filled.Lock,
+                    trailing = {
                         IconButton(onClick = { showPassword = !showPassword }) {
                             Icon(
                                 if (showPassword) GoImIcons.VisibilityOff else GoImIcons.Visibility,
@@ -197,7 +196,6 @@ fun LoginScreen(
                             )
                         }
                     },
-                    singleLine = true,
                     visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = { viewModel.submit() }),
@@ -210,12 +208,12 @@ fun LoginScreen(
                 Button(
                     onClick = viewModel::submit,
                     enabled = !state.isLoading,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     if (state.isLoading) {
                         CircularProgressIndicator(
-                            Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
+                            Modifier.size(GoImSize.iconSm),
+                            strokeWidth = GoImSize.strokeThin,
                             color = MaterialTheme.colorScheme.onPrimary,
                         )
                     } else {
@@ -241,10 +239,10 @@ fun LoginScreen(
                 }
 
                 if (savedAccounts.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(GoImSpacing.s2))
                     Text(
                         "本机已登录的账号",
-                        style = MaterialTheme.typography.titleSmall,
+                        style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.semantics { heading() },
                     )
@@ -254,7 +252,7 @@ fun LoginScreen(
                             ListItem(
                                 headlineContent = { Text(name) },
                                 supportingContent = { Text(account.email.ifEmpty { "ID：${account.uid}" }) },
-                                leadingContent = { UserAvatar(account.uid, name, size = 40.dp, avatarUrl = account.avatarUrl) },
+                                leadingContent = { UserAvatar(account.uid, name, size = GoImSize.avatarMd, avatarUrl = account.avatarUrl) },
                                 trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                 modifier = Modifier.clickable(enabled = !state.isLoading, role = Role.Button, onClickLabel = "进入") {
@@ -277,9 +275,9 @@ private fun ErrorBanner(message: String) {
         shape = MaterialTheme.shapes.medium,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(12.dp))
+        Row(Modifier.padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s3), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(GoImSize.iconSm))
+            Spacer(Modifier.width(GoImSpacing.s3))
             Text(message, style = MaterialTheme.typography.bodyMedium)
         }
     }
@@ -293,9 +291,9 @@ private fun InfoBanner(message: String) {
         shape = MaterialTheme.shapes.medium,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(12.dp))
+        Row(Modifier.padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s3), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(GoImSize.iconSm))
+            Spacer(Modifier.width(GoImSpacing.s3))
             Text(message, style = MaterialTheme.typography.bodyMedium)
         }
     }

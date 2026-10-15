@@ -41,6 +41,7 @@ import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import com.goim.kmp.common.PlatformContext
 import com.goim.kmp.designsystem.GoImTheme
+import com.goim.kmp.designsystem.GoImDimens
 import com.goim.kmp.navigation.AuthNavHost
 import com.goim.kmp.navigation.MainNavHost
 import com.goim.kmp.platform.networkAvailability
@@ -139,7 +140,7 @@ fun App(titleBarHeight: Dp = 0.dp, titleBar: @Composable () -> Unit = {}) {
                     }
                     else -> AuthNavHost()
                 }
-                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 88.dp))
+                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = GoImDimens.fabClearance))
             }
         }
     }

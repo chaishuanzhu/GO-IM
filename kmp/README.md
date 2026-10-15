@@ -74,7 +74,7 @@ GOIM_E2E_RECONNECT=1 ./gradlew :data:repository:desktopTest --tests '*reconnects
 | `data:database` | Room KMP v1（schema 导出在 `schemas/`）、DAO、映射 |
 | `data:repository` | Connection / Message / Conversation / Auth / Group / Friend / Search / File / Sticker 实现、`SessionCoordinator`、`SessionManager` |
 | `platform` | `networkAvailability()`：网络恢复触发重连；图片解码 / JPEG 压缩、录音、语音播放、媒体时长 |
-| `ui:designsystem` | `GoImTheme`、格式化、通用组件、图标 |
+| `ui:designsystem` | `GoImTheme`、设计令牌（`GoImSpacing` / `GoImSize` / `GoImElevation` / 字体，规范见 [designtoken.md](designtoken.md)）、格式化、通用组件、图标 |
 | `ui:feature-auth` / `feature-conversations` / `feature-chat` / `feature-settings` | 登录（含已保存账号）、会话列表、聊天、设置 / 服务器设置 / 切换账号 / 开发者工具 |
 | `ui:feature-contacts` | 通讯录、新的朋友、群组列表、群信息、好友选择器 |
 | `ui:feature-search` | 消息搜索（服务端优先，本机兜底） |

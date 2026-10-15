@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -29,7 +28,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -57,7 +55,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,20 +72,40 @@ import com.goim.kmp.designsystem.TonalIcon
 import com.goim.kmp.designsystem.MonogramAvatar
 import com.goim.kmp.designsystem.SettingsRow
 import com.goim.kmp.designsystem.SettingsSection
-import com.goim.kmp.designsystem.TextInputDialog
 import com.goim.kmp.designsystem.UnreadBadge
 import com.goim.kmp.designsystem.UserAvatar
 import com.goim.kmp.designsystem.rememberDisplayName
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.OutlinedTextField
+import com.goim.kmp.designsystem.GoImSpacing
+import com.goim.kmp.designsystem.GoImSize
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import com.goim.kmp.designsystem.GoImFormat
+import com.goim.kmp.designsystem.SearchEntry
+import com.goim.kmp.designsystem.SearchField
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.goim.kmp.designsystem.GoImDimens
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.material3.Surface
 import com.goim.kmp.model.Friend
+import com.goim.kmp.model.FriendRequest
 import com.goim.kmp.model.UserProfile
 import com.goim.kmp.model.Group
+import com.goim.kmp.designsystem.GoImTextField
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.foundation.layout.WindowInsets
 
 @Composable
 private fun MessageSnackbar(vm: ActionViewModel, host: SnackbarHostState) {
@@ -109,14 +126,15 @@ private fun PersonRow(
     avatarUrl: String = "",
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    selected: Boolean = false,
 ) {
     ListItem(
         headlineContent = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = subtitle?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-        leadingContent = { UserAvatar(uid, title, size = 40.dp, avatarUrl = avatarUrl.ifEmpty { null }) },
+        leadingContent = { UserAvatar(uid, title, size = GoImSize.avatarMd, avatarUrl = avatarUrl.ifEmpty { null }) },
         trailingContent = trailing,
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
+        colors = selectableColors(selected),
+        modifier = if (onClick != null) Modifier.selectableRow(selected, onClick) else Modifier,
     )
 }
 
@@ -129,6 +147,7 @@ fun ContactsScreen(
     onOpenNewFriends: () -> Unit,
     onOpenGroups: () -> Unit,
     onOpenFriend: (Friend) -> Unit,
+    selection: ContactsSelection? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
@@ -152,8 +171,14 @@ fun ContactsScreen(
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
             if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             item {
-                ShortcutRow("新的朋友", GoImIcons.PersonAdd, badge = state.pendingCount, onClick = onOpenNewFriends)
-                ShortcutRow("群组", GoImIcons.Group, badge = 0, onClick = onOpenGroups)
+                ShortcutRow(
+                    "新的朋友",
+                    GoImIcons.PersonAdd,
+                    badge = state.pendingCount,
+                    selected = selection == ContactsSelection.NewFriends,
+                    onClick = onOpenNewFriends,
+                )
+                ShortcutRow("群组", GoImIcons.Group, badge = 0, selected = selection == ContactsSelection.Groups, onClick = onOpenGroups)
             }
             if (state.loaded && state.sections.isEmpty()) {
                 item {
@@ -161,7 +186,7 @@ fun ContactsScreen(
                         GoImIcons.Contacts,
                         "暂无好友",
                         "在「新的朋友」中按昵称、邮箱或用户 ID 搜索添加",
-                        Modifier.padding(top = 24.dp),
+                        Modifier.padding(top = GoImSpacing.s6),
                     )
                 }
             }
@@ -169,11 +194,11 @@ fun ContactsScreen(
                 item(key = "header-${section.letter}") {
                     Text(
                         section.letter,
-                        style = MaterialTheme.typography.titleSmall,
+                        style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+                            .padding(start = GoImSpacing.s4, end = GoImSpacing.s4, top = GoImSpacing.s4, bottom = GoImSpacing.s1),
                     )
                 }
                 items(section.friends, key = { "friend-${it.uid}" }) { friend ->
@@ -183,6 +208,7 @@ fun ContactsScreen(
                         uid = friend.uid,
                         avatarUrl = friend.avatarUrl,
                         onClick = { onOpenFriend(friend) },
+                        selected = selection == ContactsSelection.Person(friend.uid),
                     )
                 }
             }
@@ -191,17 +217,30 @@ fun ContactsScreen(
 }
 
 @Composable
-private fun ShortcutRow(title: String, icon: ImageVector, badge: Int, onClick: () -> Unit) {
+private fun ShortcutRow(title: String, icon: ImageVector, badge: Int, selected: Boolean, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(title) },
         leadingContent = {
             TonalIcon(icon, container = MaterialTheme.colorScheme.primaryContainer, content = MaterialTheme.colorScheme.onPrimaryContainer)
         },
         trailingContent = if (badge > 0) ({ UnreadBadge(badge) }) else null,
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.clickable(onClick = onClick),
+        colors = selectableColors(selected),
+        modifier = Modifier.selectableRow(selected, onClick),
     )
 }
+
+@Composable
+private fun selectableColors(selected: Boolean) = ListItemDefaults.colors(
+    containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+)
+
+/** 与会话列表一致：行两侧留 s2，圆角高亮当前选中项。 */
+@Composable
+private fun Modifier.selectableRow(selected: Boolean, onClick: () -> Unit) = this
+    .padding(horizontal = GoImSpacing.s2)
+    .clip(MaterialTheme.shapes.large)
+    .semantics { this.selected = selected }
+    .clickable(onClick = onClick)
 
 // endregion
 
@@ -209,56 +248,116 @@ private fun ShortcutRow(title: String, icon: ImageVector, badge: Int, onClick: (
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewFriendsScreen(viewModel: NewFriendsViewModel, onAddFriend: () -> Unit, onBack: () -> Unit) {
+fun NewFriendsScreen(
+    viewModel: NewFriendsViewModel,
+    onAddFriend: () -> Unit,
+    onBack: () -> Unit,
+    presentation: Presentation = Presentation.Page,
+) {
     val requests by viewModel.requests.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     MessageSnackbar(viewModel, snackbar)
 
     Scaffold(
+
+        contentWindowInsets = presentation.contentInsets(),
         topBar = {
             TopAppBar(
                 title = { Text("新的朋友") },
-                navigationIcon = { BackButton(onBack) },
+                navigationIcon = { NavIcon(presentation, onBack) },
+                windowInsets = presentation.topBarInsets(),
+                actions = {
+                    IconButton(onClick = onAddFriend) { Icon(GoImIcons.PersonAdd, contentDescription = "添加好友") }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-            if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             item {
-                SettingsSection(title = null) {
-                    SettingsRow(
-                        "添加好友",
-                        value = "按昵称、邮箱或用户 ID 搜索",
-                        icon = Icons.Filled.Add,
-                        onClick = onAddFriend,
+                SearchEntry(
+                    "昵称 / 邮箱 / 用户 ID",
+                    onClick = onAddFriend,
+                    modifier = Modifier.padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s2),
+                )
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = GoImSpacing.s4))
+            }
+            if (requests.isEmpty()) {
+                item {
+                    EmptyState(
+                        GoImIcons.PersonAdd,
+                        "暂无新的好友请求",
+                        "别人添加你为好友时会显示在这里",
+                        Modifier.padding(top = GoImSpacing.s6),
+                    )
+                }
+            } else {
+                item { SectionHeader("好友请求 · ${requests.size}") }
+                items(requests, key = { it.fromUid }) { request ->
+                    FriendRequestItem(
+                        request,
+                        enabled = !busy,
+                        onDecline = { viewModel.respond(request, accept = false) },
+                        onAccept = { viewModel.respond(request, accept = true) },
                     )
                 }
             }
-            item {
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s2)
+            .semantics { heading() },
+    )
+}
+
+@Composable
+private fun FriendRequestItem(request: FriendRequest, enabled: Boolean, onDecline: () -> Unit, onAccept: () -> Unit) {
+    val name = rememberDisplayName(request.fromUid, request.displayName)
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s3),
+        horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s4),
+    ) {
+        UserAvatar(request.fromUid, name, size = GoImSize.avatarLg, avatarUrl = request.avatarUrl.ifEmpty { null })
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(GoImSpacing.s1)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "好友请求",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+                    name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
-            }
-            if (requests.isEmpty()) {
-                item { EmptyState(GoImIcons.PersonAdd, "暂无新的好友请求", modifier = Modifier.padding(top = 16.dp)) }
-            }
-            items(requests, key = { it.fromUid }) { request ->
-                PersonRow(
-                    request.displayName,
-                    subtitle = "ID：${request.fromUid} · 请求添加你为好友",
-                    uid = request.fromUid,
-                    avatarUrl = request.avatarUrl,
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { viewModel.respond(request, accept = false) }, enabled = !busy) { Text("拒绝") }
-                        FilledTonalButton(onClick = { viewModel.respond(request, accept = true) }, enabled = !busy) { Text("接受") }
-                    }
+                if (request.createdAt > 0) {
+                    Text(
+                        GoImFormat.conversationTime(request.createdAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
+            }
+            Text(
+                "ID：${request.fromUid} · 请求添加你为好友",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                Modifier.padding(top = GoImSpacing.s2),
+                horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2),
+            ) {
+                OutlinedButton(onClick = onDecline, enabled = enabled, modifier = Modifier.weight(1f)) { Text("拒绝") }
+                Button(onClick = onAccept, enabled = enabled, modifier = Modifier.weight(1f)) { Text("接受") }
             }
         }
     }
@@ -266,104 +365,174 @@ fun NewFriendsScreen(viewModel: NewFriendsViewModel, onAddFriend: () -> Unit, on
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddFriendScreen(viewModel: AddFriendViewModel, selfUid: String, onBack: () -> Unit) {
+fun AddFriendScreen(
+    viewModel: AddFriendViewModel,
+    selfUid: String,
+    onBack: () -> Unit,
+    presentation: Presentation = Presentation.Page,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val friendUids by viewModel.friendUids.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val focus = remember { FocusRequester() }
+    @Suppress("DEPRECATION")
+    val clipboard = LocalClipboardManager.current
     MessageSnackbar(viewModel, snackbar)
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
     Scaffold(
+
+        contentWindowInsets = presentation.contentInsets(),
         topBar = {
             TopAppBar(
                 title = { Text("添加好友") },
-                navigationIcon = { BackButton(onBack) },
+                navigationIcon = { NavIcon(presentation, onBack) },
+                windowInsets = presentation.topBarInsets(),
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            OutlinedTextField(
-                value = state.query,
-                onValueChange = viewModel::onQueryChange,
-                placeholder = { Text("昵称 / 邮箱 / 用户 ID") },
-                singleLine = true,
-                trailingIcon = {
-                    IconButton(onClick = viewModel::search, enabled = state.query.isNotBlank() && !state.searching) {
-                        Icon(Icons.Filled.Search, contentDescription = "搜索")
-                    }
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, autoCorrectEnabled = false),
-                keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).focusRequester(focus),
-            )
-            if (state.searching) LinearProgressIndicator(Modifier.fillMaxWidth())
-            when {
-                state.error != null -> EmptyState(GoImIcons.PersonAdd, state.error.orEmpty(), modifier = Modifier.padding(top = 32.dp))
-                state.searched && !state.searching && state.results.isEmpty() ->
-                    EmptyState(GoImIcons.PersonAdd, "没有找到用户", modifier = Modifier.padding(top = 32.dp))
+        LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+            item {
+                SearchField(
+                    value = state.query,
+                    onValueChange = viewModel::onQueryChange,
+                    placeholder = "昵称 / 邮箱 / 用户 ID",
+                    onSearch = viewModel::search,
+                    modifier = Modifier
+                        .padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s2)
+                        .focusRequester(focus),
+                )
+                if (state.searching) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = GoImSpacing.s4))
             }
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(state.results, key = { it.uid }) { user ->
-                    val label = when {
-                        user.uid == selfUid -> "自己"
-                        user.uid in friendUids -> "已是好友"
-                        user.uid in state.sent -> "已发送"
-                        else -> null
-                    }
-                    PersonRow(
-                        user.displayName,
-                        subtitle = "ID：${user.uid}",
-                        uid = user.uid,
-                        avatarUrl = user.avatarUrl,
-                    ) {
-                        if (label != null) {
-                            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-                        } else {
-                            val sending = user.uid in state.sending
-                            FilledTonalButton(onClick = { viewModel.sendRequest(user.uid) }, enabled = !sending) {
-                                Text(if (sending) "发送中" else "添加")
-                            }
-                        }
-                    }
+            when {
+                state.error != null -> item {
+                    EmptyState(GoImIcons.PersonAdd, "搜索失败", state.error, Modifier.padding(top = GoImSpacing.s6))
                 }
+                !state.searched -> item {
+                    MyIdRow(selfUid) {
+                        clipboard.setText(AnnotatedString(selfUid))
+                        viewModel.copied()
+                    }
+                    EmptyState(
+                        GoImIcons.PersonAdd,
+                        "查找用户",
+                        "昵称支持模糊匹配，邮箱和用户 ID 需完整输入",
+                        Modifier.padding(top = GoImSpacing.s6),
+                    )
+                }
+                !state.searching && state.results.isEmpty() -> item {
+                    EmptyState(
+                        GoImIcons.PersonAdd,
+                        "没有找到用户",
+                        "检查拼写，或改用完整的邮箱 / 用户 ID",
+                        Modifier.padding(top = GoImSpacing.s6),
+                    )
+                }
+                state.results.isNotEmpty() -> item { SectionHeader("搜索结果") }
+            }
+            items(state.results, key = { it.uid }) { user ->
+                val status = when {
+                    user.uid == selfUid -> "自己"
+                    user.uid in friendUids -> "已是好友"
+                    user.uid in state.sent -> "已发送"
+                    else -> null
+                }
+                UserResultRow(
+                    user,
+                    status = status,
+                    sending = user.uid in state.sending,
+                    onAdd = { viewModel.sendRequest(user.uid) },
+                )
             }
         }
     }
+}
+
+@Composable
+private fun MyIdRow(uid: String, onCopy: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = GoImSpacing.s4, end = GoImSpacing.s2),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "我的用户 ID：$uid",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onCopy) { Text("复制") }
+    }
+}
+
+@Composable
+private fun UserResultRow(user: UserProfile, status: String?, sending: Boolean, onAdd: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(user.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = { Text("ID：${user.uid}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        leadingContent = {
+            UserAvatar(user.uid, user.displayName, size = GoImSize.avatarLg, avatarUrl = user.avatarUrl.ifEmpty { null })
+        },
+        trailingContent = {
+            when {
+                status != null -> Text(
+                    status,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                sending -> FilledTonalButton(onClick = {}, enabled = false) {
+                    CircularProgressIndicator(Modifier.size(GoImSize.iconXs), strokeWidth = GoImSize.strokeThin)
+                }
+                else -> FilledTonalButton(onClick = onAdd) { Text("添加") }
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
 }
 
 // endregion
 
 // region 群组
 
-private enum class CreateStep { NAME, MEMBERS }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GroupsScreen(viewModel: GroupsViewModel, onBack: () -> Unit, onOpenGroup: (Group) -> Unit) {
+fun GroupsScreen(
+    viewModel: GroupsViewModel,
+    onBack: () -> Unit,
+    onOpenGroup: (Group) -> Unit,
+    onCreateGroup: () -> Unit,
+    onJoinGroup: () -> Unit,
+    presentation: Presentation = Presentation.Page,
+) {
     val groups by viewModel.groupList.collectAsStateWithLifecycle()
-    val friends by viewModel.friendList.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var menuOpen by remember { mutableStateOf(false) }
-    var createStep by remember { mutableStateOf<CreateStep?>(null) }
-    var pendingName by remember { mutableStateOf("") }
-    var showJoin by remember { mutableStateOf(false) }
     var confirmLeave by remember { mutableStateOf<Group?>(null) }
     MessageSnackbar(viewModel, snackbar)
 
     Scaffold(
+
+        contentWindowInsets = presentation.contentInsets(),
         topBar = {
             TopAppBar(
                 title = { Text("群组") },
-                navigationIcon = { BackButton(onBack) },
+                navigationIcon = { NavIcon(presentation, onBack) },
+                windowInsets = presentation.topBarInsets(),
                 actions = {
                     Box {
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.Add, contentDescription = "创建或加入群聊") }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(text = { Text("创建群聊") }, onClick = { menuOpen = false; createStep = CreateStep.NAME })
-                            DropdownMenuItem(text = { Text("加入群聊") }, onClick = { menuOpen = false; showJoin = true })
+                            DropdownMenuItem(
+                                text = { Text("创建群聊") },
+                                leadingIcon = { Icon(GoImIcons.Group, contentDescription = null) },
+                                onClick = { menuOpen = false; onCreateGroup() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("加入群聊") },
+                                leadingIcon = { Icon(GoImIcons.Link, contentDescription = null) },
+                                onClick = { menuOpen = false; onJoinGroup() },
+                            )
                         }
                     }
                 },
@@ -391,45 +560,6 @@ fun GroupsScreen(viewModel: GroupsViewModel, onBack: () -> Unit, onOpenGroup: (G
         }
     }
 
-    when (createStep) {
-        CreateStep.NAME -> TextInputDialog(
-            title = "创建群聊",
-            message = "输入群名称",
-            placeholder = "群名称",
-            confirmLabel = "下一步",
-            onConfirm = {
-                pendingName = it
-                createStep = CreateStep.MEMBERS
-            },
-            onDismiss = { createStep = null },
-        )
-        CreateStep.MEMBERS -> FriendPickerDialog(
-            title = "选择群成员",
-            friends = friends,
-            allowSkip = true,
-            onDone = { picked ->
-                createStep = null
-                viewModel.create(pendingName, picked, onOpenGroup)
-            },
-            onDismiss = { createStep = null },
-        )
-        null -> Unit
-    }
-
-    if (showJoin) {
-        TextInputDialog(
-            title = "加入群聊",
-            message = "输入群 ID（如 g_123456）",
-            placeholder = "群 ID",
-            confirmLabel = "加入",
-            onConfirm = {
-                showJoin = false
-                viewModel.join(it, onOpenGroup)
-            },
-            onDismiss = { showJoin = false },
-        )
-    }
-
     confirmLeave?.let { group ->
         ConfirmDialog(
             text = "确定退出「${group.displayName}」？",
@@ -440,6 +570,170 @@ fun GroupsScreen(viewModel: GroupsViewModel, onBack: () -> Unit, onOpenGroup: (G
             },
             onDismiss = { confirmLeave = null },
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CreateGroupScreen(
+    viewModel: CreateGroupViewModel,
+    onBack: () -> Unit,
+    onCreated: (Group) -> Unit,
+    presentation: Presentation = Presentation.Page,
+) {
+    val friends by viewModel.friendList.collectAsStateWithLifecycle()
+    val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    var name by rememberSaveable { mutableStateOf("") }
+    val selected = remember { mutableStateListOf<String>() }
+    MessageSnackbar(viewModel, snackbar)
+    val canCreate = name.isNotBlank() && !busy
+
+    fun submit() {
+        if (canCreate) viewModel.create(name.trim(), selected.toList(), onCreated)
+    }
+
+    Scaffold(
+
+        contentWindowInsets = presentation.contentInsets(),
+        topBar = {
+            TopAppBar(
+                title = { Text("创建群聊") },
+                navigationIcon = { NavIcon(presentation, onBack) },
+                windowInsets = presentation.topBarInsets(),
+            )
+        },
+        bottomBar = {
+            FormActionBar {
+                Button(onClick = ::submit, enabled = canCreate, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (selected.isEmpty()) "创建群聊" else "创建群聊（${selected.size + 1} 人）")
+                }
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+            item {
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                GoImTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    placeholder = "群名称",
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { submit() }),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s2),
+                )
+                SectionHeader(if (selected.isEmpty()) "邀请好友（可选）" else "邀请好友 · 已选 ${selected.size}")
+            }
+            if (friends.isEmpty()) {
+                item {
+                    Text(
+                        "暂无好友，创建后可在群信息中邀请成员",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s2),
+                    )
+                }
+            }
+            items(friends, key = { it.uid }) { friend ->
+                val checked = friend.uid in selected
+                ListItem(
+                    headlineContent = { Text(friend.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingContent = {
+                        UserAvatar(friend.uid, friend.displayName, size = GoImSize.avatarMd, avatarUrl = friend.avatarUrl.ifEmpty { null })
+                    },
+                    trailingContent = { Checkbox(checked = checked, onCheckedChange = null) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier.toggleable(value = checked, role = Role.Checkbox) {
+                        if (it) selected.add(friend.uid) else selected.remove(friend.uid)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun JoinGroupScreen(
+    viewModel: JoinGroupViewModel,
+    onBack: () -> Unit,
+    onJoined: (Group) -> Unit,
+    presentation: Presentation = Presentation.Page,
+) {
+    val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    val focus = remember { FocusRequester() }
+    var groupId by rememberSaveable { mutableStateOf("") }
+    MessageSnackbar(viewModel, snackbar)
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val canJoin = groupId.isNotBlank() && !busy
+
+    fun submit() {
+        if (canJoin) viewModel.join(groupId.trim(), onJoined)
+    }
+
+    Scaffold(
+
+        contentWindowInsets = presentation.contentInsets(),
+        topBar = {
+            TopAppBar(
+                title = { Text("加入群聊") },
+                navigationIcon = { NavIcon(presentation, onBack) },
+                windowInsets = presentation.topBarInsets(),
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Column(
+                Modifier.widthIn(max = GoImDimens.formMaxWidth).fillMaxWidth().padding(GoImSpacing.s6),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(GoImSpacing.s4),
+            ) {
+                TonalIcon(
+                    GoImIcons.Group,
+                    size = GoImSize.iconXl,
+                    container = MaterialTheme.colorScheme.primaryContainer,
+                    content = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    "向群成员索要群 ID，群信息页可以复制",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                GoImTextField(
+                    value = groupId,
+                    onValueChange = { groupId = it },
+                    placeholder = "群 ID，如 g_123456",
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go, autoCorrectEnabled = false),
+                    keyboardActions = KeyboardActions(onGo = { submit() }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                )
+                Button(onClick = ::submit, enabled = canJoin, modifier = Modifier.fillMaxWidth()) {
+                    Text("加入群聊")
+                }
+            }
+        }
+    }
+}
+
+/** 页面底部的主操作区：避让导航栏与键盘。 */
+@Composable
+private fun FormActionBar(content: @Composable () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s3),
+        ) { content() }
     }
 }
 
@@ -459,7 +753,7 @@ private fun SwipeToLeave(onLeave: () -> Unit, content: @Composable () -> Unit) {
         enableDismissFromStartToEnd = false,
         backgroundContent = {
             Box(
-                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(end = 24.dp),
+                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(end = GoImSpacing.s6),
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 Text("退出", color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.labelLarge)
@@ -481,6 +775,7 @@ fun FriendInfoScreen(
     onBack: () -> Unit,
     onSendMessage: (() -> Unit)?,
     onRemoved: () -> Unit,
+    presentation: Presentation = Presentation.Page,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
@@ -493,20 +788,26 @@ fun FriendInfoScreen(
     val isFriend = state.friend != null
 
     Scaffold(
+
+        contentWindowInsets = presentation.contentInsets(),
         topBar = {
-            TopAppBar(title = { Text("好友信息") }, navigationIcon = { BackButton(onBack) })
+            TopAppBar(
+                title = { Text("好友信息") },
+                navigationIcon = { NavIcon(presentation, onBack) },
+                windowInsets = presentation.topBarInsets(),
+            )
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             Column(
-                Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                Modifier.fillMaxWidth().padding(vertical = GoImSpacing.s4),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(GoImSpacing.s1),
             ) {
-                UserAvatar(viewModel.uid, name, size = 80.dp)
-                Spacer(Modifier.height(8.dp))
+                UserAvatar(viewModel.uid, name, size = GoImSize.avatar2xl)
+                Spacer(Modifier.height(GoImSpacing.s2))
                 Text(name, style = MaterialTheme.typography.headlineSmall)
                 if (state.loaded && !isFriend) {
                     Text(
@@ -554,7 +855,12 @@ fun FriendInfoScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GroupInfoScreen(viewModel: GroupInfoViewModel, onBack: () -> Unit, onLeft: () -> Unit) {
+fun GroupInfoScreen(
+    viewModel: GroupInfoViewModel,
+    onBack: () -> Unit,
+    onLeft: () -> Unit,
+    presentation: Presentation = Presentation.Page,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val friends by viewModel.friendList.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
@@ -573,20 +879,26 @@ fun GroupInfoScreen(viewModel: GroupInfoViewModel, onBack: () -> Unit, onLeft: (
     }
 
     Scaffold(
+
+        contentWindowInsets = presentation.contentInsets(),
         topBar = {
-            TopAppBar(title = { Text("群信息") }, navigationIcon = { BackButton(onBack) })
+            TopAppBar(
+                title = { Text("群信息") },
+                navigationIcon = { NavIcon(presentation, onBack) },
+                windowInsets = presentation.topBarInsets(),
+            )
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             Column(
-                Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                Modifier.fillMaxWidth().padding(vertical = GoImSpacing.s4),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(GoImSpacing.s1),
             ) {
-                MonogramAvatar(groupName, size = 80.dp)
-                Spacer(Modifier.height(8.dp))
+                MonogramAvatar(groupName, size = GoImSize.avatar2xl)
+                Spacer(Modifier.height(GoImSpacing.s2))
                 Text(groupName, style = MaterialTheme.typography.headlineSmall)
                 Text(
                     "${maxOf(state.members.size, group?.memberCount ?: 0)} 位成员",
@@ -600,7 +912,7 @@ fun GroupInfoScreen(viewModel: GroupInfoViewModel, onBack: () -> Unit, onLeft: (
             }
             SettingsSection(title = "成员") {
                 if (state.members.isEmpty()) {
-                    Text("加载中…", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
+                    Text("加载中…", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(GoImSpacing.s4))
                 }
                 state.members.forEach { member ->
                     PersonRow(
@@ -680,13 +992,13 @@ fun FriendPickerDialog(
                             Modifier
                                 .fillMaxWidth()
                                 .clickable { if (checked) selected.remove(friend.uid) else selected.add(friend.uid) }
-                                .padding(vertical = 6.dp),
+                                .padding(vertical = GoImSpacing.s2),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Checkbox(checked = checked, onCheckedChange = null)
-                            Spacer(Modifier.width(8.dp))
-                            UserAvatar(friend.uid, friend.displayName, size = 32.dp, avatarUrl = friend.avatarUrl.ifEmpty { null })
-                            Spacer(Modifier.width(10.dp))
+                            Spacer(Modifier.width(GoImSpacing.s2))
+                            UserAvatar(friend.uid, friend.displayName, size = GoImSize.avatarSm, avatarUrl = friend.avatarUrl.ifEmpty { null })
+                            Spacer(Modifier.width(GoImSpacing.s3))
                             Text(friend.displayName)
                         }
                     }
@@ -718,9 +1030,42 @@ private fun ConfirmDialog(text: String, confirmLabel: String, onConfirm: () -> U
     )
 }
 
-@Composable
-private fun BackButton(onBack: () -> Unit) {
-    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
+/** 页面的呈现方式：宽屏时同一页面可内嵌在右栏，或放进弹窗 / 侧边面板。 */
+enum class Presentation {
+    /** 全屏二级页，左上角返回。 */
+    Page,
+
+    /** 宽屏右栏，由左侧列表切换，无导航按钮。 */
+    Pane,
+
+    /** 弹窗或侧边面板，左上角关闭。 */
+    Overlay,
 }
+
+/** 宽屏通讯录右栏正在显示的内容，用于高亮左侧对应行。 */
+sealed interface ContactsSelection {
+    data object NewFriends : ContactsSelection
+    data object Groups : ContactsSelection
+    data class Person(val uid: String) : ContactsSelection
+}
+
+@Composable
+private fun NavIcon(presentation: Presentation, onBack: () -> Unit) {
+    when (presentation) {
+        Presentation.Page -> IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+        }
+        Presentation.Overlay -> IconButton(onClick = onBack) { Icon(Icons.Filled.Close, contentDescription = "关闭") }
+        Presentation.Pane -> Unit
+    }
+}
+
+/** 右栏、弹窗、侧边面板都不贴窗口边缘，不再为状态栏让位。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun Presentation.topBarInsets() = if (this == Presentation.Page) TopAppBarDefaults.windowInsets else WindowInsets(0)
+
+@Composable
+private fun Presentation.contentInsets() = if (this == Presentation.Page) ScaffoldDefaults.contentWindowInsets else WindowInsets(0)
 
 // endregion

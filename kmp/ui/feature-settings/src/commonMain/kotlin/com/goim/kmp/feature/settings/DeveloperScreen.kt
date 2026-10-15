@@ -16,14 +16,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -43,16 +41,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import co.touchlab.kermit.Severity
 import com.goim.kmp.common.LogEntry
 import com.goim.kmp.designsystem.EmptyState
+import com.goim.kmp.designsystem.SearchField
 import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.GoImIcons
 import com.goim.kmp.designsystem.SettingsRow
 import com.goim.kmp.designsystem.SettingsSection
 import com.goim.kmp.designsystem.title
+import com.goim.kmp.designsystem.GoImSpacing
 import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.dialogs.compose.rememberFileSaverLauncher
 import io.github.vinceglb.filekit.write
@@ -138,15 +137,13 @@ private fun LogPane(
     chips: @Composable () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(
+        SearchField(
             value = query,
             onValueChange = onQuery,
-            placeholder = { Text("过滤关键字") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            placeholder = "过滤关键字",
+            modifier = Modifier.padding(horizontal = GoImSpacing.s3, vertical = GoImSpacing.s2),
         )
-        Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { chips() }
+        Row(Modifier.padding(horizontal = GoImSpacing.s3), horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2)) { chips() }
         if (logs.isEmpty()) {
             EmptyState(GoImIcons.Storage, "暂无日志")
             return
@@ -164,13 +161,13 @@ private fun LogPane(
 
 @Composable
 private fun LogRow(entry: LogEntry) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = GoImSpacing.s3, vertical = GoImSpacing.s1)) {
         Text(
             "${GoImFormat.logTime(entry.timestampMs)}  ${entry.severity.name.first()}  ${entry.tag}",
             style = MaterialTheme.typography.labelSmall,
             color = severityColor(entry.severity),
         )
-        Text(entry.message, fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 16.sp)
+        Text(entry.message, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
     }
 }
 

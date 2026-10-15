@@ -24,17 +24,39 @@ data class GoImChatColors(
     val incomingText: Color,
 )
 
+/** 布局断点与组件级尺寸。 */
 object GoImDimens {
-    const val BUBBLE_MAX_WIDTH_RATIO = 0.72f
-    val avatarSize = 40.dp
-    val listAvatarSize = 48.dp
-    val messageAvatarSize = 36.dp
-    val composerMinHeight = 48.dp
+    val mediumBreakpoint = 600.dp
+    val expandedBreakpoint = 840.dp
     val listPaneWidth = 360.dp
+    val formMaxWidth = 420.dp
 
-    /** M3 消息气泡：大圆角，靠近发送方一侧的尾角收窄。 */
-    val outgoingBubbleShape = RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp)
-    val incomingBubbleShape = RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp)
+    /** 宽屏表单弹窗（添加好友、创建 / 加入群聊）的宽度与最大高度。 */
+    val dialogWidth = 480.dp
+    val dialogMaxHeight = 640.dp
+
+    /** 单字段表单弹窗（加入群聊）的高度。 */
+    val compactDialogHeight = 400.dp
+
+    /** 聊天右侧信息面板的宽度；聊天栏不足 [chatWithPanelMinWidth] 时面板浮在聊天之上。 */
+    val sidePanelWidth = 360.dp
+    val chatWithPanelMinWidth = 720.dp
+
+    /** 输入框、搜索框、消息输入框（单行）与表单按钮的统一高度。 */
+    val inputHeight = 40.dp
+
+    /** 列表底部给 FAB 让出的空间：FAB 56 + 上下边距 16 × 2。 */
+    val fabClearance = 88.dp
+
+    const val BUBBLE_MAX_WIDTH_RATIO = 0.72f
+    val listAvatarSize = GoImSize.avatarLg
+    val messageAvatarSize = GoImSize.avatarMd
+    val bubblePaddingHorizontal = GoImSpacing.s4
+    val bubblePaddingVertical = GoImSpacing.s2
+
+    /** 消息气泡：radius-lg，靠近发送方一侧的尾角收窄为 radius-xs。 */
+    val outgoingBubbleShape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)
+    val incomingBubbleShape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp)
 }
 
 // Material Theme Builder，seed #415F91
@@ -150,6 +172,6 @@ fun GoImTheme(
     val colorScheme = dynamic ?: if (darkTheme) DarkColors else LightColors
     val chatColors = remember(colorScheme) { colorScheme.chatColors() }
     CompositionLocalProvider(LocalChatColors provides chatColors) {
-        MaterialTheme(colorScheme = colorScheme, shapes = GoImShapes, content = content)
+        MaterialTheme(colorScheme = colorScheme, typography = GoImTypography, shapes = GoImShapes, content = content)
     }
 }

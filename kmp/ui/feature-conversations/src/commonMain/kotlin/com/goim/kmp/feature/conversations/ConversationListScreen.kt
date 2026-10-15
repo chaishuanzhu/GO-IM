@@ -59,6 +59,8 @@ import com.goim.kmp.designsystem.rememberDisplayName
 import com.goim.kmp.designsystem.TextInputDialog
 import com.goim.kmp.designsystem.UnreadBadge
 import com.goim.kmp.designsystem.title
+import com.goim.kmp.designsystem.GoImSpacing
+import com.goim.kmp.designsystem.GoImDimens
 import com.goim.kmp.model.ConnectionState
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.Conversation
@@ -86,7 +88,7 @@ fun ConversationListScreen(
                         if (state.loaded && state.connectionState != ConnectionState.CONNECTED) {
                             Text(
                                 state.connectionState.title,
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -108,7 +110,7 @@ fun ConversationListScreen(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     top = padding.calculateTopPadding(),
-                    bottom = padding.calculateBottomPadding() + 88.dp,
+                    bottom = padding.calculateBottomPadding() + GoImDimens.fabClearance,
                 ),
             ) {
                 items(state.conversations, key = { it.id }, contentType = { "conversation" }) { conversation ->
@@ -150,7 +152,7 @@ private fun SwipeToDeleteRow(onDelete: () -> Unit, content: @Composable () -> Un
         onDismiss = { if (it == SwipeToDismissBoxValue.EndToStart) onDelete() },
         backgroundContent = {
             Box(
-                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(end = 24.dp),
+                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(end = GoImSpacing.s6),
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 Icon(Icons.Filled.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.onErrorContainer)
@@ -225,7 +227,7 @@ private fun ConversationRowContent(conversation: Conversation, selected: Boolean
             if (isGroup) MonogramAvatar(title) else UserAvatar(conversation.peerOrGroupId, title)
         },
         trailingContent = {
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(GoImSpacing.s1)) {
                 Text(
                     GoImFormat.conversationTime(conversation.lastMessageAt),
                     style = MaterialTheme.typography.labelSmall,
@@ -239,7 +241,7 @@ private fun ConversationRowContent(conversation: Conversation, selected: Boolean
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp)
+            .padding(horizontal = GoImSpacing.s2)
             .clip(MaterialTheme.shapes.large)
             .then(modifier)
             .semantics(mergeDescendants = true) {

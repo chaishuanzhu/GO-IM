@@ -13,19 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -36,26 +30,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import com.goim.kmp.designsystem.EmptyState
+import com.goim.kmp.designsystem.SearchField
 import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.MonogramAvatar
 import com.goim.kmp.designsystem.UserAvatar
 import com.goim.kmp.designsystem.rememberDisplayName
+import com.goim.kmp.designsystem.GoImSpacing
 import com.goim.kmp.model.SearchHit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,35 +55,20 @@ fun SearchScreen(viewModel: SearchViewModel, onOpenHit: (SearchHit, String) -> U
 
     Scaffold(topBar = { TopAppBar(title = { Text("搜索") }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            TextField(
+            SearchField(
                 value = state.query,
                 onValueChange = viewModel::onQueryChange,
-                placeholder = { Text("搜索消息") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (state.query.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.onQueryChange("") }) { Icon(Icons.Filled.Clear, contentDescription = "清除") }
-                    }
-                },
-                singleLine = true,
-                shape = CircleShape,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { viewModel.submit() }),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).heightIn(min = 56.dp),
+                placeholder = "搜索消息",
+                onSearch = viewModel::submit,
+                modifier = Modifier.padding(horizontal = GoImSpacing.s4, vertical = GoImSpacing.s2),
             )
-            if (state.searching) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+            if (state.searching) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = GoImSpacing.s4))
             if (state.isLocalFallback && state.searched) {
                 Text(
                     "服务端搜索不可用，仅显示本机记录",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(horizontal = GoImSpacing.s6, vertical = GoImSpacing.s1),
                 )
             }
             when {
@@ -136,7 +111,7 @@ private fun HitRow(row: SearchRow, query: String, onClick: () -> Unit) {
             )
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.padding(horizontal = 8.dp).clip(MaterialTheme.shapes.large).clickable(onClick = onClick),
+        modifier = Modifier.padding(horizontal = GoImSpacing.s2).clip(MaterialTheme.shapes.large).clickable(onClick = onClick),
     )
 }
 

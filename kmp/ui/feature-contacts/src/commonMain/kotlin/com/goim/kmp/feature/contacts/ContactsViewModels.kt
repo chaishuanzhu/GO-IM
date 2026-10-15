@@ -132,6 +132,8 @@ class AddFriendViewModel(
     val state: StateFlow<AddFriendUiState> = _state.asStateFlow()
     private var searchJob: Job? = null
 
+    fun copied() = notify("用户 ID 已复制")
+
     fun onQueryChange(query: String) {
         _state.update { it.copy(query = query, error = null) }
     }
@@ -198,15 +200,8 @@ class FriendInfoViewModel(
     fun copied() = notify("用户 ID 已复制")
 }
 
-class GroupsViewModel(
-    private val groups: GroupRepository,
-    friends: FriendRepository,
-) : ActionViewModel() {
+class GroupsViewModel(private val groups: GroupRepository) : ActionViewModel() {
     val groupList: StateFlow<List<Group>> = groups.observeGroups()
-        .catch { emit(emptyList()) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    val friendList: StateFlow<List<Friend>> = friends.observeFriends()
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -216,11 +211,24 @@ class GroupsViewModel(
 
     fun refresh() = action(block = { groups.refresh() })
 
+    fun leave(group: Group) = action(success = "已退出「${group.displayName}」", block = { groups.leave(group.groupId) })
+}
+
+class CreateGroupViewModel(
+    private val groups: GroupRepository,
+    friends: FriendRepository,
+) : ActionViewModel() {
+    val friendList: StateFlow<List<Friend>> = friends.observeFriends()
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun create(name: String, members: List<String>, onCreated: (Group) -> Unit) {
         var created: Group? = null
         action(block = { created = groups.create(name, members) }, then = { created?.let(onCreated) })
     }
+}
 
+class JoinGroupViewModel(private val groups: GroupRepository) : ActionViewModel() {
     fun join(groupId: String, onJoined: (Group) -> Unit) {
         var joined: Group? = null
         action(
@@ -228,8 +236,6 @@ class GroupsViewModel(
             then = { joined?.let(onJoined) },
         )
     }
-
-    fun leave(group: Group) = action(success = "已退出「${group.displayName}」", block = { groups.leave(group.groupId) })
 }
 
 data class GroupInfoUiState(

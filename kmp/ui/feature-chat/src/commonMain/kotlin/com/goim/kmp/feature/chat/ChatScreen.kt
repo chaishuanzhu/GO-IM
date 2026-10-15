@@ -50,7 +50,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -84,6 +83,8 @@ import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.GoImIcons
 import com.goim.kmp.designsystem.GoImTheme
 import com.goim.kmp.designsystem.title
+import com.goim.kmp.designsystem.GoImSpacing
+import com.goim.kmp.designsystem.GoImSize
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.ConnectionState
 import com.goim.kmp.model.FileMeta
@@ -149,11 +150,11 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() 
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (isGroup) {
-                            MonogramAvatar(title, size = 36.dp)
+                            MonogramAvatar(title, size = GoImSize.avatarMd)
                         } else {
-                            UserAvatar(conversation.peerOrGroupId, title, size = 36.dp)
+                            UserAvatar(conversation.peerOrGroupId, title, size = GoImSize.avatarMd)
                         }
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(GoImSpacing.s3))
                         Column {
                             Text(
                                 title,
@@ -169,7 +170,7 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() 
                             if (subtitle != null) {
                                 Text(
                                     subtitle,
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -245,13 +246,13 @@ private fun DropOverlay() {
     Box(
         Modifier
             .fillMaxSize()
-            .padding(12.dp)
+            .padding(GoImSpacing.s3)
             .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f), MaterialTheme.shapes.extraLarge)
-            .border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraLarge),
+            .border(GoImSize.strokeThin, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraLarge),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(GoImIcons.Upload, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(40.dp))
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(GoImSpacing.s2)) {
+            Icon(GoImIcons.Upload, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(GoImSize.iconLg))
             Text("松开发送文件", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
         }
     }
@@ -309,8 +310,8 @@ private fun MessageList(
         LazyColumn(
             state = listState,
             reverseLayout = true,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            contentPadding = PaddingValues(horizontal = GoImSpacing.s3, vertical = GoImSpacing.s3),
+            verticalArrangement = Arrangement.spacedBy(GoImSpacing.s2),
             modifier = Modifier.fillMaxSize(),
         ) {
             items(newestFirst, key = { it.id }, contentType = { it.msgType }) { message ->
@@ -324,8 +325,8 @@ private fun MessageList(
             }
             if (state.isLoadingHistory) {
                 item(key = "loading") {
-                    Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Box(Modifier.fillMaxWidth().padding(GoImSpacing.s2), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(GoImSize.iconSm), strokeWidth = GoImSize.strokeThin)
                     }
                 }
             }
@@ -347,14 +348,14 @@ private fun MessageRow(message: Message, maxBubbleWidth: Dp, onRetry: (Message) 
 
 @Composable
 private fun CenterNotice(text: String) {
-    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().padding(vertical = GoImSpacing.s1), contentAlignment = Alignment.Center) {
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Text(
                 text,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = GoImSpacing.s3, vertical = GoImSpacing.s1),
             )
         }
     }
@@ -381,7 +382,7 @@ private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> U
     }
     Row(
         Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = description },
-        horizontalArrangement = Arrangement.spacedBy(8.dp, if (outgoing) Alignment.End else Alignment.Start),
+        horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2, if (outgoing) Alignment.End else Alignment.Start),
         verticalAlignment = Alignment.Top,
     ) {
         if (!outgoing) UserAvatar(message.fromUid, senderName, size = GoImDimens.messageAvatarSize)
@@ -393,12 +394,12 @@ private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> U
                 meta,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                modifier = Modifier.padding(horizontal = GoImSpacing.s2, vertical = GoImSpacing.s1),
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (outgoing) {
                     when (message.status) {
-                        MessageStatus.SENDING -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        MessageStatus.SENDING -> CircularProgressIndicator(Modifier.size(GoImSize.iconXs), strokeWidth = GoImSize.strokeThin)
                         MessageStatus.FAILED -> Icon(
                             Icons.Filled.Warning,
                             contentDescription = "重试发送",
@@ -406,11 +407,11 @@ private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> U
                             modifier = Modifier
                                 .minimumInteractiveComponentSize()
                                 .clickable(role = Role.Button, onClickLabel = "重试") { onRetry(message) }
-                                .size(22.dp),
+                                .size(GoImSize.iconSm),
                         )
                         else -> Unit
                     }
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(GoImSpacing.s2))
                 }
                 BubbleBody(message, maxBubbleWidth, bubbles)
             }
@@ -458,7 +459,7 @@ private fun BubbleBody(message: Message, maxBubbleWidth: Dp, bubbles: BubbleEnv)
                         if (isText) message.content else MessagePreview.listPreview(message),
                         fontStyle = if (isText) FontStyle.Normal else FontStyle.Italic,
                         style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(horizontal = GoImDimens.bubblePaddingHorizontal, vertical = GoImDimens.bubblePaddingVertical),
                     )
                 }
             }
