@@ -3,6 +3,7 @@
 # 说明见 deploy/README.md。上线前至少修改：
 #   - config.json 的 jwt.secret
 #   - 下方 goim-infra 的密码（同步改 config.json 里的 MySQL DSN / object_storage.secret_key）
+#   - 邮箱验证码：config.json 的 gateway.mail，SMTP 密码填在下方 MAIL_PASSWORD
 #   - ingress.yaml 的域名和 ingressClassName
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -31,11 +32,12 @@ secretGenerator:
       - MYSQL_PASSWORD=im-dev
       - RUSTFS_ACCESS_KEY=rustfsadmin
       - RUSTFS_SECRET_KEY=rustfsadmin
+      - MAIL_PASSWORD=
 
 images:
   - name: 870027381/go-im-gateway
-    newTag: "1.2.0"
+    newTag: "1.3.0"
   - name: 870027381/go-im-logic
-    newTag: "1.2.0"
+    newTag: "1.3.0"
   - name: 870027381/go-im-web
-    newTag: "1.2.0"
+    newTag: "1.3.0"
