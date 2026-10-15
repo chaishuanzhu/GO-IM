@@ -11,7 +11,7 @@
 | 标签 | 说明 |
 |------|------|
 | `latest` | 最新发布版本 |
-| `1.3.0` 等 | 固定版本，与 GitHub Release `v1.3.0` 对应，生产环境建议使用 |
+| `1.4.0` 等 | 固定版本，与 GitHub Release `v1.4.0` 对应，生产环境建议使用 |
 | `sha-<commit>` | 某次提交的构建 |
 
 均为多架构镜像：`linux/amd64`、`linux/arm64`。
@@ -26,5 +26,7 @@ docker run -d --name gateway \
 ```
 
 把 `config.json` 里 MySQL、Redis、Kafka、对象存储、Logic 的地址改成你自己的服务；不需要的依赖设 `enabled: false` 或留空地址，对应功能降级为内存实现。
+
+HTTP 接口文档（Swagger UI）在 `http://<host>:8080/swagger/`，由 `stability.swagger_enabled` 控制（默认开启，生产环境建议关闭）。
 
 <!-- DEPLOY -->

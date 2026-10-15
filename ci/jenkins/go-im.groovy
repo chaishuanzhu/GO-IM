@@ -17,6 +17,8 @@
 //   goim-android-signing    Username with password  用户名 = key alias，密码 = keystore / key 密码
 //   goim-macos-devid-p12    Secret file             Developer ID Application 证书 + 私钥（.p12）
 //   goim-macos-devid-password Secret text           上面 .p12 的密码
+//   goim-asc-api-key        Secret file             App Store Connect API Key（.p8），公证用
+//   goim-asc-api-ids        Username with password  用户名 = Key ID，密码 = Issuer ID
 //   github-token            Secret text             可写 Release 的 GitHub token
 //   dockerhub               Username with password  Docker Hub 用户名 + Read & Write access token
 //   k8s-deployer-kubeconfig Secret file             ServiceAccount jenkins/deployer（在 go-im-test 有 edit 权限）
@@ -109,12 +111,15 @@ if (params.BUILD_ANDROID || params.BUILD_DESKTOP || params.BUILD_IOS) {
                         stage('macOS') {
                             if (!params.BUILD_DESKTOP) { echo '跳过'; return }
                             // 签名、DMG、公证见 kmp/ci/macos-sign-notarize.sh（逐个文件重试时间戳）；
-                            // 公证用节点上 asc 已登录的 App Store Connect API Key（asc auth status）
+                            // agent 进程读不到登录钥匙串里 asc 保存的 API Key，公证凭据从 Jenkins 传入
                             withCredentials([
                                 file(credentialsId: 'goim-macos-devid-p12', variable: 'DEVID_P12'),
                                 string(credentialsId: 'goim-macos-devid-password', variable: 'DEVID_P12_PASSWORD'),
+                                file(credentialsId: 'goim-asc-api-key', variable: 'ASC_PRIVATE_KEY_PATH'),
+                                usernamePassword(credentialsId: 'goim-asc-api-ids', usernameVariable: 'ASC_KEY_ID', passwordVariable: 'ASC_ISSUER_ID'),
                             ]) {
                                 sh '''
+                                    export ASC_BYPASS_KEYCHAIN=1
                                     ./gradlew :app:desktop:createDistributable $GRADLE_ARGS -Pgoim.packageJavaHome="$PACKAGE_JAVA_HOME"
                                     bash ci/macos-sign-notarize.sh app/desktop/build/compose/binaries/main/app/GO-IM.app "dist/GO-IM-$VERSION-macos-arm64.dmg"
                                 '''

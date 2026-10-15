@@ -3,7 +3,8 @@
 #
 # 用法：macos-sign-notarize.sh <GO-IM.app> <输出 .dmg>
 # 环境变量：DEVID_P12（Developer ID Application 证书 + 私钥）、DEVID_P12_PASSWORD 必填；
-#           NOTARIZE=false 时只签名不公证。公证用 asc 当前登录的 App Store Connect API Key。
+#           NOTARIZE=false 时只签名不公证。公证用 asc 的 App Store Connect API Key
+#           （asc auth login 保存的，或 ASC_KEY_ID / ASC_ISSUER_ID / ASC_PRIVATE_KEY_PATH）。
 #
 # 不用 Compose / jpackage 自带的签名：它们对每个文件只调用一次 codesign --timestamp，
 # Apple 时间戳服务偶尔超时（约 3% 的请求）就会让整次打包失败，这里逐个文件重试。
