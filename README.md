@@ -1,11 +1,10 @@
 # IM — Go 即时通讯系统
 
-![CI](https://github.com/641-git641/GO-IM/actions/workflows/ci.yml/badge.svg)
 ![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![PRs](https://img.shields.io/badge/PRs-Welcome-8A2BE2)
 
-基于 Go 构建的即时通讯（IM）系统：WebSocket / TCP 双传输协议、单聊 / 群聊、文件上传、全文搜索、消息撤回、多网关集群。客户端为 Kotlin Multiplatform（Android / iOS / macOS / Windows / Linux），Docker 一键部署，GitHub Actions 自动构建验证。
+基于 Go 构建的即时通讯（IM）系统：WebSocket / TCP 双传输协议、单聊 / 群聊、文件上传、全文搜索、消息撤回、多网关集群。客户端为 Kotlin Multiplatform（Android / iOS / macOS / Windows / Linux），Docker 一键部署，Jenkins 持续集成与发布。
 
 ## 架构
 
@@ -182,7 +181,7 @@ im/
 ├── docs/                    # 设计文档、架构图、压测报告
 ├── deploy/                  # 部署：Docker / k8s 清单、init-ssl.sh / nginx.prod.conf / config.prod.json
 ├── ci/jenkins/              # Jenkins 任务脚本（全端构建、发布、部署）
-├── .github/workflows/       # GitHub Actions CI 流水线
+├── .github/workflows/       # GitHub Pages 落地页部署
 ├── docker-compose.yml       # 开发编排（一键部署）
 ├── docker-compose.prod.yml  # 生产编排（SSL 终止 + 自动续期）
 ├── Dockerfile.gateway / .logic
@@ -214,7 +213,7 @@ cd kmp && ./gradlew :app:desktop:run
 ### 运行测试
 
 ```bash
-# 全部单元测试（CI 中带 MySQL 完整跑，见徽章）
+# 全部单元测试（MySQL 未运行时 repo 测试自动跳过；Jenkins go-im-ci 中带 MySQL 完整跑）
 go test ./internal/...
 
 # 集成测试（内存模式，无需外部服务；本地需 Gateway 跑在 :18080）
@@ -330,21 +329,13 @@ message Message {
 
 ## CI/CD
 
-### 持续集成（CI）
+CI/CD 都在 Jenkins（[jenkins.chaisz.com](https://jenkins.chaisz.com)，仅内网），任务脚本与说明见 [ci/jenkins/](ci/jenkins/README.md)。GitHub Actions 只保留落地页部署（`pages.yml`）。
 
-`.github/workflows/ci.yml` —— push main / PR 触发，concurrency 自动取消旧 run。**5 个 job 全部绿色才算通过**：
-
-| Job | 内容 |
-|------|------|
-| `lint` | gofmt 检查 + go vet + go build |
-| `unit` | 单元测试（MySQL 8.4 service container，自动激活 repo 测试） |
-| `integration` | 5 个集成测试（内存模式，无需外部服务） |
-| `kafka` | Kafka Producer→Consumer 端到端（KRaft 单节点） |
-| `docker` | gateway / logic 镜像构建（buildx + GHA 缓存，只构建不推送） |
-
-### 持续部署（CD）
-
-> CD 流水线（[.github/workflows/cd.yml](.github/workflows/cd.yml)：push main → GHCR 镜像 → SSH 部署 + 健康检查）已接入生产服务器（goimchat.site）。需配置 **11 个必配 secrets**：SSH_HOST / SSH_USER / SSH_KEY / SSH_PORT / DOMAIN / JWT_SECRET / MYSQL_ROOT_PASSWORD / MYSQL_PASSWORD / RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY / ADMIN_UID（旧名 MINIO_ROOT_USER / MINIO_SECRET_KEY 仍兼容）。**GHCR_USER / GHCR_TOKEN 可选**——镜像公开时匿名拉取即可，配了才执行 `docker login`（镜像转私有后按需补）。
+| 任务 | 触发 | 内容 |
+|------|------|------|
+| `go-im-ci` | 每 5 分钟轮询 main，有新提交才构建 | gofmt / vet / build、单元测试（MySQL 8.4）、Kafka 端到端、5 个集成测试、gateway / logic 镜像构建；KMP `./gradlew check`（含 iOS 模拟器单测） |
+| `go-im` | 推送 `vX.Y.Z` tag（由 `go-im-tags` 轮询启动） | 全端安装包 → GitHub Release，镜像 → Docker Hub，部署测试环境，再部署生产 |
+| `go-im-server` | 手动 | 任意分支的服务端镜像（`sha-<7>`）部署到测试环境 |
 
 ## 生产部署
 
@@ -382,7 +373,7 @@ RUSTFS_SECRET_KEY=<RustFS 密码>
 EOF
 
 # 3. 渲染生产配置（生成 gitignore 的 configs/config.prod.generated.json；
-#    与 CD 流水线同一渲染管线。注意 MYSQL_PASSWORD / RUSTFS_SECRET_KEY
+#    注意 MYSQL_PASSWORD / RUSTFS_SECRET_KEY
 #    必须与第 2 步 .env 一致——应用即用管理员凭据访问 RustFS）
 DOMAIN=your-domain.com \
 JWT_SECRET=$(openssl rand -base64 64) \
@@ -391,8 +382,7 @@ RUSTFS_SECRET_KEY=<RustFS 密码> \
 ADMIN_UID=<你的 UID> \
 bash deploy/render-config.sh
 
-# 4. 启动（本地构建镜像，2 核机器首次约 5-10 分钟；
-#    之后可配 GHCR 凭据改用 docker compose -f docker-compose.prod.yml -f docker-compose.cd.yml pull + up -d）
+# 4. 启动（本地构建镜像，2 核机器首次约 5-10 分钟）
 docker compose -f docker-compose.prod.yml up -d
 
 # 5. 验证
@@ -434,11 +424,11 @@ curl -s localhost:8080/metrics | grep '^im_'   # im_online_connections / im_mess
 生产栈含 `alloy` 服务（[deploy/alloy.config.alloy](deploy/alloy.config.alloy)），抓取 `gateway:8080/metrics`（compose 内网）并 remote-write 到 Grafana Cloud 免费版：
 
 1. 注册 [Grafana Cloud 免费账号](https://grafana.com/products/cloud/) → 创建 Prometheus 实例，记下 **Remote Write Endpoint / 实例 ID / token**
-2. 在 GitHub 仓库 Settings → Secrets 加 3 个 secret：`GRAFANA_CLOUD_URL` / `GRAFANA_CLOUD_USER`（实例 ID）/ `GRAFANA_CLOUD_TOKEN`
-3. 推送 main（或手动触发 CD）重部署，alloy 自动开始上报
+2. 在服务器的 `.env` 中加 `GRAFANA_CLOUD_URL` / `GRAFANA_CLOUD_USER`（实例 ID）/ `GRAFANA_CLOUD_TOKEN`
+3. `docker compose -f docker-compose.prod.yml up -d alloy`，alloy 自动开始上报
 4. 在 Grafana Cloud 导入 [deploy/grafana-dashboard.json](deploy/grafana-dashboard.json)，数据源选 Prometheus
 
-> 未配置 3 个 secrets 时 alloy 空转，不影响主栈与 CD 健康检查。
+> 未配置这 3 个变量时 alloy 空转，不影响主栈。
 
 ### 结构化日志
 
@@ -459,7 +449,7 @@ curl -s localhost:8080/metrics | grep '^im_'   # im_online_connections / im_mess
 | 认证 | JWT HS256 + bcrypt |
 | 反向代理 | nginx（SSL 终止，单机生产编排） |
 | 容器化 | Docker + Docker Compose |
-| 持续集成 | GitHub Actions（5 jobs）+ Jenkins（全端构建发布） |
+| CI/CD | Jenkins（持续集成、全端构建发布、测试 / 生产部署） |
 | 可观测性 | Prometheus（client_golang）+ Grafana Cloud（可选） |
 
 ## 文档

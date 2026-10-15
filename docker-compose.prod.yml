@@ -134,10 +134,10 @@ services:
   # =========================================================================
   # 抓取 gateway:8080/metrics(compose 内网),经 Prometheus remote-write 推送
   # 到 Grafana Cloud 免费版。未配置 GRAFANA_CLOUD_URL/USER/TOKEN 时 alloy
-  # 无法建立 remote-write 目标,会报错重启循环 —— 但不影响主栈,CD 健康检查
-  # 只查 gateway /health。配置 3 个 secret 后 CD 重跑即恢复。
+  # 无法建立 remote-write 目标,会报错重启循环 —— 但不影响主栈。
+  # 在 .env 配好这 3 个变量后重新 up -d alloy 即恢复。
   # 接入步骤(一次性):注册 Grafana Cloud 免费账号 → Prometheus 实例的
-  # Remote Write Endpoint / 实例 ID / token → 填入 GitHub secrets。
+  # Remote Write Endpoint / 实例 ID / token → 填入服务器 .env。
   alloy:
     image: grafana/alloy:latest
     container_name: im-alloy

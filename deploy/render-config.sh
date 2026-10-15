@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# IM 项目 — 生产配置渲染脚本(CD 专用)
+# IM 项目 — 生产配置渲染脚本(docker-compose.prod.yml 单机部署用)
 #
 # 用途: 将 deploy/config.prod.json 模板中的占位符替换为真实值,
 #       输出 configs/config.prod.generated.json(gitignore,不会误提交)。
 #
-# 依赖环境变量(由 cd.yml 的 render 步骤注入 secrets):
+# 依赖环境变量:
 #   DOMAIN           站点域名 → check_origin(证书域名一致)
 #   JWT_SECRET       登录令牌签名密钥(openssl rand -base64 64 生成)
 #   MYSQL_PASSWORD   应用连 MySQL 的密码 → DSN(须与服务器 .env 的 MYSQL_PASSWORD 一致)
@@ -15,7 +15,7 @@
 #
 # 注意:
 #   1. 渲染目标为 gitignore 的 configs/config.prod.generated.json,
-#      手动部署与 CD 流水线共用该产物(prod compose 的 CONFIG_PATH 即指向它)。
+#      prod compose 的 CONFIG_PATH 即指向它。
 #   2. dev 环境不受影响,仍用 configs/config.docker.json。
 # =============================================================================
 
@@ -28,7 +28,7 @@ DST="configs/config.prod.generated.json"
 REQUIRED=(DOMAIN JWT_SECRET MYSQL_PASSWORD RUSTFS_SECRET_KEY ADMIN_UID)
 for v in "${REQUIRED[@]}"; do
     if [ -z "${!v:-}" ]; then
-        echo "ERROR: 缺少环境变量 $v(cd.yml 未注入对应 secret?)" >&2
+        echo "ERROR: 缺少环境变量 $v" >&2
         exit 1
     fi
 done

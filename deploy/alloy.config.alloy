@@ -7,7 +7,7 @@
 //           (docker-compose.prod.yml 的 .env)。
 //
 // 注意: 三个 env 未配置时 Alloy 无法解析 remote-write 目标,容器会报错
-//       重启循环 —— 不影响主栈与 CD 健康检查;配好 secret 后 CD 重跑即恢复。
+//       重启循环 —— 不影响主栈;在 .env 配好后重新 up -d alloy 即恢复。
 
 // 从网关抓取指标。
 prometheus.scrape "im_gateway" {
