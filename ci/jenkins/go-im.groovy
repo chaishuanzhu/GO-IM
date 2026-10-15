@@ -1,5 +1,5 @@
 // Jenkins 任务 go-im 的任务脚本（Pipeline script，非 SCM）：全端构建并发布。
-//   node-mac   Android APK、macOS DMG、iOS 未签名 IPA
+//   node-mac   Android APK、macOS DMG（Developer ID 签名 + 公证）、iOS 未签名 IPA
 //   win-host   Windows MSI（jpackage 只能在目标系统上打包）
 //   ci-01      Linux DEB（容器内构建）；服务端 gateway / logic 多架构镜像推送 Docker Hub
 //   最后在 node-mac 汇总产物发布到 GitHub Release（tag v<VERSION>，已存在则覆盖同名产物）
@@ -15,6 +15,8 @@
 // Jenkins 凭据：
 //   goim-android-keystore   Secret file             Android release keystore
 //   goim-android-signing    Username with password  用户名 = key alias，密码 = keystore / key 密码
+//   goim-macos-devid-p12    Secret file             Developer ID Application 证书 + 私钥（.p12）
+//   goim-macos-devid-password Secret text           上面 .p12 的密码
 //   github-token            Secret text             可写 Release 的 GitHub token
 //   dockerhub               Username with password  Docker Hub 用户名 + Read & Write access token
 //   k8s-deployer-kubeconfig Secret file             ServiceAccount jenkins/deployer（在 go-im-test 有 edit 权限）
@@ -106,10 +108,17 @@ if (params.BUILD_ANDROID || params.BUILD_DESKTOP || params.BUILD_IOS) {
                         }
                         stage('macOS') {
                             if (!params.BUILD_DESKTOP) { echo '跳过'; return }
-                            sh '''
-                                ./gradlew :app:desktop:packageDmg $GRADLE_ARGS -Pgoim.packageJavaHome="$PACKAGE_JAVA_HOME"
-                                cp app/desktop/build/compose/binaries/main/dmg/GO-IM-$VERSION.dmg "dist/GO-IM-$VERSION-macos-arm64.dmg"
-                            '''
+                            // 签名、DMG、公证见 kmp/ci/macos-sign-notarize.sh（逐个文件重试时间戳）；
+                            // 公证用节点上 asc 已登录的 App Store Connect API Key（asc auth status）
+                            withCredentials([
+                                file(credentialsId: 'goim-macos-devid-p12', variable: 'DEVID_P12'),
+                                string(credentialsId: 'goim-macos-devid-password', variable: 'DEVID_P12_PASSWORD'),
+                            ]) {
+                                sh '''
+                                    ./gradlew :app:desktop:createDistributable $GRADLE_ARGS -Pgoim.packageJavaHome="$PACKAGE_JAVA_HOME"
+                                    bash ci/macos-sign-notarize.sh app/desktop/build/compose/binaries/main/app/GO-IM.app "dist/GO-IM-$VERSION-macos-arm64.dmg"
+                                '''
+                            }
                         }
                         stage('iOS') {
                             if (!params.BUILD_IOS) { echo '跳过'; return }
@@ -261,7 +270,7 @@ stage('Publish') {
 
             def platforms = [
                 'android.apk': 'Android 8.0+',
-                'macos-arm64.dmg': 'macOS（Apple Silicon，未公证：首次打开需右键 → 打开）',
+                'macos-arm64.dmg': 'macOS（Apple Silicon，已签名并公证）',
                 'ios-unsigned.ipa': 'iOS 16+，未签名，需自行重签名或侧载',
                 'windows-x64.msi': 'Windows 10/11 x64（未签名：SmartScreen 提示时选「仍要运行」）',
                 'linux-amd64.deb': 'Debian / Ubuntu x64（`sudo apt install ./GO-IM-*.deb`）',

@@ -36,7 +36,7 @@ notes="GO-IM KMP 客户端 ${VERSION}（commit ${GIT_COMMIT:0:7}，Jenkins #${BU
 | 文件 | 平台 |
 |------|------|
 | \`GO-IM-${VERSION}-android.apk\` | Android 8.0+ |
-| \`GO-IM-${VERSION}-macos-arm64.dmg\` | macOS（Apple Silicon，未公证：首次打开需右键 → 打开） |
+| \`GO-IM-${VERSION}-macos-arm64.dmg\` | macOS（Apple Silicon，已签名并公证） |
 | \`GO-IM-${VERSION}-ios-unsigned.ipa\` | iOS 16+，未签名，需自行重签名或侧载 |"
 
 # 查询失败也可能只是网络问题：创建失败（含「已存在」）时下一轮重新查询

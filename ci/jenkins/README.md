@@ -58,11 +58,23 @@
 |------|------|------|
 | `goim-android-keystore` | Secret file | Android release keystore |
 | `goim-android-signing` | Username with password | 用户名 = key alias，密码 = keystore / key 密码 |
+| `goim-macos-devid-p12` | Secret file | Developer ID Application 证书 + 私钥（.p12），macOS DMG 签名用（见下文「macOS 签名与公证」） |
+| `goim-macos-devid-password` | Secret text | 上面 .p12 的密码 |
 | `github-token` | Secret text | 创建 / 编辑 GitHub Release |
 | `dockerhub` | Username with password | Docker Hub 用户名 + Read & Write access token |
 | `k8s-deployer-kubeconfig` | Secret file | ServiceAccount `jenkins/deployer`（在 `go-im-test` 有 edit 权限） |
 | `goim-prod-ssh` | SSH Username with private key | 生产服务器的 root 密钥，只能执行部署脚本（见下文） |
 | `goim-prod-target` | Secret file | 生产地址，shell 变量 `PROD_HOST`、`PROD_HOST_KEY`、`PROD_URL`（见下文） |
+
+## macOS 签名与公证
+
+`go-im` 的 macOS 阶段：`createDistributable` 产出未签名的 .app，再由 [kmp/ci/macos-sign-notarize.sh](../../kmp/ci/macos-sign-notarize.sh) 把 `goim-macos-devid-p12` 导入临时钥匙串 → 以 Developer ID + hardened runtime 由内到外签名（含 jar 内的原生库，entitlements 见 `kmp/app/desktop/macos/entitlements.plist`）→ 打 DMG 并签名 → `asc notarization submit --wait` 公证 → `stapler staple` → `spctl` 校验。任何一步失败构建即失败，不会发布未公证的 DMG。
+
+不用 Compose 自带的签名：节点到 Apple 时间戳服务约 3% 的请求会超时，Compose / jpackage 对每个文件只试一次，几十个文件下来几乎必然失败；脚本对每个文件、以及公证上传都会重试。本地验证：`DEVID_P12=… DEVID_P12_PASSWORD=… bash ci/macos-sign-notarize.sh app/desktop/build/compose/binaries/main/app/GO-IM.app /tmp/GO-IM.dmg`（`NOTARIZE=false` 只签名）。
+
+- **公证凭据**：使用 `node-mac` 上 `asc` 已登录的 App Store Connect API Key（Jenkins agent 以同一用户运行），`asc auth status` 可查看。换 Key 后在节点上重新 `asc auth login`。
+- **证书**：Developer ID Application 证书只能由团队 Account Holder 在 [Certificates](https://developer.apple.com/account/resources/certificates/add) 创建（API Key 无权创建）。有效期 5 年；更换后重新导出 .p12（证书 + 私钥）更新上面两个凭据。
+- **公证失败**：构建日志会打印 `asc notarization log` 的结果；常见原因是未签名的内嵌二进制或缺少 hardened runtime。
 
 ## 生产环境
 
