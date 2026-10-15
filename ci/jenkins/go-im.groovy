@@ -4,18 +4,24 @@
 //   ci-01      Linux DEB（容器内构建）；服务端 gateway / logic 与 Web 前端多架构镜像推送 Docker Hub
 //   最后在 node-mac 汇总产物发布到 GitHub Release（tag v<VERSION>，已存在则覆盖同名产物）
 //   镜像推送后把 <VERSION> 镜像部署到 k8s 测试环境 go-im-test（https://test-go-im.chaisz.com）
+//   TAG 构建在测试环境通过后再部署生产（docker compose，仅 gateway；地址见凭据 goim-prod-target）
 // 各节点各自检出同一个提交；Jenkins 控制器到 GitHub 的网络不稳定，控制器上不做检出。
 // 自动触发：任务 go-im-tags 轮询 GitHub，发现新的 v<版本> tag 就以 TAG 参数启动本任务。
 //
 // 任务参数：TAG（v<版本>，设置后版本号和提交取自 tag，忽略 BRANCH / VERSION）、BRANCH、VERSION、
 //           BUILD_ANDROID、BUILD_DESKTOP（macOS）、BUILD_IOS、BUILD_WINDOWS、BUILD_LINUX、
-//           BUILD_IMAGES、DOCKERHUB_NAMESPACE（留空 = Docker Hub 凭据的用户名）、PUBLISH、PRERELEASE、DEPLOY_TEST
+//           BUILD_IMAGES、DOCKERHUB_NAMESPACE（留空 = Docker Hub 凭据的用户名）、PUBLISH、PRERELEASE、DEPLOY_TEST、
+//           DEPLOY_PROD（只对 TAG 构建生效）
 // Jenkins 凭据：
 //   goim-android-keystore   Secret file             Android release keystore
 //   goim-android-signing    Username with password  用户名 = key alias，密码 = keystore / key 密码
 //   github-token            Secret text             可写 Release 的 GitHub token
 //   dockerhub               Username with password  Docker Hub 用户名 + Read & Write access token
 //   k8s-deployer-kubeconfig Secret file             ServiceAccount jenkins/deployer（在 go-im-test 有 edit 权限）
+//   goim-prod-ssh           SSH Username with private key  生产服务器 root，authorized_keys 限定只能执行
+//                                                   /root/docker/go-im/deploy.sh（即 ci/jenkins/prod-deploy.sh）
+//   goim-prod-target        Secret file             shell 变量：PROD_HOST、PROD_HOST_KEY（known_hosts 中的
+//                                                   "类型 公钥"）、PROD_URL（生产站点根地址）
 
 def repoUrl = 'https://github.com/chaishuanzhu/GO-IM.git'
 def gitTag = params.TAG?.trim() ?: ''
@@ -36,6 +42,8 @@ def gradleArgs = "--console=plain --no-daemon --no-configuration-cache -Pgoim.ve
 def commit = ''
 def images = []
 def imageNs = ''
+// 生产 docker-compose.yml 写死了这个命名空间的 gateway 镜像
+def prodImageNs = '870027381'
 
 def checkoutCommit(String repoUrl, String commit) {
     def ref = params.TAG?.trim() ? "refs/tags/${params.TAG.trim()}" : "refs/heads/${params.BRANCH}"
@@ -326,5 +334,43 @@ stage('Deploy test') {
             exit 1
         '''
         currentBuild.description += ' → go-im-test'
+    }
+}
+
+stage('Deploy prod') {
+    if (!gitTag || !params.DEPLOY_PROD || imageNs != prodImageNs) {
+        echo !gitTag ? '非 TAG 构建，不部署生产' :
+            !params.DEPLOY_PROD ? '跳过生产部署' :
+            imageNs ? "镜像推送到 ${imageNs} 而非 ${prodImageNs}，跳过生产部署" : '本次未推送镜像，跳过生产部署'
+        return
+    }
+    node('docker') {
+        // 生产地址只在凭据里；set +x 并丢弃 ssh / curl 的错误输出，避免地址出现在构建日志中
+        withCredentials([
+            sshUserPrivateKey(credentialsId: 'goim-prod-ssh', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER'),
+            file(credentialsId: 'goim-prod-target', variable: 'PROD_TARGET'),
+        ]) {
+            withEnv(["TAG=${version}"]) {
+                sh '''
+                    set +x -eu
+                    . "$PROD_TARGET"
+                    kh="$(mktemp)"
+                    trap 'rm -f "$kh"' EXIT
+                    echo "$PROD_HOST $PROD_HOST_KEY" > "$kh"
+                    rc=0
+                    ssh -i "$SSH_KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 -o LogLevel=QUIET \
+                        -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$kh" "$SSH_USER@$PROD_HOST" "$TAG" || rc=$?
+                    [ "$rc" -eq 0 ] || { echo "生产部署失败（ssh / deploy.sh 退出码 $rc）"; exit 1; }
+
+                    for i in $(seq 1 12); do
+                        out=$(curl -fsS --max-time 10 "$PROD_URL/health" 2>/dev/null) && echo "$out" | grep -q '"status":"ok"' && { echo "$out"; exit 0; }
+                        sleep 5
+                    done
+                    echo "生产健康检查失败"
+                    exit 1
+                '''
+            }
+        }
+        currentBuild.description += ' → prod'
     }
 }
