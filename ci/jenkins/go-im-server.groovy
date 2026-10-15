@@ -1,7 +1,7 @@
 // Jenkins job go-im-server (Pipeline script, not SCM): build, publish and deploy the GO-IM server side.
-//   Images  ci-01: gateway / logic / web images of one commit, tagged sha-<7>, pushed to Docker Hub
-//           (skipped when all three tags already exist, unless REBUILD)
-//   Deploy  ci-01: kubectl set image in namespace go-im-test (logic -> gateway -> web, each waits for its rollout),
+//   Images  ci-01: gateway / logic images of one commit, tagged sha-<7>, pushed to Docker Hub
+//           (skipped when both tags already exist, unless REBUILD)
+//   Deploy  ci-01: kubectl set image in namespace go-im-test (logic -> gateway, each waits for its rollout),
 //           rolls back on failure, then checks https://test-go-im.chaisz.com/health
 // Release builds (version tags, installers) stay in go-im. Infra, config Secret and manifests: scripts/17-goim-test.ps1.
 //
@@ -35,13 +35,13 @@ stage('Images') {
                 imageNs = params.DOCKERHUB_NAMESPACE?.trim() ?: env.DH_USER
                 withEnv(["NS=${imageNs}", "TAG=${tag}", "COMMIT=${commit}", "PLATFORMS=${params.PLATFORMS}"]) {
                     sh 'echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin'
-                    def missing = params.REBUILD ? 'gateway logic web' : sh(returnStdout: true, script: '''
-                        for n in gateway logic web; do
+                    def missing = params.REBUILD ? 'gateway logic' : sh(returnStdout: true, script: '''
+                        for n in gateway logic; do
                             docker buildx imagetools inspect "$NS/go-im-$n:$TAG" >/dev/null 2>&1 || printf '%s ' "$n"
                         done
                     ''').trim()
                     if (!missing) {
-                        echo "${imageNs}/go-im-{gateway,logic,web}:${tag} 已存在，跳过构建"
+                        echo "${imageNs}/go-im-{gateway,logic}:${tag} 已存在，跳过构建"
                         return
                     }
                     deleteDir()
@@ -56,19 +56,14 @@ stage('Images') {
                     withEnv(["MISSING=${missing}"]) {
                         sh '''
                             set -eu
-                            # Compile on the build host's architecture (Go cross-compiles by TARGETARCH, the web bundle is
-                            # architecture independent) instead of running go build / npm under QEMU for arm64.
+                            # Compile on the build host's architecture (Go cross-compiles by TARGETARCH) instead of
+                            # running go build under QEMU for arm64.
                             for f in Dockerfile.gateway Dockerfile.logic; do
                                 sed -i -E 's#^FROM golang:([^ ]+) AS builder#FROM --platform=$BUILDPLATFORM golang:\\1 AS builder\\nARG TARGETOS TARGETARCH#' "$f"
                                 sed -i -E 's#CGO_ENABLED=0 go build#CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build#' "$f"
                             done
-                            sed -i -E 's#^FROM node:([^ ]+) AS builder#FROM --platform=$BUILDPLATFORM node:\\1 AS builder#' Dockerfile.frontend
                             for name in $MISSING; do
-                                case "$name" in
-                                    gateway) file=Dockerfile.gateway ;;
-                                    logic)   file=Dockerfile.logic ;;
-                                    web)     file=Dockerfile.frontend ;;
-                                esac
+                                file=Dockerfile.$name
                                 for i in 1 2 3; do
                                     docker buildx build --platform "$PLATFORMS" -f "$file" \
                                         --label org.opencontainers.image.source=https://github.com/chaishuanzhu/GO-IM \
@@ -101,7 +96,7 @@ stage('Deploy') {
                     set -eu
                     k() { kubectl -n "$K8S_NS" "$@"; }
                     done_list=""
-                    for d in logic gateway web; do
+                    for d in logic gateway; do
                         k set image "deployment/$d" "$d=$NS/go-im-$d:$TAG"
                         done_list="$done_list $d"
                         if ! k rollout status "deployment/$d" --timeout=5m; then

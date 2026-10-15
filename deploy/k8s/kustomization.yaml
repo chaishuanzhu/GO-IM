@@ -18,7 +18,6 @@ resources:
   - rustfs.yaml
   - logic.yaml
   - gateway.yaml
-  - web.yaml
   - ingress.yaml
 
 # 名字带内容哈希，修改后 apply 会自动滚动重启引用它的 Pod。
@@ -38,6 +37,4 @@ images:
   - name: 870027381/go-im-gateway
     newTag: "1.3.0"
   - name: 870027381/go-im-logic
-    newTag: "1.3.0"
-  - name: 870027381/go-im-web
     newTag: "1.3.0"

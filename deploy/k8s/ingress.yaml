@@ -1,4 +1,4 @@
-# /ws 和 /upload 直达 Gateway（长连接、大请求体），其余经 web 容器的 nginx；oss 子域直达 RustFS。
+# 主域名全部直达 Gateway（API、/ws 长连接、/upload 大请求体）；oss 子域直达 RustFS。
 # nginx.ingress.kubernetes.io/* 注解只对 ingress-nginx 生效，其它控制器会忽略。
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -17,22 +17,14 @@ spec:
     - host: im.example.com
       http:
         paths:
-          - path: /ws
-            pathType: Prefix
-            backend:
-              service: { name: gateway, port: { name: http } }
-          - path: /upload
-            pathType: Prefix
-            backend:
-              service: { name: gateway, port: { name: http } }
           - path: /
             pathType: Prefix
             backend:
-              service: { name: web, port: { name: http } }
+              service: { name: gateway, port: { name: http } }
 ---
 # 文件直传入口：客户端用预签名 URL 直接 PUT/GET RustFS。
 # 启用时把 config.json 的 object_storage.public_endpoint 设为 https://oss.example.com，
-# cors_allowed_origins 设为 Web 站点来源（如 https://im.example.com）。
+# 原生客户端不受 CORS 限制，cors_allowed_origins 可留空。
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

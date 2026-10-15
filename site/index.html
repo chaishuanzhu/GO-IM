@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GO-IM — 用 Go 构建的开源即时通讯系统</title>
-<meta name="description" content="GO-IM：基于 Go 的开源即时通讯系统。WebSocket / TCP 双协议、单聊群聊、消息撤回、全文搜索、多网关集群，提供 Android、iOS、macOS 与 Web 客户端。">
+<meta name="description" content="GO-IM：基于 Go 的开源即时通讯系统。WebSocket / TCP 双协议、单聊群聊、消息撤回、全文搜索、多网关集群，提供 Android、iOS、macOS、Windows 与 Linux 客户端。">
 <meta property="og:title" content="GO-IM — 用 Go 构建的开源即时通讯系统">
-<meta property="og:description" content="WebSocket / TCP 双协议、单聊群聊、多网关集群；Android、iOS、macOS、Web 全平台客户端。">
+<meta property="og:description" content="WebSocket / TCP 双协议、单聊群聊、多网关集群；Android、iOS、macOS、Windows、Linux 全平台客户端。">
 <meta property="og:image" content="assets/desktop.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%23415F91'/><path d='M18 20h28a4 4 0 0 1 4 4v14a4 4 0 0 1-4 4H30l-8 7v-7h-4a4 4 0 0 1-4-4V24a4 4 0 0 1 4-4z' fill='white'/></svg>">
 <style>
@@ -128,9 +128,10 @@
 
   /* 下载 */
   #download { background: var(--surface-2); }
-  .downloads { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  @media (max-width: 900px) { .downloads { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 560px) { .downloads { grid-template-columns: 1fr; } }
+  .downloads { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }
+  .downloads .dl { flex: 0 1 calc((100% - 40px) / 3); }
+  @media (max-width: 900px) { .downloads .dl { flex-basis: calc((100% - 20px) / 2); } }
+  @media (max-width: 560px) { .downloads .dl { flex-basis: 100%; } }
   .dl {
     display: flex; flex-direction: column; gap: 14px; padding: 28px;
     background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
@@ -207,7 +208,6 @@
   <symbol id="i-windows" viewBox="0 0 24 24"><path d="M3 5.5l7.4-1v7H3v-6zm8.4-1.15L21 3v8.5h-9.6V4.35zM3 12.5h7.4v7L3 18.5v-6zm8.4 0H21V21l-9.6-1.35V12.5z"/></symbol>
   <symbol id="i-terminal" viewBox="0 0 24 24"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H4V8h16v10zM6.5 10.5l1.06-1.06L11.12 13l-3.56 3.56-1.06-1.06L9 13l-2.5-2.5zM12 15h5v1.5h-5V15z"/></symbol>
   <symbol id="i-phone" viewBox="0 0 24 24"><path d="M16 1H8a3 3 0 0 0-3 3v16a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3V4a3 3 0 0 0-3-3zm-4 21a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5-5H7V4h10v13z"/></symbol>
-  <symbol id="i-web" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm6.93 6h-2.95a15.7 15.7 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.93 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14a8.2 8.2 0 0 1 0-4h3.38a16.5 16.5 0 0 0 0 4H4.26zm.81 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 0 1 5.07 16zm2.95-8H5.07a7.99 7.99 0 0 1 4.33-3.56A15.7 15.7 0 0 0 8.02 8zM12 19.96A14.1 14.1 0 0 1 10.09 16h3.82A14.1 14.1 0 0 1 12 19.96zM14.34 14H9.66a14.7 14.7 0 0 1 0-4h4.68a14.7 14.7 0 0 1 0 4zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56zM16.36 14a16.5 16.5 0 0 0 0-4h3.38a8.2 8.2 0 0 1 0 4h-3.38z"/></symbol>
   <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z"/></symbol>
   <symbol id="i-group" viewBox="0 0 24 24"><path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm-8 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05A4.2 4.2 0 0 1 17 16.5V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></symbol>
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62A7.95 7.95 0 0 1 12.5 10.5c3.54 0 6.55 2.31 7.6 5.5l2.37-.78A10.5 10.5 0 0 0 12.5 8z"/></symbol>
@@ -291,13 +291,6 @@
           <p class="note">未签名 IPA，需使用 AltStore、Sideloadly 等工具自签安装。</p>
           <a class="btn btn-primary" data-asset="-ios-unsigned.ipa" href="https://github.com/chaishuanzhu/GO-IM/releases"><svg><use href="#i-download"/></svg>下载 IPA</a>
         </article>
-        <article class="dl">
-          <div class="dl-icon"><svg><use href="#i-web"/></svg></div>
-          <h3>Web</h3>
-          <p class="meta">无需安装</p>
-          <p class="note">在浏览器中直接使用 React 网页版，与各客户端消息实时互通。</p>
-          <a class="btn btn-outline" href="https://im.chaisz.com/"><svg><use href="#i-web"/></svg>打开网页版</a>
-        </article>
       </div>
       <p class="release-info" id="release-info">
         所有版本与校验和见 <a href="https://github.com/chaishuanzhu/GO-IM/releases">GitHub Releases</a>
@@ -333,7 +326,7 @@
         <p>接入层只管连接与路由，持久化通过 Kafka 异步完成，热路径不被存储拖慢。</p>
       </div>
       <div class="arch">
-        <div class="tier"><div class="name">客户端</div><div class="chips"><span class="chip">Kotlin Multiplatform</span><span class="chip">Compose Multiplatform</span><span class="chip">SwiftUI</span><span class="chip">React</span></div></div>
+        <div class="tier"><div class="name">客户端</div><div class="chips"><span class="chip">Kotlin Multiplatform</span><span class="chip">Compose Multiplatform</span></div></div>
         <div class="arrow">WebSocket / TCP · Protobuf</div>
         <div class="tier"><div class="name">Gateway</div><div class="chips"><span class="chip">gorilla/websocket</span><span class="chip">gnet</span><span class="chip">JWT</span><span class="chip">限流 · 去重 · ACK</span><span class="chip">一致性哈希</span></div></div>
         <div class="arrow">gRPC · Kafka</div>

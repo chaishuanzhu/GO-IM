@@ -6,8 +6,7 @@
 # 清理:  docker-compose down -v
 #
 # 架构:
-#   nginx (:80)     → 前端静态资源 + API/WS 反向代理
-#   gateway (:8080)  → 连接层 (WebSocket/TCP) + HTTP API
+#   gateway (:8080)  → 连接层 (WebSocket/TCP) + HTTP API，客户端直连
 #   logic (:50051)   → 业务层 (gRPC) + Kafka consumer
 #   mysql / redis / kafka / rustfs → 数据层
 
@@ -155,25 +154,6 @@ services:
         condition: service_healthy
       logic:
         condition: service_started
-    restart: unless-stopped
-
-  # -----------------------------------------------------------------------
-  # 前端
-  # -----------------------------------------------------------------------
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-      args:
-        HTTP_PROXY: ${HTTP_PROXY:-}
-        HTTPS_PROXY: ${HTTPS_PROXY:-}
-        NO_PROXY: ${NO_PROXY:-}
-    container_name: im-frontend
-    ports:
-      - "80:80"        # 浏览器直接访问 http://localhost
-    depends_on:
-      - gateway
     restart: unless-stopped
 
   # -----------------------------------------------------------------------

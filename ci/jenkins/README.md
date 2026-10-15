@@ -6,7 +6,7 @@
 
 | 任务 | 脚本 | 触发 | 作用 |
 |------|------|------|------|
-| `go-im` | [go-im.groovy](go-im.groovy) | 手动；或由 `go-im-tags` 以 `TAG` 参数启动 | 全端客户端构建（Android / macOS / iOS / Windows / Linux）、服务端与 Web 镜像推送 Docker Hub、发布 GitHub Release `v<VERSION>`、部署 k8s 测试环境；`TAG` 构建再部署生产环境 |
+| `go-im` | [go-im.groovy](go-im.groovy) | 手动；或由 `go-im-tags` 以 `TAG` 参数启动 | 全端客户端构建（Android / macOS / iOS / Windows / Linux）、服务端镜像推送 Docker Hub、发布 GitHub Release `v<VERSION>`、部署 k8s 测试环境；`TAG` 构建再部署生产环境 |
 | `go-im-tags` | [go-im-tags.groovy](go-im-tags.groovy) | 定时轮询 `H/3 * * * *` | 发现新的 `v<MAJOR.MINOR.PATCH>` tag 时启动 `go-im` |
 | `go-im-server` | [go-im-server.groovy](go-im-server.groovy) | 手动 | 只构建服务端镜像（tag `sha-<7>`）并部署测试环境 |
 
@@ -15,8 +15,8 @@
 `go-im` 的所有产物都取自 **tag 指向的提交**：镜像、安装包，以及同步到 Docker Hub Overview 的 `deploy/dockerhub/*.md` + `deploy/README.md`。tag 之后才合入的文档不会出现在这次发布里，只能等下一次发布。因此顺序固定为：**改文档 → 合入 main → 在 main 上打 tag → 自动构建**。
 
 1. **改文档、改版本号**（在功能分支上）。把下列文件中的上一个版本号改成新版本（`rg -n '\b<上一版本>\b' deploy` 可列出）：
-   - `deploy/dockerhub/{gateway,logic,web}.md`：「`X.Y.Z` 等 … GitHub Release `vX.Y.Z`」
-   - `deploy/k8s/kustomization.yaml`：三个镜像的 `newTag`
+   - `deploy/dockerhub/{gateway,logic}.md`：「`X.Y.Z` 等 … GitHub Release `vX.Y.Z`」
+   - `deploy/k8s/kustomization.yaml`：两个镜像的 `newTag`
    - `deploy/README.md`、`deploy/docker/docker-compose*.yml`：`GOIM_TAG` 示例
    - 落地页 / Docker Hub 文案如有新功能，一并更新 `site/index.html`、`deploy/dockerhub/*.md`
 2. **合入 main 并推送**。main 上 `site/**` 有变更时 Pages 工作流会自动重新部署落地页。
@@ -31,8 +31,8 @@
 4. **等自动构建，不要再手动启动 `go-im`**。`go-im-tags` 最多 3 分钟内发现新 tag，以 `TAG=v1.2.0` 启动 `go-im`（全端约 12 分钟）。再手动以同一 TAG 启动会重复构建、覆盖 Release 产物并再次部署（含生产）。测试环境部署失败时不会部署生产。
 5. **核对**：
    - [GitHub Release](https://github.com/chaishuanzhu/GO-IM/releases) `v1.2.0`：APK / DMG / MSI / DEB / IPA + `SHA256SUMS.txt`（发布脚本见 [kmp/ci/publish-github-release.sh](../../kmp/ci/publish-github-release.sh)，说明自动生成）
-   - Docker Hub `go-im-{gateway,logic,web}`：`1.2.0` 与 `latest` 标签，Overview 为新文档（[deploy/dockerhub/sync-readme.sh](../../deploy/dockerhub/sync-readme.sh) 同步，失败只告警不影响构建，需看构建日志里的「overview 已更新」）
-   - 测试环境 <https://test-go-im.chaisz.com/health> 正常，三个 Deployment 镜像为 `1.2.0`
+   - Docker Hub `go-im-{gateway,logic}`：`1.2.0` 与 `latest` 标签，Overview 为新文档（[deploy/dockerhub/sync-readme.sh](../../deploy/dockerhub/sync-readme.sh) 同步，失败只告警不影响构建，需看构建日志里的「overview 已更新」）
+   - 测试环境 <https://test-go-im.chaisz.com/health> 正常，`logic` / `gateway` 两个 Deployment 镜像为 `1.2.0`
    - 生产环境：构建描述以「→ prod」结尾，`Deploy prod` 阶段日志里的健康检查为 `"status":"ok"`（见下文「生产环境」）
    - 落地页（[site/](../../site/)）显示「当前版本 1.2.0」：页面运行时读取最新的 `v*` Release，无需为发布重新部署
 

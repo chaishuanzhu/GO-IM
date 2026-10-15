@@ -1,9 +1,9 @@
 # 15 — KMP + Compose Multiplatform 跨平台客户端技术文档
 
 > 目标：用 **Kotlin Multiplatform（KMP）+ Compose Multiplatform（CMP）** 构建一套跨平台 IM 客户端，**功能对标当前 iOS（UIKit）客户端**，协议与后端完全对齐。
-> 对标基线：`ios/` 当前代码（而非仅 [10-ios-client-architecture.md](10-ios-client-architecture.md) 的 P0 清单），含语音、视频、贴纸、@ 提及、下载进度、多账号隔离等后续补齐的能力。
+> 对标基线：`ios/` 当前代码（而非仅 [10-ios-client-architecture.md](https://github.com/chaishuanzhu/GO-IM/blob/archive/ios-web/docs/10-ios-client-architecture.md) 的 P0 清单），含语音、视频、贴纸、@ 提及、下载进度、多账号隔离等后续补齐的能力。
 > 后端契约：[07-api-reference.md](07-api-reference.md)、[`api/proto/message.proto`](../api/proto/message.proto)。
-> 工程位置：仓库根目录新增 `kmp/`（与 `ios/`、`web/` 并列）。
+> 工程位置：仓库根目录 `kmp/`。原生 iOS（`ios/`）与 React Web（`web/`）客户端已下线，代码及其设计文档（10–14）归档在 [`archive/ios-web`](https://github.com/chaishuanzhu/GO-IM/tree/archive/ios-web) 分支，KMP 是唯一维护的客户端。
 
 ---
 
@@ -12,7 +12,7 @@
 | 项 | 约定 |
 |----|------|
 | 目标平台 | **Android**（minSdk 26）、**iOS**（16.0+）、**Desktop**（JVM：macOS / Windows / Linux） |
-| 不做 | Web（Wasm）——已有 React `web/` 客户端；可在 M5 之后再评估 |
+| 不做 | Web（Wasm）——React `web/` 客户端已归档；可在 M5 之后再评估 |
 | 语言 | Kotlin 2.x（K2 编译器） |
 | UI | Compose Multiplatform，**单套 UI 代码**，平台差异只在 `expect/actual` 与少量原生互操作视图 |
 | 架构 | Clean Architecture：`domain` / `data` / `feature(ui)`，与 iOS 分层一一对应 |
@@ -45,7 +45,7 @@
 | `authExpired` 熔断（停止重连回登录） | `ConnectionState.authExpired` | 同状态机 | M1 |
 | `CmdKick` 被踢登出 | `CmdDispatchHandler` → `.kick` | 同 | M1 |
 | 重连后补齐（Offline + UnreadCount + 当前会话 History + 重发 sending） | 已实现 | 同流程 | M1 |
-| 多账号本地数据隔离 `Users/{uid}/` | [docs/11](11-ios-multi-account-isolation.md) | `UserHome` 同布局，平台根目录不同（§8.3） | M4 |
+| 多账号本地数据隔离 `Users/{uid}/` | [docs/11](https://github.com/chaishuanzhu/GO-IM/blob/archive/ios-web/docs/11-ios-multi-account-isolation.md) | `UserHome` 同布局，平台根目录不同（§8.3） | M4 |
 
 ### 2.2 会话与消息
 
@@ -276,7 +276,7 @@ sealed interface InboundEvent {
 
 ## 7. 聊天页架构（对齐 iOS docs 12–14）
 
-iOS 已把聊天页拆成三块：气泡「壳 + 内容插件」（[12](12-message-bubble-cell-refactor.md)）、输入栏「壳 + 附件面板插件」（[13](13-composer-bar-refactor.md)）、页面事件 `ChatUIAction` + `ChatEventRouter`（[14](14-chat-events-refactor.md)）。KMP 直接按这个结构落地，用 Compose 的单向数据流表达。
+iOS 已把聊天页拆成三块：气泡「壳 + 内容插件」（[12](https://github.com/chaishuanzhu/GO-IM/blob/archive/ios-web/docs/12-message-bubble-cell-refactor.md)）、输入栏「壳 + 附件面板插件」（[13](https://github.com/chaishuanzhu/GO-IM/blob/archive/ios-web/docs/13-composer-bar-refactor.md)）、页面事件 `ChatUIAction` + `ChatEventRouter`（[14](https://github.com/chaishuanzhu/GO-IM/blob/archive/ios-web/docs/14-chat-events-refactor.md)）。KMP 直接按这个结构落地，用 Compose 的单向数据流表达。
 
 ### 7.1 状态与事件（对应 ChatUIAction / ChatEventRouter）
 
@@ -447,7 +447,7 @@ fun buildDatabase(builder: RoomDatabase.Builder<AppDatabase>): AppDatabase =
 
 ### 8.3 多账号目录隔离
 
-布局与 [docs/11](11-ios-multi-account-isolation.md) 完全一致，只是根目录随平台变化：
+布局与 [docs/11](https://github.com/chaishuanzhu/GO-IM/blob/archive/ios-web/docs/11-ios-multi-account-isolation.md) 完全一致，只是根目录随平台变化：
 
 | 平台 | 根目录 |
 |------|--------|

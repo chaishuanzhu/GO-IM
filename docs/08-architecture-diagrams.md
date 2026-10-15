@@ -29,7 +29,7 @@
 
 ```mermaid
 flowchart TD
-    Client["Web (React) / PC / Mobile<br/>客户端"]
+    Client["KMP 客户端<br/>Android / iOS / Desktop"]
 
     subgraph GW["Gateway 接入层 (单体 · :8080 HTTP/WS · :8081 TCP)"]
         HTTP["HTTP API<br/>/login /register /online /health /upload /file /file/presign /search /unread /group/*"]
@@ -178,12 +178,11 @@ flowchart TD
 
 ## 6. 开发部署拓扑
 
-> `docker-compose.yml` 共 7 个服务,依赖链由 healthcheck + `depends_on.condition` 保证顺序。
+> `docker-compose.yml` 共 6 个服务,依赖链由 healthcheck + `depends_on.condition` 保证顺序。
 
 ```mermaid
 flowchart LR
-    subgraph HOST["宿主机 (docker-compose.yml, 7 个服务)"]
-        FE["frontend<br/>nginx :80 (SPA + 反代)"]
+    subgraph HOST["宿主机 (docker-compose.yml, 6 个服务)"]
         GW["gateway<br/>:8080 HTTP/WS · :8081 TCP"]
         LG["logic<br/>:50051 gRPC"]
         RD["redis<br/>:6379"]
@@ -191,7 +190,6 @@ flowchart LR
         KA["kafka<br/>:9093 容器内 · :9094 宿主机"]
         MI["minio<br/>:9000 API · :9001 Console"]
 
-        FE -->|/api /ws 反代| GW
         GW -->|gRPC QueryHistory / GetUser| LG
         GW --> RD
         GW --> MY
@@ -200,7 +198,7 @@ flowchart LR
         LG --> MY
         LG --> KA
     end
-    BROWSER["浏览器<br/>http://localhost"] --> FE
+    CLIENT["客户端<br/>http://localhost:8080"] -->|HTTP / WS / TCP| GW
 ```
 
 ---
@@ -211,9 +209,8 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    USER["用户浏览器"]
+    USER["客户端"]
     PROXY["nginx proxy<br/>:80 / :443 (SSL 终止)<br/>对外唯一入口"]
-    FE["frontend (nginx + SPA)"]
     GW["gateway"]
     LG["logic"]
     REDIS["redis"]
@@ -223,8 +220,7 @@ flowchart TD
     CERT["certbot<br/>每 12h 自动续期"]
 
     USER -->|HTTPS :443| PROXY
-    PROXY -->|静态资源| FE
-    PROXY -->|/api /ws 反代| GW
+    PROXY -->|API / WebSocket 反代| GW
     PROXY -.->|证书验证| CERT
     GW --> LG
     GW --> REDIS
@@ -235,7 +231,7 @@ flowchart TD
     LG --> KAFKA
 ```
 
-> 内网服务(redis / mysql / kafka / minio / gateway / logic / frontend)不映射宿主端口,仅 Docker 内部网络可达。
+> 内网服务(redis / mysql / kafka / minio / gateway / logic)不映射宿主端口,仅 Docker 内部网络可达。
 
 > 💡 **2C2G 最小栈形态**(当前 prod compose 默认):省略 Kafka 与 Logic,共 7 个服务——网关直连 MySQL 异步持久化(`router.doPersist` 双路径),历史 / 群聊 / 搜索 / 未读不受影响。换大服务器可恢复上图完整形态。
 

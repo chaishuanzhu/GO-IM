@@ -4,7 +4,7 @@
 
 - 源码：https://github.com/chaishuanzhu/GO-IM
 - 客户端下载 / 项目介绍：https://blog.chaisz.com/GO-IM/
-- 配套镜像：[`870027381/go-im-logic`](https://hub.docker.com/r/870027381/go-im-logic)（业务层）、[`870027381/go-im-web`](https://hub.docker.com/r/870027381/go-im-web)（Web 前端）
+- 配套镜像：[`870027381/go-im-logic`](https://hub.docker.com/r/870027381/go-im-logic)（业务层）
 
 ## 标签
 

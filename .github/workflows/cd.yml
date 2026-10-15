@@ -4,10 +4,10 @@
 #   push main(仅当服务相关文件变更) + workflow_dispatch(手动)
 #
 # 流程:
-#   build  构建 gateway/frontend 两个镜像,推送 GHCR(sha-<7> + latest)
+#   build  构建 gateway 镜像,推送 GHCR(sha-<7> + latest)
 #          (最小栈已移除 logic/kafka 服务,不再构建 logic 镜像)
 #   deploy 渲染生产配置(secrets 注入)→ git pull + scp 上传 → 服务器本地构建
-#          gateway/frontend(失败回退 GHCR 拉取)→ 镜像校验 → up -d
+#          gateway(失败回退 GHCR 拉取)→ 镜像校验 → up -d
 #          → curl https://$DOMAIN/health 健康检查(重试 180s)
 #
 # 前置条件(详见 README 部署章节):
@@ -32,10 +32,8 @@ on:
       - 'internal/**'
       - 'cmd/**'
       - 'api/**'
-      - 'web/**'
       - 'Dockerfile.gateway'
       - 'Dockerfile.logic'
-      - 'Dockerfile.frontend'
       - 'docker-compose.prod.yml'
       - 'docker-compose.cd.yml'
       - 'deploy/**'
@@ -83,18 +81,6 @@ jobs:
           tags: |
             ghcr.io/641-git641/go-im/gateway:sha-${{ steps.sha.outputs.short }}
             ghcr.io/641-git641/go-im/gateway:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build & push frontend
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.frontend
-          push: true
-          tags: |
-            ghcr.io/641-git641/go-im/frontend:sha-${{ steps.sha.outputs.short }}
-            ghcr.io/641-git641/go-im/frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -188,31 +174,22 @@ jobs:
             EOF
 
             GATEWAY_IMG="ghcr.io/641-git641/go-im/gateway:${TAG}"
-            FRONTEND_IMG="ghcr.io/641-git641/go-im/frontend:${TAG}"
 
             # ── 主路径: 服务器本地构建 ──────────────────────────────────
             # 服务器到 ghcr.io 的国际链路慢/不稳定(此前 pull 超时导致部署失败),
             # 改为在服务器直接构建并打 ghcr 同名 tag —— compose 默认
             # pull_policy=missing 会直接使用本地镜像,不再去 ghcr.io 拉取。
             # 依赖全走国内链路: 基础镜像(腾讯云镜像加速)、Go modules
-            # (goproxy.cn,见 Dockerfile.gateway)、npm registry。2C2G 实测
-            # gateway 构建约 1 分钟,frontend 约 1-3 分钟,均在 600s 超时内。
-            for svc in gateway frontend; do
-              if [ "$svc" = "gateway" ]; then
-                img="$GATEWAY_IMG"; df="-f Dockerfile.gateway"
-              else
-                img="$FRONTEND_IMG"; df="-f Dockerfile.frontend"
-              fi
-              echo "🔨 本地构建 $svc ($TAG)..."
-              if timeout 600 docker build $df -t "$img" .; then
-                echo "✅ $svc 构建成功"
-              else
-                echo "⚠️ $svc 本地构建失败,回退 GHCR 拉取"
-              fi
-            done
+            # (goproxy.cn,见 Dockerfile.gateway)。2C2G 实测构建约 1 分钟,在 600s 超时内。
+            echo "🔨 本地构建 gateway ($TAG)..."
+            if timeout 600 docker build -f Dockerfile.gateway -t "$GATEWAY_IMG" .; then
+              echo "✅ gateway 构建成功"
+            else
+              echo "⚠️ gateway 本地构建失败,回退 GHCR 拉取"
+            fi
 
             # ── 回退: 缺失镜像从 GHCR 拉取(每服务重试 3 次)─────────────
-            for img in "$GATEWAY_IMG" "$FRONTEND_IMG"; do
+            for img in "$GATEWAY_IMG"; do
               if ! docker image inspect "$img" >/dev/null 2>&1; then
                 for i in $(seq 1 3); do
                   echo "⬇️ 拉取 $img ($i/3)..."
@@ -225,7 +202,7 @@ jobs:
 
             # ── up 前最终校验: 缺镜像直接中止,给出清晰报错 ────────────
             missing=""
-            for img in "$GATEWAY_IMG" "$FRONTEND_IMG"; do
+            for img in "$GATEWAY_IMG"; do
               docker image inspect "$img" >/dev/null 2>&1 || missing="$missing $img"
             done
             if [ -n "$missing" ]; then
@@ -235,7 +212,7 @@ jobs:
 
             docker compose -f docker-compose.prod.yml -f docker-compose.cd.yml up -d --remove-orphans
 
-            # frontend/gateway 重建后容器 IP 变化,proxy(nginx)缓存的旧上游地址
+            # gateway 重建后容器 IP 变化,proxy(nginx)缓存的旧上游地址
             # 会 502 —— 重启 proxy 重新解析,否则健康检查必失败。
             docker compose -f docker-compose.prod.yml -f docker-compose.cd.yml restart proxy
 

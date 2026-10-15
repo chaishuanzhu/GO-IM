@@ -1,4 +1,4 @@
-# IM 项目 — 生产环境 Docker Compose(2C2G 最小栈,8 个服务)
+# IM 项目 — 生产环境 Docker Compose(2C2G 最小栈,7 个服务)
 #
 # 与开发环境 (docker-compose.yml) 的区别：
 #   1. 不对外暴露内部服务端口（MySQL、Redis、RustFS、Gateway）
@@ -96,21 +96,6 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 前端（构建 + 静态资源服务）
-  # =========================================================================
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    container_name: im-frontend
-    mem_limit: 128m
-    # 不暴露端口到宿主机 —— proxy 转发
-    depends_on:
-      - gateway
-    restart: unless-stopped
-
-  # =========================================================================
   # SSL 反向代理（对外唯一入口）
   # =========================================================================
 
@@ -126,7 +111,7 @@ services:
       - ./deploy/certbot/www:/var/www/certbot:ro
       - ./deploy/certbot/conf:/etc/letsencrypt:ro
     depends_on:
-      - frontend
+      - gateway
     restart: unless-stopped
 
   # =========================================================================

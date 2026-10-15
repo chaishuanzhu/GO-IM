@@ -9,10 +9,6 @@
 *.swp
 *.swo
 
-# Node (frontend)
-web/node_modules/
-web/dist/
-
 # Go build artifacts
 *.exe
 *.test

@@ -4,7 +4,7 @@
 
 - 源码：https://github.com/chaishuanzhu/GO-IM
 - 客户端下载 / 项目介绍：https://blog.chaisz.com/GO-IM/
-- 配套镜像：[`870027381/go-im-gateway`](https://hub.docker.com/r/870027381/go-im-gateway)（连接层）、[`870027381/go-im-web`](https://hub.docker.com/r/870027381/go-im-web)（Web 前端）
+- 配套镜像：[`870027381/go-im-gateway`](https://hub.docker.com/r/870027381/go-im-gateway)（连接层）
 
 Logic 只在**全量部署**中使用，不对外提供服务；最小化部署不需要它。
 

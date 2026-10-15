@@ -34,8 +34,6 @@ docker-compose.override.yml
 .env.local
 
 # Build output
-web/dist/
-web/node_modules/
 stickers-dist/
 .tmp/
 

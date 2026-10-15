@@ -25,7 +25,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                        Frontend                         │
+│          Client (KMP: Android / iOS / Desktop)          │
 │  HTTP (login/upload/search)  +  WebSocket / TCP (IM)    │
 └─────────────┬───────────────────────────────────────────┘
               │

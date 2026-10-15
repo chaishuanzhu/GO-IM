@@ -5,12 +5,12 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![PRs](https://img.shields.io/badge/PRs-Welcome-8A2BE2)
 
-基于 Go 构建的即时通讯（IM）系统：WebSocket / TCP 双传输协议、单聊 / 群聊、文件上传、全文搜索、消息撤回、多网关集群。前后端分离，Docker 一键部署，GitHub Actions 自动构建验证。
+基于 Go 构建的即时通讯（IM）系统：WebSocket / TCP 双传输协议、单聊 / 群聊、文件上传、全文搜索、消息撤回、多网关集群。客户端为 Kotlin Multiplatform（Android / iOS / macOS / Windows / Linux），Docker 一键部署，GitHub Actions 自动构建验证。
 
 ## 架构
 
 ```
- Client (React SPA)  ──  nginx (:80)  ──  Gateway (:8080 / :8081)
+ KMP Client (Android / iOS / Desktop)  ──  Gateway (:8080 / :8081)
                                               │ gRPC (:50051)
                                            Logic
                                               │
@@ -20,7 +20,7 @@
 
 ```mermaid
 flowchart TD
-    Client["Web (React) / PC / Mobile<br/>客户端"]
+    Client["KMP 客户端<br/>Android / iOS / Desktop"]
 
     subgraph GW["Gateway 接入层 (单体 · :8080 HTTP/WS · :8081 TCP)"]
         HTTP["HTTP API<br/>/login /register /online /health /upload /file /file/presign /search /unread /group/*"]
@@ -61,7 +61,7 @@ flowchart TD
 
 - **Gateway**：连接层，WebSocket + gnet TCP + HTTP API。消息路由、ACK、去重、限流、群扇出、离线存储、撤回、搜索。
 - **Logic**：业务层，gRPC 服务 + Kafka Consumer，消息持久化、历史查询、群组管理。
-- **Frontend**：React + TypeScript + Tailwind CSS，响应式单页应用。
+- **客户端**：[kmp/](kmp/README.md)，Kotlin Multiplatform + Compose Multiplatform，一套代码覆盖 Android、iOS 与桌面端。
 
 ## 功能
 
@@ -80,7 +80,7 @@ flowchart TD
 | 多网关集群 | 一致性哈希路由（CRC32 + 150 虚拟节点），跨节点 gRPC 转发 |
 | 动态集群 | gRPC 健康探测 + Redis 服务发现，自动上下线 |
 | 速率限制 | 每 UID 令牌桶限流（默认 10 msg/s，突发 20） |
-| 管理后台 | 系统统计、用户管理、消息浏览，仅 admin 角色可见 |
+| 管理接口 | `/admin/*` HTTP API：系统统计、用户管理、消息浏览，仅 admin 角色可调用 |
 
 ## 快速开始
 
@@ -107,7 +107,7 @@ docker-compose up -d
 docker-compose ps
 ```
 
-浏览器打开 [http://localhost](http://localhost)，注册账号即可使用。
+`curl http://localhost:8080/health` 返回 `"status":"ok"` 即就绪；客户端（[下载](https://blog.chaisz.com/GO-IM/)或从 [kmp/](kmp/README.md) 构建）服务器地址填 `http://<本机 IP>:8080`，注册账号即可使用。
 
 > **国内网络加速**：如果 `docker-compose build` 拉取依赖缓慢，可通过代理构建：
 > ```bash
@@ -129,9 +129,6 @@ docker-compose build gateway && docker-compose up -d gateway
 # 只改 Go 代码 → 重建 Logic
 docker-compose build logic && docker-compose up -d logic
 
-# 只改前端 → 重建前端
-docker-compose build frontend && docker-compose up -d frontend
-
 # 改了 Protobuf / go.mod → 重建所有
 docker-compose build --no-cache && docker-compose up -d
 ```
@@ -148,8 +145,7 @@ docker-compose down -v --rmi all # 同时删除构建的镜像
 
 | 端口 | 服务 | 说明 |
 |------|------|------|
-| `:80` | nginx / 前端 | 浏览器入口 |
-| `:8080` | Gateway HTTP + WebSocket | API / 长连接 |
+| `:8080` | Gateway HTTP + WebSocket | 客户端入口：API / 长连接 |
 | `:8081` | Gateway gnet TCP | 裸 TCP 长连接 |
 | `:50051` | Logic gRPC | 内部服务 |
 | `:6379` | Redis | 离线消息 / 集群发现 |
@@ -181,20 +177,15 @@ im/
 │   ├── logic.proto          # Gateway → Logic gRPC 接口
 │   └── gateway.proto        # Gateway → Gateway gRPC 接口
 ├── configs/                 # 配置文件（本地 / Docker / 压测 / 生产）
-├── web/                     # React 前端（TypeScript + Vite + Tailwind）
-│   ├── src/
-│   │   ├── components/      # UI 组件（chat, contact, group, friend, admin）
-│   │   ├── pages/           # 页面（Chat, Contacts, Profile, Admin…）
-│   │   ├── stores/          # Zustand 状态管理
-│   │   ├── lib/             # API 客户端、WebSocket 管理、认证工具
-│   │   └── hooks/           # 自定义 Hooks
-│   └── nginx.conf           # 前端 nginx 配置（SPA + API 反向代理）
+├── kmp/                     # KMP 客户端（Android / iOS / Desktop），见 kmp/README.md
+├── site/                    # 落地页（GitHub Pages）
 ├── docs/                    # 设计文档、架构图、压测报告
-├── deploy/                  # 生产部署：init-ssl.sh / nginx.prod.conf / config.prod.json
+├── deploy/                  # 部署：Docker / k8s 清单、init-ssl.sh / nginx.prod.conf / config.prod.json
+├── ci/jenkins/              # Jenkins 任务脚本（全端构建、发布、部署）
 ├── .github/workflows/       # GitHub Actions CI 流水线
 ├── docker-compose.yml       # 开发编排（一键部署）
 ├── docker-compose.prod.yml  # 生产编排（SSL 终止 + 自动续期）
-├── Dockerfile.gateway / .logic / .frontend
+├── Dockerfile.gateway / .logic
 └── LICENSE
 ```
 
@@ -207,7 +198,7 @@ im/
 docker-compose up -d redis mysql kafka rustfs
 ```
 
-### 启动 Gateway / Logic / 前端
+### 启动 Gateway / Logic / 客户端
 
 ```bash
 # 使用本地配置（configs/config.json）
@@ -216,10 +207,8 @@ go run ./cmd/gateway/
 # Logic（需要 MySQL）
 go run ./cmd/logic/
 
-# 前端
-cd web
-npm install
-npm run dev          # Vite 开发服务器，默认 :5173
+# 客户端（桌面端；Android / iOS 见 kmp/README.md）
+cd kmp && ./gradlew :app:desktop:run
 ```
 
 ### 运行测试
@@ -343,7 +332,7 @@ message Message {
 
 ### 持续集成（CI）
 
-`.github/workflows/ci.yml` —— push main / PR 触发，concurrency 自动取消旧 run。**6 个 job 全部绿色才算通过**：
+`.github/workflows/ci.yml` —— push main / PR 触发，concurrency 自动取消旧 run。**5 个 job 全部绿色才算通过**：
 
 | Job | 内容 |
 |------|------|
@@ -351,8 +340,7 @@ message Message {
 | `unit` | 单元测试（MySQL 8.4 service container，自动激活 repo 测试） |
 | `integration` | 5 个集成测试（内存模式，无需外部服务） |
 | `kafka` | Kafka Producer→Consumer 端到端（KRaft 单节点） |
-| `frontend` | npm ci + build |
-| `docker` | 三个镜像构建（buildx + GHA 缓存，只构建不推送） |
+| `docker` | gateway / logic 镜像构建（buildx + GHA 缓存，只构建不推送） |
 
 ### 持续部署（CD）
 
@@ -362,7 +350,7 @@ message Message {
 
 > 使用预构建镜像的 Docker / Kubernetes 部署见 [部署指南](deploy/README.md)；本节是带 HTTPS 的源码构建单机部署。
 
-生产编排 [docker-compose.prod.yml](docker-compose.prod.yml)：仅 `proxy`（nginx + SSL 终止）对外暴露 80/443，内部服务（MySQL / Redis / RustFS / Gateway / Frontend）走 Docker 内网；`certbot` 每 12h 自动续期证书。
+生产编排 [docker-compose.prod.yml](docker-compose.prod.yml)：仅 `proxy`（nginx + SSL 终止）对外暴露 80/443，内部服务（MySQL / Redis / RustFS / Gateway）走 Docker 内网；`certbot` 每 12h 自动续期证书。
 
 > **2C2G 最小栈**：为适配 2GB 内存云服务器，生产形态省略了 Kafka 与 Logic——网关直连 MySQL 异步持久化（`router.doPersist` 双路径），历史 / 群聊 / 搜索 / 未读不受影响，基线内存约 500-600MB，全部服务带 `mem_limit`（上限合计 ~1.6G，含可观测 agent alloy）。换大服务器可恢复完整形态（加回 kafka / logic 服务与 `config.prod.json` 的对应配置）。
 
@@ -460,20 +448,18 @@ curl -s localhost:8080/metrics | grep '^im_'   # im_online_connections / im_mess
 
 | 层级 | 技术 |
 |------|------|
-| 语言 | Go 1.26 + TypeScript 6 |
-| 前端框架 | React 19 + React Router 7 + Zustand 5 + TanStack Query |
-| 前端样式 | Tailwind CSS 3 + Lucide Icons |
-| 构建 / 质量 | Vite 8 + Rolldown · oxlint |
+| 语言 | Go 1.26（服务端）+ Kotlin（客户端） |
+| 客户端 | Kotlin Multiplatform + Compose Multiplatform、Ktor、Room |
 | 长连接 | gorilla/websocket + panjf2000/gnet v2 |
-| RPC | gRPC + Protobuf（buf + @bufbuild/protobuf） |
+| RPC | gRPC + Protobuf（buf） |
 | 消息队列 | Apache Kafka（segmentio/kafka-go） |
 | 数据库 | MySQL 8.4（database/sql） |
 | 缓存 | Redis 7（go-redis/v9） |
 | 对象存储 | RustFS（S3 兼容） |
 | 认证 | JWT HS256 + bcrypt |
-| 反向代理 | nginx（SPA 静态服务 + API 代理） |
+| 反向代理 | nginx（SSL 终止，单机生产编排） |
 | 容器化 | Docker + Docker Compose |
-| 持续集成 | GitHub Actions（6 jobs） |
+| 持续集成 | GitHub Actions（5 jobs）+ Jenkins（全端构建发布） |
 | 可观测性 | Prometheus（client_golang）+ Grafana Cloud（可选） |
 
 ## 文档
@@ -491,6 +477,7 @@ curl -s localhost:8080/metrics | grep '^im_'   # im_online_connections / im_mess
 | [docs/08-architecture-diagrams.md](docs/08-architecture-diagrams.md) | Mermaid 架构图集（10 张） |
 | [docs/09-load-test-report.md](docs/09-load-test-report.md) | 完整栈压测报告 |
 | [docs/10-ci-cd-guide.md](docs/10-ci-cd-guide.md) | CI/CD 入门指南（push 到线上的全流程） |
+| [docs/15-kmp-client-architecture.md](docs/15-kmp-client-architecture.md) | KMP 客户端架构与里程碑 |
 | [CLAUDE.md](CLAUDE.md) | AI 辅助开发指南 |
 
 ## License

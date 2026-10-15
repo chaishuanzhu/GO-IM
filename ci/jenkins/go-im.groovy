@@ -1,7 +1,7 @@
 // Jenkins 任务 go-im 的任务脚本（Pipeline script，非 SCM）：全端构建并发布。
 //   node-mac   Android APK、macOS DMG、iOS 未签名 IPA
 //   win-host   Windows MSI（jpackage 只能在目标系统上打包）
-//   ci-01      Linux DEB（容器内构建）；服务端 gateway / logic 与 Web 前端多架构镜像推送 Docker Hub
+//   ci-01      Linux DEB（容器内构建）；服务端 gateway / logic 多架构镜像推送 Docker Hub
 //   最后在 node-mac 汇总产物发布到 GitHub Release（tag v<VERSION>，已存在则覆盖同名产物）
 //   镜像推送后把 <VERSION> 镜像部署到 k8s 测试环境 go-im-test（https://test-go-im.chaisz.com）
 //   TAG 构建在测试环境通过后再部署生产（docker compose，仅 gateway；地址见凭据 goim-prod-target）
@@ -208,14 +208,12 @@ if (params.BUILD_IMAGES) {
                         sh '''
                             set -eu
                             echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
-                            # 编译阶段固定在构建机架构上交叉编译（Go 按 TARGETARCH 交叉编译，前端产物与架构无关），
-                            # 避免在 QEMU 模拟的 arm64 里跑 go build / npm。
+                            # 编译阶段固定在构建机架构上（Go 按 TARGETARCH 交叉编译），避免在 QEMU 模拟的 arm64 里跑 go build。
                             for f in Dockerfile.gateway Dockerfile.logic; do
                                 sed -i -E 's#^FROM golang:([^ ]+) AS builder#FROM --platform=$BUILDPLATFORM golang:\\1 AS builder\\nARG TARGETOS TARGETARCH#' "$f"
                                 sed -i -E 's#CGO_ENABLED=0 go build#CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build#' "$f"
                             done
-                            sed -i -E 's#^FROM node:([^ ]+) AS builder#FROM --platform=$BUILDPLATFORM node:\\1 AS builder#' Dockerfile.frontend
-                            for svc in gateway:Dockerfile.gateway logic:Dockerfile.logic web:Dockerfile.frontend; do
+                            for svc in gateway:Dockerfile.gateway logic:Dockerfile.logic; do
                                 name=${svc%%:*}; file=${svc#*:}
                                 for i in 1 2 3; do
                                     docker buildx build --platform linux/amd64,linux/arm64 -f "$file" \
@@ -232,7 +230,7 @@ if (params.BUILD_IMAGES) {
                             fi
                         '''
                     }
-                    images = ['gateway', 'logic', 'web'].collect { "${ns}/go-im-${it}:${version}" }
+                    images = ['gateway', 'logic'].collect { "${ns}/go-im-${it}:${version}" }
                     imageNs = ns
                 }
             } finally {
@@ -273,7 +271,7 @@ stage('Publish') {
             def notes = "GO-IM ${version}（commit ${commit.substring(0, 7)}，Jenkins #${env.BUILD_NUMBER}）\n\n" +
                 "| 文件 | 平台 |\n|------|------|\n" + rows.join('\n') + '\n'
             if (images) {
-                notes += "\n服务端与 Web 端镜像（linux/amd64、linux/arm64）：\n\n" + images.collect { "- `docker pull ${it}`" }.join('\n') + '\n'
+                notes += "\n服务端镜像（linux/amd64、linux/arm64）：\n\n" + images.collect { "- `docker pull ${it}`" }.join('\n') + '\n'
             }
             writeFile file: 'notes.md', text: notes
 
@@ -309,7 +307,7 @@ stage('Deploy test') {
                     set -eu
                     k() { kubectl -n "$K8S_NS" "$@"; }
                     changed=""
-                    for d in logic gateway web; do
+                    for d in logic gateway; do
                         k set image "deployment/$d" "$d=$NS/go-im-$d:$TAG"
                         changed="$changed $d"
                         if ! k rollout status "deployment/$d" --timeout=5m; then
