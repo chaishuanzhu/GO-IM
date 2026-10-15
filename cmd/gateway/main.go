@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/im/api/openapi"
 	"github.com/im/configs"
 	"github.com/im/internal/gateway"
 	"github.com/im/internal/mq"
@@ -496,6 +497,11 @@ func (app *App) Run(ctx context.Context) error {
 	// Prometheus 指标端点(默认开启;经 Recovery 包裹,抓取异常不会拖垮服务器)。
 	if app.Config.Stability.MetricsEnabled {
 		mux.Handle("/metrics", app.metrics.Handler())
+	}
+
+	// OpenAPI 文档与 Swagger UI。
+	if app.Config.Stability.SwaggerEnabled {
+		mux.Handle("/swagger/", openapi.Handler("/swagger/"))
 	}
 
 	// 管理员监控与管理端点。

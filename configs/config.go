@@ -40,6 +40,7 @@ type StabilityConfig struct {
 	PprofEnabled     bool     `json:"pprof_enabled"`      // false = 不启用调试端点
 	PprofAddr        string   `json:"pprof_addr"`         // 例如 "localhost:6060"
 	MetricsEnabled   bool     `json:"metrics_enabled"`    // false = 不暴露 /metrics 端点
+	SwaggerEnabled   bool     `json:"swagger_enabled"`    // false = 不提供 /swagger/ 接口文档
 }
 
 // Config 汇总所有配置值。
@@ -304,6 +305,7 @@ func Default() *Config {
 			PprofEnabled:     false,
 			PprofAddr:        "localhost:6060",
 			MetricsEnabled:   true,
+			SwaggerEnabled:   true,
 		},
 		AdminUIDs: []string{},
 	}

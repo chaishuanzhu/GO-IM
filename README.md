@@ -106,7 +106,7 @@ docker-compose up -d
 docker-compose ps
 ```
 
-`curl http://localhost:8080/health` 返回 `"status":"ok"` 即就绪；客户端（[下载](https://blog.chaisz.com/GO-IM/)或从 [kmp/](kmp/README.md) 构建）服务器地址填 `http://<本机 IP>:8080`，注册账号即可使用。
+`curl http://localhost:8080/health` 返回 `"status":"ok"` 即就绪；客户端（[下载](https://blog.chaisz.com/GO-IM/)或从 [kmp/](kmp/README.md) 构建）服务器地址填 `http://<本机 IP>:8080`，注册账号即可使用。HTTP 接口文档（Swagger UI）在 <http://localhost:8080/swagger/>。
 
 > **国内网络加速**：如果 `docker-compose build` 拉取依赖缓慢，可通过代理构建：
 > ```bash
@@ -473,6 +473,7 @@ curl -s localhost:8080/metrics | grep '^im_'   # im_online_connections / im_mess
 | [docs/05-phase2-completion.md](docs/05-phase2-completion.md) | Phase 2 完成报告 |
 | [docs/06-phase4-completion.md](docs/06-phase4-completion.md) | Phase 4 完成报告 |
 | [docs/07-api-reference.md](docs/07-api-reference.md) | 完整 HTTP / WS / TCP 接口文档 |
+| [api/openapi/openapi.yaml](api/openapi/openapi.yaml) | HTTP 接口 OpenAPI 3 文档，网关在 `/swagger/` 提供 Swagger UI |
 | [docs/07-message-middleware-design.md](docs/07-message-middleware-design.md) | 消息中间件设计 |
 | [docs/08-architecture-diagrams.md](docs/08-architecture-diagrams.md) | Mermaid 架构图集（10 张） |
 | [docs/09-load-test-report.md](docs/09-load-test-report.md) | 完整栈压测报告 |

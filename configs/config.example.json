@@ -125,7 +125,8 @@
         "shutdown_timeout": "30s",
         "pprof_enabled": false,
         "pprof_addr": "localhost:6060",
-        "metrics_enabled": true
+        "metrics_enabled": true,
+        "swagger_enabled": true
     },
 
     "jwt": {

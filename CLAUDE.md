@@ -239,7 +239,7 @@ The server loads `configs/config.json`, falling back to `Default()` if the file 
 
 Default config values:
 - Transport: `"websocket"` (options: `"websocket"`, `"gnet"`, `"both"`)
-- HTTP: `:8080` (serves /login, /register, /auth/email-code, /password/reset, /user/*, /avatar/, /online, /health, /ws, /upload, /file, /search, /unread, /group/*)
+- HTTP: `:8080` (serves /login, /register, /auth/email-code, /password/reset, /user/*, /avatar/, /online, /health, /ws, /upload, /file, /search, /unread, /group/*, /friend/*, /admin/*, /swagger/)
 - TCP: `:8081` (gnet raw TCP, port used when transport is "gnet" or "both")
 - JWT secret: `"change-me-in-production"`, 7-day expiration, HS256
 - Snowflake worker ID: 1
@@ -256,7 +256,7 @@ Default config values:
 - Auth: `dev_mode: true` (no password required; set false for production with MySQL)
 - Mail: `enabled: false`; SMTP host/port/username/from in config, password only via env `GOIM_MAIL_PASSWORD` (k8s Secret `goim-infra` key `MAIL_PASSWORD`). Port 465 = implicit TLS, others STARTTLS. Without mail, codes are logged in dev_mode and the code endpoints return 503 otherwise
 - Object storage: `enabled: false` (in-memory fallback), endpoint `localhost:9000`, bucket `im-files`, max_upload 10MB
-- Stability: `max_connections: 0` (unlimited), HTTP timeouts (read 10s, write 10s, idle 120s), `shutdown_timeout: 30s`, `pprof_enabled: false`
+- Stability: `max_connections: 0` (unlimited), HTTP timeouts (read 10s, write 10s, idle 120s), `shutdown_timeout: 30s`, `pprof_enabled: false`, `swagger_enabled: true` (Swagger UI at `/swagger/`, spec embedded from `api/openapi/openapi.yaml`; off in the deploy configs). Every route added in `cmd/gateway/main.go` must also be added to the spec — `go test ./api/openapi/` fails otherwise
 
 ### Wire formats summary
 

@@ -19,6 +19,8 @@
 
 ---
 
+> HTTP 接口的 OpenAPI 3 文档在 [`api/openapi/openapi.yaml`](../api/openapi/openapi.yaml)，网关启动后访问 `/swagger/` 可在线浏览和调试（`stability.swagger_enabled`，默认开启）。
+
 ## 1. 概述
 
 ### 1.1 系统架构
