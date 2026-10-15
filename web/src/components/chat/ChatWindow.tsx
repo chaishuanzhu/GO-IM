@@ -14,6 +14,7 @@ import FriendInfoPanel from './FriendInfoPanel';
 import MessageList from './MessageList';
 import ChatInput from './ChatInput';
 import ForwardDialog from './ForwardDialog';
+import { useDisplayName } from '@/stores/profileStore';
 import ChatSearch from './ChatSearch';
 
 interface ChatWindowProps {
@@ -91,6 +92,7 @@ export default function ChatWindow({ peerId }: ChatWindowProps) {
   }, [isGroup, peerId, uid]);
 
   // 获取会话对象名称:先查会话名,再查 contactStore 群组,最后回退到 peerId
+  const singleName = useDisplayName(peerId, conv?.name && conv.name !== peerId ? conv.name : undefined);
   const peerName = (() => {
     if (peerId.startsWith('g_')) {
       // 优先尝试会话名称(非原始 ID 的名称)
@@ -104,7 +106,7 @@ export default function ChatWindow({ peerId }: ChatWindowProps) {
       if (detail?.name) return detail.name;
       return peerId;
     }
-    return peerId;
+    return singleName;
   })();
 
   const isPeerOnline = !peerId.startsWith('g_') && onlineUsers.includes(peerId);
@@ -315,6 +317,7 @@ export default function ChatWindow({ peerId }: ChatWindowProps) {
   return (
     <div className="flex flex-col h-full relative">
       <TopBar
+        peerId={peerId}
         peerName={peerName}
         chatType={chatType}
         isOnline={isPeerOnline}

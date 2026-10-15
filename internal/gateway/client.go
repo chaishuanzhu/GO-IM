@@ -20,7 +20,7 @@ var (
 // Client 表示单个连接(经 gnet 的 WebSocket 或原始 TCP)。
 type Client struct {
 	UID      string
-	Username string
+	Nickname string
 
 	transport Transport
 	clients   ClientRegistry
@@ -35,10 +35,10 @@ type Client struct {
 }
 
 // NewClient 用 Transport 创建 Client 并注册它。
-func NewClient(uid, username string, transport Transport, clients ClientRegistry, sendBufSize int) *Client {
+func NewClient(uid, nickname string, transport Transport, clients ClientRegistry, sendBufSize int) *Client {
 	return &Client{
 		UID:           uid,
-		Username:      username,
+		Nickname:      nickname,
 		transport:     transport,
 		clients:       clients,
 		send:          make(chan []byte, sendBufSize),

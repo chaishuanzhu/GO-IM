@@ -3,14 +3,16 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/im/api/proto"
+	"github.com/go-sql-driver/mysql"
 
-	_ "github.com/go-sql-driver/mysql" // MySQL 驱动注册
+	"github.com/im/api/proto"
 )
 
 // 编译期接口合规性检查。
@@ -23,6 +25,15 @@ var (
 // MySQLStore 基于 MySQL 实现 UserStore 与 MessageStore。
 type MySQLStore struct {
 	db *sql.DB
+}
+
+// RedactDSN 返回不含密码的 DSN 描述（user@addr/db），用于日志。
+func RedactDSN(dsn string) string {
+	c, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		return "(unparseable dsn)"
+	}
+	return fmt.Sprintf("%s@%s(%s)/%s", c.User, c.Net, c.Addr, c.DBName)
 }
 
 // NewMySQLStore 打开 MySQL 连接，验证连接并创建表。
@@ -73,10 +84,16 @@ func (s *MySQLStore) migrate() error {
 	userTable := `
 	CREATE TABLE IF NOT EXISTS users (
 		uid           VARCHAR(64)  PRIMARY KEY,
-		username      VARCHAR(128) NOT NULL,
+		nickname      VARCHAR(128) NOT NULL,
 		password_hash VARCHAR(256) NOT NULL,
 		created_at    BIGINT       NOT NULL
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
+
+	// 自增 UID 发号器：每次注册插入一行取自增值作为 UID，起始 100000。
+	uidSeqTable := `
+	CREATE TABLE IF NOT EXISTS uid_seq (
+		id BIGINT AUTO_INCREMENT PRIMARY KEY
+	) ENGINE=InnoDB AUTO_INCREMENT=100000;`
 
 	msgTable := `
 	CREATE TABLE IF NOT EXISTS messages (
@@ -156,7 +173,7 @@ func (s *MySQLStore) migrate() error {
 			PRIMARY KEY (file_id, conv_key)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
 
-	for _, ddl := range []string{userTable, msgTable, groupTable, groupMembersTable, unreadTable, friendsTable, filesTable, fileRefsTable} {
+	for _, ddl := range []string{userTable, uidSeqTable, msgTable, groupTable, groupMembersTable, unreadTable, friendsTable, filesTable, fileRefsTable} {
 		if _, err := s.db.Exec(ddl); err != nil {
 			return fmt.Errorf("exec ddl: %w", err)
 		}
@@ -203,21 +220,119 @@ func (s *MySQLStore) migrate() error {
 			log.Printf("[mysql] WARNING: is_disabled column migration failed: %v", err)
 		}
 	}
+
+	return s.migrateProfile()
+}
+
+// migrateProfile 把 username 列改名为 nickname，并加入邮箱、头像与资料修改时间。
+// Gateway 与 Logic 可能同时迁移，已完成的步骤（列 / 索引已存在、旧列已改名）直接跳过。
+func (s *MySQLStore) migrateProfile() error {
+	steps := []struct {
+		ddl     string
+		skipped []uint16
+	}{
+		{"ALTER TABLE users CHANGE COLUMN username nickname VARCHAR(128) NOT NULL", []uint16{errBadField}},
+		{"ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL", []uint16{errDupFieldName}},
+		{"ALTER TABLE users ADD COLUMN avatar_file_id BIGINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
+		{"ALTER TABLE users ADD COLUMN updated_at BIGINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
+		{"ALTER TABLE users ADD UNIQUE INDEX uk_email (email)", []uint16{errDupKeyName}},
+		{"ALTER TABLE users ADD INDEX idx_nickname (nickname)", []uint16{errDupKeyName}},
+		{"ALTER TABLE files ADD COLUMN is_avatar TINYINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
+	}
+	for _, step := range steps {
+		if _, err := s.db.Exec(step.ddl); err != nil && !isMySQLError(err, step.skipped...) {
+			return fmt.Errorf("%s: %w", step.ddl, err)
+		}
+	}
 	return nil
+}
+
+const (
+	errDupFieldName = 1060
+	errDupKeyName   = 1061
+	errDupEntry     = 1062
+	errBadField     = 1054
+)
+
+func isMySQLError(err error, codes ...uint16) bool {
+	var me *mysql.MySQLError
+	if !errors.As(err, &me) {
+		return false
+	}
+	for _, c := range codes {
+		if me.Number == c {
+			return true
+		}
+	}
+	return false
+}
+
+// isDupKey 判断是否为指定唯一键上的重复（MySQL 8 的键名带表名前缀，如 users.uk_email）。
+func isDupKey(err error, key string) bool {
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && me.Number == errDupEntry && strings.Contains(me.Message, key)
 }
 
 // ---------- UserStore 实现 ----------
 
+const userColumns = "uid, nickname, COALESCE(email, ''), avatar_file_id, password_hash, role, is_disabled, created_at, updated_at"
+
+type rowScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanUser(row rowScanner) (*User, error) {
+	u := &User{}
+	err := row.Scan(&u.UID, &u.Nickname, &u.Email, &u.AvatarFileID, &u.PasswordHash, &u.Role, &u.IsDisabled, &u.CreatedAt, &u.UpdatedAt)
+	return u, err
+}
+
+// nullableEmail 把空邮箱存为 NULL，避免唯一索引冲突。
+func nullableEmail(email string) interface{} {
+	if email == "" {
+		return nil
+	}
+	return strings.ToLower(email)
+}
+
 // Create 插入一个新用户。如果 UID 已存在则返回错误。
 func (s *MySQLStore) Create(ctx context.Context, u *User) error {
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO users (uid, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
-		u.UID, u.Username, u.PasswordHash, u.CreatedAt,
+		"INSERT INTO users (uid, nickname, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+		u.UID, u.Nickname, nullableEmail(u.Email), u.PasswordHash, u.CreatedAt,
 	)
+	if isDupKey(err, "uk_email") {
+		return ErrEmailTaken
+	}
 	if err != nil {
 		return fmt.Errorf("insert user: %w", err)
 	}
 	return nil
+}
+
+// CreateWithAutoUID 从 uid_seq 取号作为 UID；号码已被早期自定义 UID 占用时取下一个。
+func (s *MySQLStore) CreateWithAutoUID(ctx context.Context, u *User) error {
+	for attempt := 0; attempt < 20; attempt++ {
+		res, err := s.db.ExecContext(ctx, "INSERT INTO uid_seq () VALUES ()")
+		if err != nil {
+			return fmt.Errorf("allocate uid: %w", err)
+		}
+		id, err := res.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("allocate uid: %w", err)
+		}
+		candidate := *u
+		candidate.UID = strconv.FormatInt(id, 10)
+		err = s.Create(ctx, &candidate)
+		if err == nil {
+			u.UID = candidate.UID
+			return nil
+		}
+		if !isDupKey(err, "PRIMARY") {
+			return err
+		}
+	}
+	return errors.New("allocate uid: too many collisions")
 }
 
 // UpdatePassword 更新用户的密码哈希。
@@ -239,10 +354,7 @@ func (s *MySQLStore) UpdatePassword(ctx context.Context, uid, newPasswordHash st
 
 // GetByUID 按 UID 获取用户。未找到时返回 nil。
 func (s *MySQLStore) GetByUID(ctx context.Context, uid string) (*User, error) {
-	u := &User{}
-	err := s.db.QueryRowContext(ctx,
-		"SELECT uid, username, password_hash, role, is_disabled, created_at FROM users WHERE uid = ?", uid,
-	).Scan(&u.UID, &u.Username, &u.PasswordHash, &u.Role, &u.IsDisabled, &u.CreatedAt)
+	u, err := scanUser(s.db.QueryRowContext(ctx, "SELECT "+userColumns+" FROM users WHERE uid = ?", uid))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -250,6 +362,126 @@ func (s *MySQLStore) GetByUID(ctx context.Context, uid string) (*User, error) {
 		return nil, fmt.Errorf("select user: %w", err)
 	}
 	return u, nil
+}
+
+// GetByEmail 按邮箱获取用户。未找到时返回 nil。
+func (s *MySQLStore) GetByEmail(ctx context.Context, email string) (*User, error) {
+	if email == "" {
+		return nil, nil
+	}
+	u, err := scanUser(s.db.QueryRowContext(ctx, "SELECT "+userColumns+" FROM users WHERE email = ?", strings.ToLower(email)))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("select user by email: %w", err)
+	}
+	return u, nil
+}
+
+// GetUsers 批量获取用户。
+func (s *MySQLStore) GetUsers(ctx context.Context, uids []string) ([]*User, error) {
+	if len(uids) == 0 {
+		return []*User{}, nil
+	}
+	args := make([]interface{}, len(uids))
+	for i, uid := range uids {
+		args[i] = uid
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(uids)), ",")
+	rows, err := s.db.QueryContext(ctx, "SELECT "+userColumns+" FROM users WHERE uid IN ("+placeholders+")", args...)
+	if err != nil {
+		return nil, fmt.Errorf("select users: %w", err)
+	}
+	return collectUsers(rows)
+}
+
+func collectUsers(rows *sql.Rows) ([]*User, error) {
+	defer rows.Close()
+	users := make([]*User, 0)
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+// UpdateProfile 修改昵称和/或头像并刷新 updated_at。
+func (s *MySQLStore) UpdateProfile(ctx context.Context, uid string, nickname *string, avatarFileID *int64) error {
+	sets := []string{"updated_at = ?"}
+	args := []interface{}{time.Now().UnixMilli()}
+	if nickname != nil {
+		sets = append(sets, "nickname = ?")
+		args = append(args, *nickname)
+	}
+	if avatarFileID != nil {
+		sets = append(sets, "avatar_file_id = ?")
+		args = append(args, *avatarFileID)
+	}
+	args = append(args, uid)
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET "+strings.Join(sets, ", ")+" WHERE uid = ?", args...)
+	if err != nil {
+		return fmt.Errorf("update profile: %w", err)
+	}
+	return s.requireAffected(ctx, res, uid)
+}
+
+// SetEmail 绑定或更换邮箱。
+func (s *MySQLStore) SetEmail(ctx context.Context, uid, email string) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET email = ?, updated_at = ? WHERE uid = ?",
+		nullableEmail(email), time.Now().UnixMilli(), uid)
+	if isDupKey(err, "uk_email") {
+		return ErrEmailTaken
+	}
+	if err != nil {
+		return fmt.Errorf("set email: %w", err)
+	}
+	return s.requireAffected(ctx, res, uid)
+}
+
+// requireAffected 在 UPDATE 未命中任何行时区分「用户不存在」与「值未变化」。
+func (s *MySQLStore) requireAffected(ctx context.Context, res sql.Result, uid string) error {
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+	exists, err := s.userExists(ctx, uid)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+// SearchUsers 搜索未禁用的用户：UID、邮箱精确匹配排在前面，其余为昵称包含匹配。
+func (s *MySQLStore) SearchUsers(ctx context.Context, query string, limit int) ([]*User, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []*User{}, nil
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	email := strings.ToLower(query)
+	like := "%" + escapeLike(query) + "%"
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT "+userColumns+` FROM users
+		 WHERE is_disabled = 0 AND (uid = ? OR email = ? OR nickname LIKE ?)
+		 ORDER BY (uid = ?) DESC, (email = ?) DESC, created_at ASC
+		 LIMIT ?`,
+		query, email, like, query, email, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search users: %w", err)
+	}
+	return collectUsers(rows)
+}
+
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 // ---------- MessageStore 实现 ----------
@@ -636,10 +868,13 @@ func (s *MySQLStore) RemoveFriend(ctx context.Context, uid, friendUID string) er
 // GetFriends 返回一个用户的所有已接受好友。
 func (s *MySQLStore) GetFriends(ctx context.Context, uid string) ([]*Friend, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT uid, friend_uid, status, created_at FROM friends
-		 WHERE (uid = ? OR friend_uid = ?) AND status = ?
-		 ORDER BY created_at DESC`,
-		uid, uid, FriendStatusAccepted,
+		`SELECT f.uid, f.friend_uid, f.status, f.created_at,
+		        COALESCE(u.nickname, IF(f.uid = ?, f.friend_uid, f.uid)), COALESCE(u.avatar_file_id, 0)
+		 FROM friends f
+		 LEFT JOIN users u ON u.uid = IF(f.uid = ?, f.friend_uid, f.uid)
+		 WHERE (f.uid = ? OR f.friend_uid = ?) AND f.status = ?
+		 ORDER BY f.created_at DESC`,
+		uid, uid, uid, uid, FriendStatusAccepted,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get friends: %w", err)
@@ -650,7 +885,7 @@ func (s *MySQLStore) GetFriends(ctx context.Context, uid string) ([]*Friend, err
 	for rows.Next() {
 		f := &Friend{}
 		var status int32
-		if err := rows.Scan(&f.UID, &f.FriendUID, &status, &f.CreatedAt); err != nil {
+		if err := rows.Scan(&f.UID, &f.FriendUID, &status, &f.CreatedAt, &f.Nickname, &f.AvatarFileID); err != nil {
 			return nil, fmt.Errorf("scan friend: %w", err)
 		}
 		f.Status = FriendStatus(status)
@@ -666,7 +901,7 @@ func (s *MySQLStore) GetFriends(ctx context.Context, uid string) ([]*Friend, err
 // GetPendingRequests 返回一个用户收到的所有待处理好友请求。
 func (s *MySQLStore) GetPendingRequests(ctx context.Context, uid string) ([]*FriendRequest, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT f.uid, f.created_at, COALESCE(u.username, f.uid) as username
+		`SELECT f.uid, f.created_at, COALESCE(u.nickname, f.uid), COALESCE(u.avatar_file_id, 0)
 		 FROM friends f
 		 LEFT JOIN users u ON f.uid = u.uid
 		 WHERE f.friend_uid = ? AND f.status = ?
@@ -681,7 +916,7 @@ func (s *MySQLStore) GetPendingRequests(ctx context.Context, uid string) ([]*Fri
 	requests := make([]*FriendRequest, 0)
 	for rows.Next() {
 		req := &FriendRequest{}
-		if err := rows.Scan(&req.FromUID, &req.CreatedAt, &req.Username); err != nil {
+		if err := rows.Scan(&req.FromUID, &req.CreatedAt, &req.Nickname, &req.AvatarFileID); err != nil {
 			return nil, fmt.Errorf("scan request: %w", err)
 		}
 		requests = append(requests, req)
@@ -706,23 +941,14 @@ func (s *MySQLStore) ListUsers(ctx context.Context, offset, limit int) ([]*User,
 	}
 
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT uid, username, password_hash, role, is_disabled, created_at FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
+		"SELECT "+userColumns+" FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
 		limit, offset,
 	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list users: %w", err)
 	}
-	defer rows.Close()
-
-	users := make([]*User, 0)
-	for rows.Next() {
-		u := &User{}
-		if err := rows.Scan(&u.UID, &u.Username, &u.PasswordHash, &u.Role, &u.IsDisabled, &u.CreatedAt); err != nil {
-			return nil, 0, fmt.Errorf("scan user: %w", err)
-		}
-		users = append(users, u)
-	}
-	return users, total, rows.Err()
+	users, err := collectUsers(rows)
+	return users, total, err
 }
 
 // DeleteUser 按 UID 删除用户。如果没有行受影响则返回错误。

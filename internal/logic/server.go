@@ -222,7 +222,7 @@ func (s *Server) GetUser(ctx context.Context, req *proto.UserRequest) (*proto.Us
 
 	return &proto.UserResponse{
 		Uid:      u.UID,
-		Username: u.Username,
+		Username: u.Nickname,
 		Found:    true,
 	}, nil
 }

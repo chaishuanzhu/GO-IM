@@ -83,7 +83,7 @@ class GoImUserApiTest {
     fun friendListNormalizesPeerAndPending() = runTest {
         val api = api {
             respond(
-                """{"uid":"alice","friends":[{"uid":"bob","friend_uid":"alice","status":1,"created_at":1},
+                """{"uid":"alice","friends":[{"uid":"bob","friend_uid":"alice","status":1,"created_at":1,"nickname":"Bob","avatar_url":"/avatar/5"},
                    {"uid":"","friend_uid":"carol"},{"uid":"alice","friend_uid":"alice"}],
                    "pending_requests":[{"from_uid":"dave","username":"Dave","created_at":9}]}""",
                 HttpStatusCode.OK,
@@ -94,6 +94,10 @@ class GoImUserApiTest {
         val snapshot = api.friendList()
 
         assertEquals(listOf("bob", "carol"), snapshot.friends.map { it.uid })
+        assertEquals("Bob", snapshot.friends[0].displayName)
+        assertTrue(snapshot.friends[0].avatarUrl.endsWith("/avatar/5") && snapshot.friends[0].avatarUrl.startsWith("http"))
+        assertEquals("carol", snapshot.friends[1].displayName)
+        assertEquals("", snapshot.friends[1].avatarUrl)
         val pending = snapshot.pending.single()
         assertEquals("dave", pending.fromUid)
         assertEquals("alice", pending.toUid)

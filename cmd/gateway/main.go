@@ -82,7 +82,7 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		if err != nil {
 			log.Printf("[main] MySQL init failed (%v), continuing without persistence", err)
 		} else {
-			log.Printf("[main] MySQL connected at %s", cfg.Gateway.MySQL.DSN)
+			log.Printf("[main] MySQL connected at %s", repo.RedactDSN(cfg.Gateway.MySQL.DSN))
 		}
 		// 从配置中引导初始化管理员用户（幂等 —— 每次启动都会执行）。
 		if mysqlStore != nil && len(cfg.AdminUIDs) > 0 {
@@ -303,6 +303,34 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		log.Printf("[main] direct upload disabled (object_storage.public_endpoint not set), clients use POST /upload")
 	}
 
+	// --- 邮箱验证码(注册 / 找回密码 / 绑定邮箱) ---
+	if userStore != nil {
+		router.SetUserStore(userStore)
+		var mailer gateway.Mailer
+		if cfg.Gateway.Mail.Enabled {
+			m, err := gateway.NewSMTPMailer(cfg.Gateway.Mail)
+			if err != nil {
+				log.Printf("[main] mail config invalid: %v", err)
+			} else {
+				mailer = m
+				log.Printf("[main] mail enabled via %s:%d", cfg.Gateway.Mail.Host, cfg.Gateway.Mail.Port)
+			}
+		}
+		if mailer == nil && cfg.Gateway.Auth.DevMode {
+			mailer = gateway.LogMailer{}
+			log.Printf("[main] mail disabled, verification codes are only logged (dev mode)")
+		}
+		if mailer != nil {
+			var codes gateway.CodeStore = gateway.NewMemoryCodeStore()
+			if rdb != nil {
+				codes = gateway.NewRedisCodeStore(rdb)
+			}
+			server.SetAccountServices(mailer, codes)
+		} else {
+			log.Printf("[main] mail disabled: email registration, password reset and email binding are unavailable")
+		}
+	}
+
 	// 为 /health 端点注册依赖健康检查。
 	if rdb != nil {
 		gateway.RegisterHealthCheck("redis", func(ctx context.Context) error {
@@ -410,6 +438,13 @@ func (app *App) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/login", app.Server.HandleLogin)
 	mux.HandleFunc("/register", app.Server.HandleRegister)
+	mux.HandleFunc("/auth/email-code", app.Server.HandleEmailCode)
+	mux.HandleFunc("/password/reset", app.Server.HandlePasswordReset)
+	mux.HandleFunc("/user/email", app.Server.HandleBindEmail)
+	mux.HandleFunc("/user/profile", app.Server.HandleProfile)
+	mux.HandleFunc("/user/profiles", app.Server.HandleProfiles)
+	mux.HandleFunc("/user/search", app.Server.HandleUserSearch)
+	mux.HandleFunc("/avatar/", app.Server.HandleAvatar)
 	mux.HandleFunc("/online", app.Server.HandleOnlineUsers)
 
 	// 群聊管理端点。

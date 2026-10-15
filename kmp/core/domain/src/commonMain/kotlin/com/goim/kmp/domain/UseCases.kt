@@ -2,6 +2,7 @@ package com.goim.kmp.domain
 
 import com.goim.kmp.common.DomainError
 import com.goim.kmp.model.ChatType
+import com.goim.kmp.model.EmailCodePurpose
 import com.goim.kmp.model.FileMeta
 import com.goim.kmp.model.LocalFileId
 import com.goim.kmp.model.MessagePreview
@@ -12,13 +13,16 @@ import com.goim.kmp.model.TransportKind
 import com.goim.kmp.model.User
 import kotlinx.coroutines.CancellationException
 
+/** 登录 / 注册 / 找回密码；连接在会话挂载（UserHome + 数据库）之后由 app 层发起。 */
 class LoginUseCase(private val auth: AuthRepository) {
-    /** 连接在会话挂载（UserHome + 数据库）之后由 app 层发起。 */
-    suspend operator fun invoke(uid: String, username: String, password: String, register: Boolean): User {
-        val user = if (register) auth.register(uid, username, password) else auth.login(uid, username, password)
-        auth.saveSession(user)
-        return user
-    }
+    suspend fun login(account: String, password: String): User = auth.login(account, password).also { auth.saveSession(it) }
+
+    suspend fun register(email: String, code: String, password: String): User =
+        auth.register(email, code, password).also { auth.saveSession(it) }
+
+    suspend fun sendEmailCode(email: String, purpose: EmailCodePurpose) = auth.sendEmailCode(email, purpose)
+
+    suspend fun resetPassword(email: String, code: String, newPassword: String) = auth.resetPassword(email, code, newPassword)
 }
 
 class LogoutUseCase(

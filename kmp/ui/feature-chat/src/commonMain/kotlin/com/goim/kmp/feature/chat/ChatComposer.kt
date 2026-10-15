@@ -58,7 +58,8 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.graphics.Color
-import com.goim.kmp.designsystem.MonogramAvatar
+import com.goim.kmp.designsystem.UserAvatar
+import com.goim.kmp.designsystem.rememberDisplayName
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -714,9 +715,11 @@ private fun MentionDialog(candidates: List<String>, onDismiss: () -> Unit, onPic
             } else {
                 LazyColumn(Modifier.height(320.dp)) {
                     items(candidates) { uid ->
+                        val name = rememberDisplayName(uid)
                         ListItem(
-                            headlineContent = { Text(uid) },
-                            leadingContent = { MonogramAvatar(uid, size = 36.dp) },
+                            headlineContent = { Text(name, maxLines = 1) },
+                            supportingContent = if (name != uid) ({ Text("ID：$uid", maxLines = 1) }) else null,
+                            leadingContent = { UserAvatar(uid, name, size = 36.dp) },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             modifier = Modifier.clip(MaterialTheme.shapes.medium).clickable { onPick(uid) },
                         )

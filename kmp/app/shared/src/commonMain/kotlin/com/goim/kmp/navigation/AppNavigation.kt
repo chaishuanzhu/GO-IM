@@ -105,6 +105,11 @@ import com.goim.kmp.feature.settings.DeveloperScreen
 import com.goim.kmp.feature.settings.DeveloperViewModel
 import com.goim.kmp.feature.settings.ServerSettingsScreen
 import com.goim.kmp.feature.settings.SettingsScreen
+import com.goim.kmp.feature.settings.ProfileScreen
+import com.goim.kmp.feature.settings.ProfileViewModel
+import com.goim.kmp.designsystem.LocalProfileLookup
+import com.goim.kmp.designsystem.ProfileLookup
+import androidx.compose.runtime.CompositionLocalProvider
 import com.goim.kmp.feature.settings.SettingsViewModel
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.Conversation
@@ -133,7 +138,7 @@ fun AuthNavHost() {
     NavHost(nav, startDestination = LoginRoute) {
         composable<LoginRoute> {
             val vm = viewModel {
-                LoginViewModel(login) { user -> withContext(Dispatchers.Default) { manager.mount(user) } }
+                LoginViewModel(login, onLoggedIn = { user -> withContext(Dispatchers.Default) { manager.mount(user) } })
             }
             LoginScreen(
                 vm,
@@ -170,6 +175,14 @@ private val ChatRouteSaver = Saver<ChatRoute?, String>(
  */
 @Composable
 fun MainNavHost(session: UserSession) {
+    val lookup = remember(session) { ProfileLookup(session.profiles::observe) }
+    CompositionLocalProvider(LocalProfileLookup provides lookup) {
+        MainNavContent(session)
+    }
+}
+
+@Composable
+private fun MainNavContent(session: UserSession) {
     val nav = rememberNavController()
     val selfUid = session.user.uid
 
@@ -227,6 +240,7 @@ fun MainNavHost(session: UserSession) {
                     onOpenNewFriends = { nav.navigate(NewFriendsRoute) },
                     onOpenGroups = { nav.navigate(GroupsRoute) },
                     onOpenDeveloper = { nav.navigate(DeveloperRoute) },
+                    onOpenProfile = { nav.navigate(ProfileRoute) },
                 )
             }
             composable<ChatRoute> { entry ->
@@ -249,7 +263,7 @@ fun MainNavHost(session: UserSession) {
                 )
             }
             composable<NewFriendsRoute> {
-                val vm = viewModel { NewFriendsViewModel(session.friends) }
+                val vm = viewModel { NewFriendsViewModel(session.friends, session.profiles) }
                 NewFriendsScreen(vm, selfUid, onBack = { nav.popBackStack() })
             }
             composable<GroupsRoute> {
@@ -274,6 +288,10 @@ fun MainNavHost(session: UserSession) {
                         if (!nav.popBackStack<ChatRoute>(inclusive = true)) nav.popBackStack()
                     },
                 )
+            }
+            composable<ProfileRoute> {
+                val vm = viewModel { ProfileViewModel(session.profiles) }
+                ProfileScreen(vm, onBack = { nav.popBackStack() })
             }
             composable<DeveloperRoute> {
                 DeveloperDestination(session, onBack = { nav.popBackStack() })
@@ -336,7 +354,7 @@ private fun DeveloperDestination(session: UserSession, onBack: () -> Unit) {
                 },
                 info = {
                     listOf(
-                        "账号" to "${session.user.username} (${session.user.uid})",
+                        "账号" to "${session.profiles.me.value.displayName} (${session.user.uid})",
                         "API" to settings.apiBaseUrl.value,
                         "传输" to settings.preferredTransport.value.title,
                         "平台" to platformDescription,
@@ -371,6 +389,7 @@ private fun HomeScreen(
     onOpenNewFriends: () -> Unit,
     onOpenGroups: () -> Unit,
     onOpenDeveloper: () -> Unit,
+    onOpenProfile: () -> Unit,
 ) {
     val manager = koinInject<SessionManager>()
     val settings = koinInject<ServerSettingsRepository>()
@@ -380,6 +399,7 @@ private fun HomeScreen(
 
     val totalUnread by remember(session) { session.conversations.observeTotalUnread() }.collectAsState(0)
     val pendingRequests by remember(session) { session.friends.observeRequests().map { it.size } }.collectAsState(0)
+    val me by session.profiles.me.collectAsState()
 
     val conversationsVm = viewModel {
         ConversationListViewModel(session.user.uid, session.conversations, session.connection.state)
@@ -421,7 +441,7 @@ private fun HomeScreen(
             )
             HomeTab.CONTACTS -> ContactsScreen(contactsVm, onOpenNewFriends, onOpenGroups, onOpenFriend)
             HomeTab.SEARCH -> SearchScreen(searchVm) { hit, title -> onOpenChat(ChatRoute.of(hit, title)) }
-            HomeTab.SETTINGS -> SettingsScreen(settingsVm, onOpenDeveloper = onOpenDeveloper)
+            HomeTab.SETTINGS -> SettingsScreen(settingsVm, onOpenDeveloper = onOpenDeveloper, profile = me, onOpenProfile = onOpenProfile)
         }
     }
 

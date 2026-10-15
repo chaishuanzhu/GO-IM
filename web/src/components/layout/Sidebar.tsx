@@ -8,6 +8,7 @@ import {
   Shield,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
+import UserAvatar from '@/components/common/UserAvatar';
 import { useWSStore } from '@/stores/wsStore';
 import { wsManager } from '@/lib/ws';
 import { useUnreadCounts } from '@/hooks/useUnreadCounts';
@@ -20,7 +21,7 @@ const navItems = [
 ];
 
 export default function Sidebar() {
-  const { uid, username, isAdmin, logout } = useAuthStore();
+  const { uid, nickname, avatarUrl, isAdmin, logout } = useAuthStore();
   const status = useWSStore((s) => s.status);
   const { totalUnread } = useUnreadCounts();
 
@@ -34,12 +35,10 @@ export default function Sidebar() {
       {/* 用户信息 */}
       <div className="p-3 lg:p-4 border-b border-gray-200 dark:border-gray-800">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-primary-500 flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
-            {username.slice(0, 2).toUpperCase()}
-          </div>
+          <UserAvatar uid={uid} name={nickname} avatarUrl={avatarUrl} className="w-9 h-9 text-sm" />
           <div className="hidden lg:block flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{username}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{uid}</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{nickname}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">ID：{uid}</p>
           </div>
         </div>
         {/* 连接状态 */}

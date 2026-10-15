@@ -4,7 +4,15 @@
 
 const TOKEN_KEY = 'im_token';
 const UID_KEY = 'im_uid';
-const USERNAME_KEY = 'im_username';
+const PROFILE_KEY = 'im_profile';
+/** 旧版本只存了昵称（当时叫 username）。 */
+const LEGACY_USERNAME_KEY = 'im_username';
+
+export interface StoredProfile {
+  nickname: string;
+  email: string;
+  avatarUrl: string;
+}
 
 export function getToken(): string | null {
   return sessionStorage.getItem(TOKEN_KEY);
@@ -14,20 +22,35 @@ export function getStoredUid(): string | null {
   return sessionStorage.getItem(UID_KEY);
 }
 
-export function getStoredUsername(): string | null {
-  return sessionStorage.getItem(USERNAME_KEY);
+export function getStoredProfile(): StoredProfile {
+  const empty: StoredProfile = { nickname: '', email: '', avatarUrl: '' };
+  const raw = sessionStorage.getItem(PROFILE_KEY);
+  if (raw) {
+    try {
+      return { ...empty, ...JSON.parse(raw) };
+    } catch {
+      // 损坏的数据按未保存处理
+    }
+  }
+  return { ...empty, nickname: sessionStorage.getItem(LEGACY_USERNAME_KEY) || '' };
 }
 
-export function saveAuth(uid: string, username: string, token: string): void {
+export function saveProfile(profile: StoredProfile): void {
+  sessionStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+}
+
+export function saveAuth(uid: string, token: string, profile: StoredProfile): void {
   sessionStorage.setItem(TOKEN_KEY, token);
   sessionStorage.setItem(UID_KEY, uid);
-  sessionStorage.setItem(USERNAME_KEY, username);
+  sessionStorage.removeItem(LEGACY_USERNAME_KEY);
+  saveProfile(profile);
 }
 
 export function clearAuth(): void {
   sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(UID_KEY);
-  sessionStorage.removeItem(USERNAME_KEY);
+  sessionStorage.removeItem(PROFILE_KEY);
+  sessionStorage.removeItem(LEGACY_USERNAME_KEY);
 }
 
 /** 检查存储的 JWT 是否已过期(简单的客户端检查) */

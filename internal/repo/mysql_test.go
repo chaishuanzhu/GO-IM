@@ -63,7 +63,7 @@ func TestMySQLUserCreateAndGet(t *testing.T) {
 	ctx := context.Background()
 	u := &User{
 		UID:          "testuser1",
-		Username:     "Test User",
+		Nickname:     "Test User",
 		PasswordHash: "$2a$10$dummyhash",
 		CreatedAt:    1721318400000,
 	}
@@ -82,8 +82,8 @@ func TestMySQLUserCreateAndGet(t *testing.T) {
 	if got.UID != u.UID {
 		t.Errorf("UID: expected %s, got %s", u.UID, got.UID)
 	}
-	if got.Username != u.Username {
-		t.Errorf("Username: expected %s, got %s", u.Username, got.Username)
+	if got.Nickname != u.Nickname {
+		t.Errorf("Nickname: expected %s, got %s", u.Nickname, got.Nickname)
 	}
 	if got.PasswordHash != u.PasswordHash {
 		t.Errorf("PasswordHash: expected %s, got %s", u.PasswordHash, got.PasswordHash)
@@ -96,7 +96,7 @@ func TestMySQLUserCreateDuplicate(t *testing.T) {
 	truncateAll(t, s)
 
 	ctx := context.Background()
-	u := &User{UID: "dupuser", Username: "Dup", PasswordHash: "hash", CreatedAt: 1}
+	u := &User{UID: "dupuser", Nickname: "Dup", PasswordHash: "hash", CreatedAt: 1}
 
 	if err := s.Create(ctx, u); err != nil {
 		t.Fatalf("first Create: %v", err)
@@ -112,7 +112,7 @@ func TestMySQLUpdateUserRoleAndDisabled(t *testing.T) {
 	truncateAll(t, s)
 
 	ctx := context.Background()
-	u := &User{UID: "roleuser", Username: "Role User", PasswordHash: "hash", CreatedAt: 1}
+	u := &User{UID: "roleuser", Nickname: "Role User", PasswordHash: "hash", CreatedAt: 1}
 	if err := s.Create(ctx, u); err != nil {
 		t.Fatalf("Create: %v", err)
 	}

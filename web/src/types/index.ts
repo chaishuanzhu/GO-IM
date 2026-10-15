@@ -95,15 +95,30 @@ export interface Conversation {
 /** /online 或 /login 返回的用户信息 */
 export interface User {
   uid: string;
-  username: string;
+  nickname: string;
 }
 
-/** POST /login 的登录响应 */
+/** POST /login、/register 的登录响应 */
 export interface LoginResponse {
   uid: string;
-  username: string;
+  nickname: string;
+  email?: string;
+  /** 相对网关的头像路径，未设置时为空串 */
+  avatar_url?: string;
+  role?: string;
   token: string;
 }
+
+/** 公开资料（/user/profiles、/user/search）；自己的资料额外带 email。 */
+export interface UserProfile {
+  uid: string;
+  nickname: string;
+  avatar_url: string;
+  email?: string;
+}
+
+/** 邮箱验证码用途 */
+export type EmailCodePurpose = 'register' | 'reset_password' | 'bind_email';
 
 /** 群组信息 —— 键与后端 JSON 字段名一致。 */
 export interface GroupInfo {
@@ -186,12 +201,15 @@ export interface Friend {
   friend_uid: string;
   status: number; // 0=待处理, 1=已接受, 2=已拒绝
   created_at: number;
+  nickname?: string;
+  avatar_url?: string;
 }
 
 /** 从接收方视角的好友请求 */
 export interface FriendRequest {
   from_uid: string;
-  username: string;
+  nickname: string;
+  avatar_url?: string;
   created_at: number;
 }
 
@@ -227,7 +245,8 @@ export interface AdminStats {
 /** 管理列表中的用户记录 */
 export interface AdminUser {
   uid: string;
-  username: string;
+  nickname: string;
+  email?: string;
   role: string;
   is_disabled: boolean;
   created_at: number;

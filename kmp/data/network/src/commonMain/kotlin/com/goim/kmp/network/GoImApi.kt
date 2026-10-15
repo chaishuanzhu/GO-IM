@@ -1,6 +1,7 @@
 package com.goim.kmp.network
 
 import com.goim.kmp.common.DomainError
+import com.goim.kmp.model.EmailCodePurpose
 import com.goim.kmp.model.User
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -14,21 +15,41 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import io.ktor.http.parameters
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-internal data class LoginResponseDto(val uid: String, val username: String, val token: String)
+internal data class LoginResponseDto(
+    val uid: String,
+    val token: String,
+    val nickname: String? = null,
+    /** 1.3.0 之前的网关只返回 username。 */
+    val username: String? = null,
+    val email: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+)
 
 /** 网关 REST 接口（docs/07）。[baseUrl] 每次请求时读取，设置页改地址后即时生效。 */
 class GoImApi(
     private val client: HttpClient,
     private val baseUrl: () -> String,
 ) {
-    suspend fun login(uid: String, username: String, password: String): User =
-        authForm("login", uid, username, password)
+    /** [account] 为邮箱或用户 ID。 */
+    suspend fun login(account: String, password: String): User =
+        authForm("login", "account" to account, "password" to password)
 
-    suspend fun register(uid: String, username: String, password: String): User =
-        authForm("register", uid, username, password)
+    /** 邮箱 + 验证码注册，服务端分配用户 ID。 */
+    suspend fun register(email: String, code: String, password: String): User =
+        authForm("register", "email" to email, "code" to code, "password" to password)
+
+    /** 发送注册 / 找回密码验证码（绑定邮箱需登录，见 [GoImUserApi.sendBindEmailCode]）。 */
+    suspend fun sendEmailCode(email: String, purpose: EmailCodePurpose) {
+        submit("auth/email-code", "email" to email, "purpose" to purpose.raw)
+    }
+
+    suspend fun resetPassword(email: String, code: String, newPassword: String) {
+        submit("password/reset", "email" to email, "code" to code, "new_password" to newPassword)
+    }
 
     /**
      * 用 `GET /unread` 探测 token：true 有效、false 被拒（401）、null 无法判断（网络等）。
@@ -51,21 +72,24 @@ class GoImApi(
         null
     }
 
-    private suspend fun authForm(path: String, uid: String, username: String, password: String): User {
-        val response = request {
-            client.submitForm(
-                url = url(path),
-                formParameters = parameters {
-                    append("uid", uid)
-                    append("username", username)
-                    append("password", password)
-                },
-            ) {
-                timeout { requestTimeoutMillis = REQUEST_TIMEOUT_MS }
-            }
+    private suspend fun authForm(path: String, vararg fields: Pair<String, String>): User {
+        val dto = submit(path, *fields).decode<LoginResponseDto>()
+        return User(
+            uid = dto.uid,
+            nickname = (dto.nickname ?: dto.username).orEmpty().ifEmpty { dto.uid },
+            token = dto.token,
+            email = dto.email.orEmpty(),
+            avatarUrl = absoluteUrl(baseUrl(), dto.avatarUrl),
+        )
+    }
+
+    private suspend fun submit(path: String, vararg fields: Pair<String, String>): HttpResponse = request {
+        client.submitForm(
+            url = url(path),
+            formParameters = parameters { fields.forEach { (k, v) -> append(k, v) } },
+        ) {
+            timeout { requestTimeoutMillis = REQUEST_TIMEOUT_MS }
         }
-        val dto = response.decode<LoginResponseDto>()
-        return User(uid = dto.uid, username = dto.username.ifEmpty { dto.uid }, token = dto.token)
     }
 
     private fun url(path: String) = baseUrl().trimEnd('/') + "/" + path
@@ -95,4 +119,11 @@ class GoImApi(
     private companion object {
         const val REQUEST_TIMEOUT_MS = 15_000L
     }
+}
+
+/** 网关返回的头像等相对路径（`/avatar/1`）补全为绝对地址；空值返回空串。 */
+internal fun absoluteUrl(base: String, path: String?): String = when {
+    path.isNullOrBlank() -> ""
+    path.startsWith("http://") || path.startsWith("https://") -> path
+    else -> base.trimEnd('/') + "/" + path.trimStart('/')
 }

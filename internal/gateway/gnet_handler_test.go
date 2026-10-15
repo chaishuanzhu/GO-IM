@@ -459,8 +459,8 @@ func TestHandleLoginSuccess(t *testing.T) {
 	if client.UID != "alice" {
 		t.Errorf("expected UID=alice, got %s", client.UID)
 	}
-	if client.Username != "Alice" {
-		t.Errorf("expected Username=Alice, got %s", client.Username)
+	if client.Nickname != "Alice" {
+		t.Errorf("expected Nickname=Alice, got %s", client.Nickname)
 	}
 
 	// 客户端应已注册到 hub。

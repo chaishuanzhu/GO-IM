@@ -37,6 +37,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.style.TextOverflow
 import com.goim.kmp.designsystem.MonogramAvatar
+import com.goim.kmp.designsystem.UserAvatar
+import com.goim.kmp.designsystem.rememberDisplayName
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -139,16 +141,22 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() 
         }
     }
 
+    val isGroup = conversation.chatType == ChatType.GROUP
+    val title = if (isGroup) conversation.title else rememberDisplayName(conversation.peerOrGroupId, conversation.title)
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        MonogramAvatar(conversation.title, size = 36.dp)
+                        if (isGroup) {
+                            MonogramAvatar(title, size = 36.dp)
+                        } else {
+                            UserAvatar(conversation.peerOrGroupId, title, size = 36.dp)
+                        }
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(
-                                conversation.title,
+                                title,
                                 style = MaterialTheme.typography.titleMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -356,11 +364,12 @@ private fun CenterNotice(text: String) {
 private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> Unit, bubbles: BubbleEnv) {
     val outgoing = message.isOutgoing
     val time = GoImFormat.messageTime(message.timestampMs)
-    val meta = if (outgoing) time else "${message.fromUid} · $time"
+    val senderName = if (outgoing) bubbles.selfName else rememberDisplayName(message.fromUid)
+    val meta = if (outgoing) time else "$senderName · $time"
 
-    val description = remember(message.content, message.status, message.msgType, time) {
+    val description = remember(message.content, message.status, message.msgType, time, senderName) {
         buildString {
-            append(if (outgoing) "我" else message.fromUid).append("，")
+            append(if (outgoing) "我" else senderName).append("，")
             append(if (message.msgType == MsgType.Text) message.content else MessagePreview.listPreview(message)).append("，")
             append(time)
             when (message.status) {
@@ -370,13 +379,12 @@ private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> U
             }
         }
     }
-    val avatarName = if (outgoing) bubbles.selfName else message.fromUid
     Row(
         Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = description },
         horizontalArrangement = Arrangement.spacedBy(8.dp, if (outgoing) Alignment.End else Alignment.Start),
         verticalAlignment = Alignment.Top,
     ) {
-        if (!outgoing) MonogramAvatar(avatarName, size = GoImDimens.messageAvatarSize)
+        if (!outgoing) UserAvatar(message.fromUid, senderName, size = GoImDimens.messageAvatarSize)
         Column(
             Modifier.weight(1f, fill = false),
             horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start,
@@ -407,7 +415,7 @@ private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> U
                 BubbleBody(message, maxBubbleWidth, bubbles)
             }
         }
-        if (outgoing) MonogramAvatar(avatarName, size = GoImDimens.messageAvatarSize)
+        if (outgoing) UserAvatar(message.fromUid, senderName, size = GoImDimens.messageAvatarSize)
     }
 }
 

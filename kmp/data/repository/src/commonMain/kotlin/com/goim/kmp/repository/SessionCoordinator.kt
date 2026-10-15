@@ -8,6 +8,7 @@ import com.goim.kmp.domain.GroupRepository
 import com.goim.kmp.domain.InboundEvent
 import com.goim.kmp.domain.MessageRepository
 import com.goim.kmp.domain.OutboundEnvelope
+import com.goim.kmp.domain.ProfileRepository
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.ConnectionState
 import com.goim.kmp.model.ConversationId
@@ -33,6 +34,7 @@ class SessionCoordinator(
     private val groups: GroupRepository? = null,
     private val friends: FriendRepositoryImpl? = null,
     private val files: FileRepository? = null,
+    private val profiles: ProfileRepository? = null,
     private val onEnded: (SessionEndReason) -> Unit,
 ) {
     private val log = Logger.withTag("Session")
@@ -108,6 +110,7 @@ class SessionCoordinator(
         }
         groupRefresh.trySend(Unit)
         friends?.let { safely { it.refresh() } }
+        profiles?.let { safely { it.refreshMe() } }
     }
 
     private fun conversationIdForUnreadKey(key: String): String = when {

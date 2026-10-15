@@ -3,7 +3,9 @@ import type { ReactNode } from 'react';
 import { MoreVertical, Trash2, Reply, Edit3, Forward, X, Check } from 'lucide-react';
 import type { ChatMessage, ReplyTo } from '@/types';
 import { MsgType } from '@/types';
-import { formatTime, tryParseJSON, getAvatarLetters, getFileURL } from '@/lib/utils';
+import { formatTime, tryParseJSON, getFileURL } from '@/lib/utils';
+import { useDisplayName } from '@/stores/profileStore';
+import UserAvatar from '@/components/common/UserAvatar';
 import { useAuthStore } from '@/stores/authStore';
 import { RECALL_WINDOW_MS, EDIT_WINDOW_MS } from '@/lib/constants';
 import FilePreview from './FilePreview';
@@ -60,7 +62,7 @@ export default function MessageBubble({ message, isMine, showAvatar, onRecall, o
   // 检查消息是否可以本地删除
   const canDelete = isMine && !recalled && onDelete && msgId !== '0';
 
-  const avatarLetter = getAvatarLetters(message.from);
+  const senderName = useDisplayName(message.from);
 
   // 进入编辑模式时聚焦编辑输入框
   useEffect(() => {
@@ -89,7 +91,7 @@ export default function MessageBubble({ message, isMine, showAvatar, onRecall, o
   };
 
   // 从内容中解析回复元数据
-  const parsedContent = tryParseJSON<{ text?: string; reply_to?: ReplyTo; edited?: boolean; type?: string; username?: string; from_uid?: string; uid?: string; name?: string }>(content);
+  const parsedContent = tryParseJSON<{ text?: string; reply_to?: ReplyTo; edited?: boolean; type?: string; nickname?: string; username?: string; from_uid?: string; uid?: string; name?: string }>(content);
   const replyTo: ReplyTo | null = parsedContent?.reply_to || null;
 
   // 计算展示文本:优雅处理 JSON 系统消息
@@ -97,7 +99,7 @@ export default function MessageBubble({ message, isMine, showAvatar, onRecall, o
   if (parsedContent?.text) {
     displayText = parsedContent.text;
   } else if (parsedContent?.type === 'friend_request') {
-    displayText = `${parsedContent.username || parsedContent.from_uid || '用户'} 请求添加好友`;
+    displayText = `${parsedContent.nickname || parsedContent.username || parsedContent.from_uid || '用户'} 请求添加好友`;
   } else if (parsedContent?.type === 'friend_accepted') {
     displayText = `${parsedContent.uid || '用户'} 已同意好友请求`;
   } else if (parsedContent?.type === 'group_created') {
@@ -302,9 +304,7 @@ export default function MessageBubble({ message, isMine, showAvatar, onRecall, o
     >
       {/* 头像 */}
       {showAvatar ? (
-        <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
-          {avatarLetter}
-        </div>
+        <UserAvatar uid={message.from} name={senderName} className="w-8 h-8 text-xs" />
       ) : (
         <div className="w-8 flex-shrink-0" />
       )}
@@ -313,7 +313,7 @@ export default function MessageBubble({ message, isMine, showAvatar, onRecall, o
       <div className={`group relative max-w-[75%] ${isMine ? 'items-end' : 'items-start'}`}>
         {/* 发送者名称 */}
         {showAvatar && !isMine && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1 ml-1">{message.from}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1 ml-1">{senderName}</p>
         )}
 
         <div className="flex items-end gap-1">

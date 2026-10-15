@@ -3,24 +3,48 @@ package repo
 
 import (
 	"context"
+	"errors"
 
 	"github.com/im/api/proto"
+)
+
+var (
+	// ErrEmailTaken 表示邮箱已被其他用户使用。
+	ErrEmailTaken = errors.New("email already registered")
+	// ErrUserNotFound 表示目标用户不存在。
+	ErrUserNotFound = errors.New("user not found")
 )
 
 // User 表示一个已注册的用户。
 type User struct {
 	UID          string `json:"uid"`
-	Username     string `json:"username"`
+	Nickname     string `json:"nickname"`
+	Email        string `json:"email,omitempty"` // 空 = 未绑定（早期注册的用户）
+	AvatarFileID int64  `json:"-"`               // 0 = 未设置；对外以 avatar_url 表示
 	PasswordHash string `json:"-"`
 	Role         string `json:"role"` // "user" 或 "admin"
 	IsDisabled   bool   `json:"is_disabled"`
 	CreatedAt    int64  `json:"created_at"` // 毫秒级 Unix 时间戳
+	UpdatedAt    int64  `json:"updated_at"` // 资料最后修改时间（毫秒），0 = 未修改过
 }
 
 // UserStore 管理用户持久化。
 type UserStore interface {
+	// Create 以 u.UID 插入用户（早期自定义 ID 的路径，测试与工具使用）。
 	Create(ctx context.Context, u *User) error
+	// CreateWithAutoUID 分配自增 UID 并插入用户，成功后写回 u.UID；邮箱已占用返回 ErrEmailTaken。
+	CreateWithAutoUID(ctx context.Context, u *User) error
 	GetByUID(ctx context.Context, uid string) (*User, error)
+	// GetByEmail 按邮箱（不区分大小写）获取用户，未找到返回 (nil, nil)。
+	GetByEmail(ctx context.Context, email string) (*User, error)
+	// GetUsers 批量获取用户，不存在的 UID 直接跳过。
+	GetUsers(ctx context.Context, uids []string) ([]*User, error)
+	// UpdateProfile 修改昵称和/或头像，nil 表示不修改；用户不存在返回 ErrUserNotFound。
+	UpdateProfile(ctx context.Context, uid string, nickname *string, avatarFileID *int64) error
+	// SetEmail 绑定或更换邮箱；已被他人占用返回 ErrEmailTaken。
+	SetEmail(ctx context.Context, uid, email string) error
+	// SearchUsers 按 UID / 邮箱精确匹配或昵称包含匹配搜索，最多返回 limit 条。
+	SearchUsers(ctx context.Context, query string, limit int) ([]*User, error)
 	UpdatePassword(ctx context.Context, uid, newPasswordHash string) error
 	// 管理员方法
 	ListUsers(ctx context.Context, offset, limit int) ([]*User, int, error)
@@ -59,19 +83,24 @@ const (
 	FriendStatusRejected FriendStatus = 2 // 请求已被拒绝
 )
 
-// Friend 表示一条好友关系。
+// Friend 表示一条好友关系。UID 始终是对方，Nickname / AvatarFileID 为对方资料。
 type Friend struct {
-	UID       string       `json:"uid"`
-	FriendUID string       `json:"friend_uid"`
-	Status    FriendStatus `json:"status"`
-	CreatedAt int64        `json:"created_at"` // 毫秒级 Unix 时间戳
+	UID          string       `json:"uid"`
+	FriendUID    string       `json:"friend_uid"`
+	Status       FriendStatus `json:"status"`
+	CreatedAt    int64        `json:"created_at"` // 毫秒级 Unix 时间戳
+	Nickname     string       `json:"nickname"`
+	AvatarFileID int64        `json:"-"`
+	AvatarURL    string       `json:"avatar_url"` // 由网关按 AvatarFileID 填充
 }
 
 // FriendRequest 表示一条收到的好友请求（从接收方的角度）。
 type FriendRequest struct {
-	FromUID   string `json:"from_uid"`
-	Username  string `json:"username"`   // 请求方的显示名称（如果已知）
-	CreatedAt int64  `json:"created_at"` // 毫秒级 Unix 时间戳
+	FromUID      string `json:"from_uid"`
+	Nickname     string `json:"nickname"`   // 请求方昵称（用户不存在时为其 UID）
+	CreatedAt    int64  `json:"created_at"` // 毫秒级 Unix 时间戳
+	AvatarFileID int64  `json:"-"`
+	AvatarURL    string `json:"avatar_url"` // 由网关按 AvatarFileID 填充
 }
 
 // FriendStore 管理好友关系与请求。
@@ -110,6 +139,7 @@ type File struct {
 	Height    int
 	HasThumb  bool
 	Status    FileStatus
+	IsAvatar  bool
 	CreatedAt int64 // 毫秒
 }
 
@@ -126,6 +156,8 @@ type FileStore interface {
 	// StalePendingFiles 返回 createdBefore（毫秒）之前创建、仍未确认的文件 ID。
 	StalePendingFiles(ctx context.Context, createdBefore int64, limit int) ([]int64, error)
 	DeleteFile(ctx context.Context, fileID int64) error
+	// MarkAvatar 把文件标记为头像：此后任何人都可通过 /avatar 读取，且不会被清理任务删除。
+	MarkAvatar(ctx context.Context, fileID int64) error
 }
 
 // MessageStore 管理消息历史记录的持久化。

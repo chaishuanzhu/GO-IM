@@ -1,4 +1,5 @@
 import { X, MessageSquareDot, Trash2 } from 'lucide-react';
+import UserAvatar from '@/components/common/UserAvatar';
 
 interface FriendInfoPanelProps {
   peerId: string;
@@ -34,11 +35,11 @@ export default function FriendInfoPanel({
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* 头像与名称 */}
           <div className="text-center">
-            <div className="w-16 h-16 rounded-full bg-primary-500 flex items-center justify-center text-white text-xl font-bold mx-auto">
-              {peerName.slice(0, 2).toUpperCase()}
+            <div className="flex justify-center">
+              <UserAvatar uid={peerId} name={peerName} className="w-16 h-16 text-xl" />
             </div>
             <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-2">{peerName}</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-mono">{peerId}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-mono">ID：{peerId}</p>
           </div>
 
           {/* 操作 */}

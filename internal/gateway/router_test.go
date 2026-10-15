@@ -170,7 +170,7 @@ func TestRouteChatSendBufferFull(t *testing.T) {
 	// 创建发送缓冲区极小的目标客户端
 	target := &Client{
 		UID:      "bob",
-		Username: "Bob",
+		Nickname: "Bob",
 		send:     make(chan []byte, 1), // 缓冲区大小为 1
 		closed:   make(chan struct{}),
 	}

@@ -59,7 +59,8 @@ data class GroupMemberEntity(
 @Entity(tableName = "friends")
 data class FriendEntity(
     @PrimaryKey val uid: String,
-    val username: String,
+    val nickname: String,
+    @ColumnInfo(name = "avatar_url", defaultValue = "") val avatarUrl: String = "",
 )
 
 @Entity(tableName = "friend_requests", primaryKeys = ["from_uid", "to_uid"])
@@ -68,7 +69,17 @@ data class FriendRequestEntity(
     @ColumnInfo(name = "to_uid") val toUid: String,
     val status: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
-    val username: String?,
+    val nickname: String?,
+    @ColumnInfo(name = "avatar_url", defaultValue = "") val avatarUrl: String = "",
+)
+
+/** 用户公开资料缓存（昵称 / 头像），[fetchedAt] 用于判断是否需要刷新。 */
+@Entity(tableName = "profiles")
+data class ProfileEntity(
+    @PrimaryKey val uid: String,
+    val nickname: String,
+    @ColumnInfo(name = "avatar_url", defaultValue = "") val avatarUrl: String,
+    @ColumnInfo(name = "fetched_at", defaultValue = "0") val fetchedAt: Long,
 )
 
 @Entity(tableName = "meta")

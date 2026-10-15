@@ -18,7 +18,7 @@ sealed interface InboundEvent {
     data class HistoryFinished(val delivered: Int) : InboundEvent
 
     /** 他人发来的好友请求（在线推送或离线补发）。 */
-    data class FriendRequestReceived(val fromUid: String, val username: String?, val timestampMs: Long) : InboundEvent
+    data class FriendRequestReceived(val fromUid: String, val nickname: String?, val timestampMs: Long) : InboundEvent
 
     /** 自己发出 CmdFriendRequest 后网关的回执；[error] 为 null 表示已送达。 */
     data class FriendRequestResult(val peerUid: String, val error: String?) : InboundEvent

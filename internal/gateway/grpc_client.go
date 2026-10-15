@@ -137,7 +137,7 @@ func (c *LogicClient) GetUser(ctx context.Context, uid string) (*repo.User, erro
 	}
 	return &repo.User{
 		UID:      resp.Uid,
-		Username: resp.Username,
+		Nickname: resp.Username,
 	}, nil
 }
 

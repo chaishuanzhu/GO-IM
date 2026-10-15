@@ -25,8 +25,8 @@ func TestSignAndValidate(t *testing.T) {
 	if claims.UID != "user-1" {
 		t.Errorf("expected UID 'user-1', got '%s'", claims.UID)
 	}
-	if claims.Username != "Alice" {
-		t.Errorf("expected Username 'Alice', got '%s'", claims.Username)
+	if claims.Nickname != "Alice" {
+		t.Errorf("expected Nickname 'Alice', got '%s'", claims.Nickname)
 	}
 	if claims.Issuer != "im-server" {
 		t.Errorf("expected Issuer 'im-server', got '%s'", claims.Issuer)

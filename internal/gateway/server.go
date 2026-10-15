@@ -48,6 +48,10 @@ type Server struct {
 	downloadTTL time.Duration
 	thumbSem    chan struct{} // 限制直传图片缩略图的并发生成
 
+	// 邮箱验证码(nil = 未启用注册/找回密码/绑定邮箱)。
+	mailer Mailer
+	codes  CodeStore
+
 	// WebSocket
 	upgrader websocket.Upgrader
 
@@ -123,164 +127,6 @@ func Recovery(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(w, r)
 	})
-}
-
-// HandleLogin 是用户登录的 HTTP 端点(返回 JWT)。
-// 开发模式(默认)下,仅需 uid+username。
-// 生产模式下,需要 uid+password,并与用户存储进行校验。
-func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form data: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	uid := r.FormValue("uid")
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-
-	if uid == "" {
-		uid = username
-	}
-	if uid == "" {
-		http.Error(w, "uid required", http.StatusBadRequest)
-		return
-	}
-
-	// 密码认证路径。
-	role := "user"
-	if password != "" {
-		if s.userStore == nil {
-			http.Error(w, "user store not available", http.StatusServiceUnavailable)
-			return
-		}
-		u, err := s.userStore.GetByUID(r.Context(), uid)
-		if err != nil {
-			log.Printf("[server] login db error for %s: %v", uid, err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		if u == nil {
-			http.Error(w, "user not found", http.StatusUnauthorized)
-			return
-		}
-		if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
-			http.Error(w, "invalid password", http.StatusUnauthorized)
-			return
-		}
-		username = u.Username
-		role = u.Role
-	} else if !s.authCfg.DevMode {
-		// 生产模式要求密码。
-		http.Error(w, "password required", http.StatusUnauthorized)
-		return
-	}
-
-	// 开发模式:允许通过表单字段覆盖角色,用于测试管理员功能。
-	if s.authCfg.DevMode && r.FormValue("role") == "admin" {
-		role = "admin"
-	}
-
-	// 从配置引导管理员 UID(优先级最高)。
-	if s.adminUIDs[uid] {
-		role = "admin"
-	}
-
-	// 开发模式回退:无密码 → 使用提供的 username(或 uid)。
-	if username == "" {
-		username = uid
-	}
-
-	token, err := s.jwtMgr.Generate(uid, username, role)
-	if err != nil {
-		http.Error(w, "generate token: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	data, _ := json.Marshal(map[string]string{
-		"uid":      uid,
-		"username": username,
-		"token":    token,
-	})
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
-}
-
-// HandleRegister 是用户注册的 HTTP 端点。
-// 需要 uid、username 和 password。保存密码的 bcrypt 哈希。
-func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form data: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	uid := r.FormValue("uid")
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-
-	if uid == "" || password == "" {
-		http.Error(w, "uid and password required", http.StatusBadRequest)
-		return
-	}
-	if username == "" {
-		username = uid
-	}
-
-	if s.userStore == nil {
-		http.Error(w, "user store not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		log.Printf("[server] bcrypt error: %v", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	u := &repo.User{
-		UID:          uid,
-		Username:     username,
-		PasswordHash: string(hash),
-		CreatedAt:    time.Now().UnixMilli(),
-	}
-	if err := s.userStore.Create(r.Context(), u); err != nil {
-		log.Printf("[server] register error for %s: %v", uid, err)
-		// MySQL 错误 1062 = 重复条目;其他错误为内部错误。
-		if strings.Contains(err.Error(), "Duplicate entry") || strings.Contains(err.Error(), "Error 1062") {
-			http.Error(w, "uid already exists", http.StatusConflict)
-		} else {
-			http.Error(w, "registration failed", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	role := "user"
-	if s.adminUIDs[uid] {
-		role = "admin"
-	}
-	token, err := s.jwtMgr.Generate(uid, username, role)
-	if err != nil {
-		http.Error(w, "generate token: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	data, _ := json.Marshal(map[string]string{
-		"uid":      uid,
-		"username": username,
-		"token":    token,
-	})
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
 }
 
 // HandleChangePassword 校验当前密码并更新为新密码。
@@ -923,7 +769,7 @@ func (s *Server) HandleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	s.router.NotifyFriendRequest(r.Context(), claims.UID, claims.Username, toUID)
+	s.router.NotifyFriendRequest(r.Context(), claims.UID, claims.Nickname, toUID)
 
 	data, _ := json.Marshal(map[string]string{"status": "ok"})
 	w.Header().Set("Content-Type", "application/json")
@@ -1058,6 +904,12 @@ func (s *Server) HandleFriendList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for _, f := range friends {
+		f.AvatarURL = avatarURL(f.AvatarFileID)
+	}
+	for _, req := range requests {
+		req.AvatarURL = avatarURL(req.AvatarFileID)
+	}
 	data, _ := json.Marshal(map[string]interface{}{
 		"uid":              claims.UID,
 		"friends":          friends,

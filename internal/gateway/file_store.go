@@ -75,6 +75,15 @@ func (s *InMemoryFileStore) SetFileThumb(_ context.Context, fileID int64) error 
 	return nil
 }
 
+func (s *InMemoryFileStore) MarkAvatar(_ context.Context, fileID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if f, ok := s.files[fileID]; ok {
+		f.IsAvatar = true
+	}
+	return nil
+}
+
 func (s *InMemoryFileStore) AddFileRef(_ context.Context, fileID int64, key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

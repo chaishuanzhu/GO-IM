@@ -38,6 +38,15 @@
             "dsn": "im:im-dev@tcp(mysql:3306)/im?parseTime=true&charset=utf8mb4"
         },
 
+        "mail": {
+            "_comment": "注册 / 找回密码 / 绑定邮箱需要 SMTP；密码通过环境变量 MAIL_PASSWORD 传入",
+            "enabled": false,
+            "host": "smtp.example.com",
+            "port": 465,
+            "username": "no_reply@example.com",
+            "from": "GO-IM <no_reply@example.com>"
+        },
+
         "auth": {
             "dev_mode": false
         },

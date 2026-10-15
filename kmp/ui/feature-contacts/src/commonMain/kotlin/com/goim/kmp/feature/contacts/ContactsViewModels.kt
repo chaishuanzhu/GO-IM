@@ -5,11 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.goim.kmp.common.userMessage
 import com.goim.kmp.domain.FriendRepository
 import com.goim.kmp.domain.GroupRepository
+import com.goim.kmp.domain.ProfileRepository
 import com.goim.kmp.model.Friend
 import com.goim.kmp.model.FriendRequest
 import com.goim.kmp.model.Group
 import com.goim.kmp.model.GroupMember
+import com.goim.kmp.model.UserProfile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -88,16 +91,66 @@ class ContactsViewModel(private val friends: FriendRepository) : ActionViewModel
     }
 }
 
-class NewFriendsViewModel(private val friends: FriendRepository) : ActionViewModel() {
+data class UserSearchState(
+    val query: String = "",
+    val results: List<UserProfile> = emptyList(),
+    val searching: Boolean = false,
+    /** 已完成至少一次搜索（区分「未搜索」与「无结果」）。 */
+    val searched: Boolean = false,
+    val error: String? = null,
+)
+
+class NewFriendsViewModel(
+    private val friends: FriendRepository,
+    private val profiles: ProfileRepository? = null,
+) : ActionViewModel() {
     val requests: StateFlow<List<FriendRequest>> = friends.observeRequests()
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val friendUids: StateFlow<Set<String>> = friends.observeFriends()
+        .map<List<Friend>, Set<String>> { list -> list.mapTo(HashSet()) { it.uid } }
+        .catch { emit(emptySet()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    private val _search = MutableStateFlow(UserSearchState())
+    val search: StateFlow<UserSearchState> = _search.asStateFlow()
+    private var searchJob: Job? = null
 
     init {
         action(block = { friends.refresh() })
     }
 
     fun sendRequest(uid: String) = action(success = "好友请求已发送", block = { friends.sendRequest(uid) })
+
+    fun onQueryChange(query: String) {
+        _search.value = _search.value.copy(query = query, error = null)
+    }
+
+    fun resetSearch() {
+        searchJob?.cancel()
+        _search.value = UserSearchState()
+    }
+
+    /** 按昵称、邮箱或用户 ID 搜索；服务端不支持搜索时按用户 ID 精确返回一条。 */
+    fun searchUsers() {
+        val q = _search.value.query.trim()
+        if (q.isEmpty()) return
+        searchJob?.cancel()
+        _search.value = _search.value.copy(searching = true, error = null)
+        searchJob = viewModelScope.launch {
+            try {
+                val results = profiles?.search(q) ?: listOf(UserProfile(q, q))
+                _search.value = _search.value.copy(results = results, searched = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _search.value = _search.value.copy(error = e.userMessage(), searched = true)
+            } finally {
+                _search.value = _search.value.copy(searching = false)
+            }
+        }
+    }
 
     fun respond(request: FriendRequest, accept: Boolean) = action(
         success = if (accept) "已添加 ${request.displayName} 为好友" else "已拒绝",

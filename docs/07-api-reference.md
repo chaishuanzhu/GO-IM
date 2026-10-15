@@ -58,8 +58,9 @@
 
 | 项目 | 开发模式 (`dev_mode: true`) | 生产模式 (`dev_mode: false`) |
 |------|---------------------------|------------------------------|
-| 登录 | `uid` + `username` 即可 | 需要 `uid` + `password`（bcrypt） |
-| 注册 | 不需要 | 需要 `uid` + `username` + `password` |
+| 登录 | `account`（用户 ID 或邮箱）即可，可不带密码 | 需要 `account` + `password`（bcrypt） |
+| 注册 | 可不注册直接登录 | 邮箱 + 验证码 + 密码，服务端分配用户 ID |
+| 验证码邮件 | 未配置 SMTP 时只打印到网关日志 | 必须配置 `mail`，否则验证码接口返回 503 |
 | 消息存储 | 内存（重启丢失） | MySQL + Kafka 持久化 |
 | 文件存储 | 内存 | MinIO S3 |
 
@@ -85,7 +86,7 @@ Token 有效期：**7 天**（可配置）。
 
 | ID 类型 | 格式 | 示例 |
 |---------|------|------|
-| 用户 ID (UID) | 字符串 | `"alice"`, `"user_123"` |
+| 用户 ID (UID) | 字符串；新用户为从 100000 起自增的数字，早期用户保留自定义 ID | `"100001"`, `"alice"` |
 | 消息 ID (MsgId) | 64 位 Snowflake 整数 | `337501598508912640` |
 | 群组 ID | `g_` + Snowflake 整数 | `"g_337501598508912641"` |
 | 文件 ID | Snowflake 整数字符串 | `"337501598508912642"` |
@@ -111,70 +112,150 @@ Token 有效期：**7 天**（可配置）。
 POST /login
 Content-Type: application/x-www-form-urlencoded
 
-uid=alice&username=Alice&password=secret123
+account=alice@example.com&password=secret123
 ```
 
 | 参数 | 必需 | 说明 |
 |------|------|------|
-| `uid` | 是 | 用户唯一标识 |
-| `username` | 否 | 显示名称（dev_mode 时可为空，默认取 uid） |
-| `password` | 否 | 密码（dev_mode 时不需要；生产模式必需） |
+| `account` | 是 | 用户 ID 或邮箱（含 `@` 按邮箱查找）；旧客户端传的 `uid` 同样接受 |
+| `password` | 否 | 密码（dev_mode 时可为空；生产模式必需） |
+
+**成功响应** `200`（`/register` 相同）
+```json
+{
+  "uid": "100001",
+  "nickname": "alice",
+  "username": "alice",
+  "email": "alice@example.com",
+  "avatar_url": "/avatar/337501598508912642",
+  "role": "user",
+  "token": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+`username` 与 `nickname` 相同，仅为兼容旧客户端保留；`avatar_url` 为相对网关的路径，未设置头像时为空串。
+
+**错误响应**
+| 状态码 | 说明 |
+|--------|------|
+| 400 | account 缺失或表单解析失败 |
+| 401 | `invalid account or password` |
+| 403 | 账号已被禁用 |
+| 503 | 用户存储不可用（MySQL 未启用） |
+
+---
+
+#### POST /auth/email-code — 发送邮箱验证码
+
+**请求**
+```
+POST /auth/email-code
+Content-Type: application/x-www-form-urlencoded
+
+email=alice@example.com&purpose=register
+```
+
+| 参数 | 必需 | 说明 |
+|------|------|------|
+| `email` | 是 | 邮箱 |
+| `purpose` | 是 | `register`（注册）、`reset_password`（找回密码）、`bind_email`（绑定邮箱，需同时带 `uid` + `token`） |
+
+验证码 6 位数字，10 分钟有效，最多尝试 5 次；同一邮箱 60 秒内只能发送一次、每天最多 10 次，同一 IP 每小时最多 20 次。
 
 **成功响应** `200`
 ```json
-{
-  "uid": "alice",
-  "username": "Alice",
-  "token": "eyJhbGciOiJIUzI1NiIs..."
-}
+{ "status": "ok", "expires_in": 600, "retry_after": 60 }
 ```
 
 **错误响应**
 | 状态码 | 说明 |
 |--------|------|
-| 400 | uid 缺失或表单解析失败 |
-| 401 | 用户不存在 / 密码错误 |
-| 503 | 用户存储不可用（MySQL 未启用） |
+| 400 | 邮箱格式或 purpose 无效 |
+| 404 | `email not registered`（找回密码时邮箱未注册） |
+| 409 | `email already registered`（注册 / 绑定时邮箱已被使用） |
+| 429 | 发送太频繁，`Retry-After` 头给出需等待的秒数 |
+| 502 | 邮件发送失败 |
+| 503 | 服务端未启用邮件验证 |
 
 ---
 
 #### POST /register — 注册
 
-**仅生产模式可用**（需要 MySQL）。dev_mode 下可跳过此步骤直接 login。
+需要 MySQL。用户 ID 由服务端分配，默认昵称为邮箱 `@` 前的部分。
 
 **请求**
 ```
 POST /register
 Content-Type: application/x-www-form-urlencoded
 
-uid=alice&username=Alice&password=secret123
+email=alice@example.com&code=123456&password=secret123
 ```
 
 | 参数 | 必需 | 说明 |
 |------|------|------|
-| `uid` | 是 | 用户唯一标识 |
-| `username` | 否 | 显示名称（默认等于 uid） |
-| `password` | 是 | 密码（bcrypt 哈希存储） |
-
-**成功响应** `200`
-```json
-{
-  "uid": "alice",
-  "username": "Alice",
-  "token": "eyJhbGciOiJIUzI1NiIs..."
-}
-```
+| `email` | 是 | 邮箱 |
+| `code` | 是 | `purpose=register` 的验证码 |
+| `password` | 是 | 6–72 位，bcrypt 哈希存储 |
+| `nickname` | 否 | 昵称（最多 32 个字） |
 
 **错误响应**
 | 状态码 | 说明 |
 |--------|------|
-| 400 | uid 或 password 缺失 |
-| 409 | uid 已被注册 |
-| 503 | 用户存储不可用 |
+| 400 | 参数无效，或 `invalid or expired verification code` |
+| 409 | 邮箱已被注册 |
+| 503 | 用户存储或邮件验证不可用 |
+
+---
+
+#### POST /password/reset — 通过邮箱重置密码
+
+```
+POST /password/reset
+Content-Type: application/x-www-form-urlencoded
+
+email=alice@example.com&code=123456&new_password=newpass1
+```
+
+`code` 为 `purpose=reset_password` 的验证码。成功返回 `{"status": "ok", "uid": "100001"}`。
 
 ---
 
 ### 3.2 用户与状态
+
+以下资料接口都需要 `uid` + `token`（GET 放在查询参数，POST 放在表单）。
+
+#### GET /user/profile — 读取资料
+
+不带 `target` 时返回自己的完整资料（含 `email`、`role`、`created_at`）；带 `target=UID` 时返回对方的公开资料：
+
+```json
+{ "uid": "100001", "nickname": "alice", "avatar_url": "/avatar/337501598508912642" }
+```
+
+#### POST /user/profile — 修改昵称 / 头像
+
+| 参数 | 说明 |
+|------|------|
+| `nickname` | 新昵称（1–32 个字） |
+| `avatar_file_id` | 先用 `/upload`（或直传）上传图片得到的 `file_id`；文件必须是自己上传的图片；`0` 清除头像 |
+
+两个参数至少带一个，成功返回自己的完整资料。
+
+#### GET /user/profiles — 批量读取公开资料
+
+`uids=a,b,c`，最多 200 个；不存在的用户不出现在结果中。返回 `{"users": [公开资料...]}`。
+
+#### GET /user/search — 搜索用户
+
+`q` 按昵称包含匹配，或按邮箱、用户 ID 精确匹配；`limit` 默认 20、最多 50。返回 `{"users": [公开资料...]}`，结果不含邮箱。
+
+#### POST /user/email — 绑定 / 更换邮箱
+
+`email` + `code`（`purpose=bind_email` 的验证码）。早期用自定义 ID 注册的用户绑定后可用邮箱登录和找回密码。成功返回自己的完整资料。
+
+#### GET /avatar/{file_id} — 头像图片
+
+无需登录。只能读取已被设为头像的文件；`?thumb=1` 返回 200px 缩略图（没有缩略图时返回原图）。响应带 `Cache-Control: public, max-age=31536000, immutable`，换头像会产生新的 URL。
 
 #### GET /online — 在线用户
 
@@ -755,7 +836,7 @@ TCP 连接建立后，**第一条消息必须是登录**：
 Client                          Server
   │                                │
   │── POST /login ────────────────▶│ 返回 JWT token
-  │◀─ {uid, username, token} ─────│
+  │◀─ {uid, nickname, token} ─────│
   │                                │
   │── ws://host/ws?token=xxx ─────▶│ WebSocket 升级
   │◀─ CmdLoginResp ───────────────│ 登录确认

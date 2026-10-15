@@ -29,11 +29,30 @@ class GoImApiTest {
         }
         val api = GoImApi(createHttpClient(engine)) { "http://host:8080/" }
 
-        val user = api.login("alice", "", "pw")
+        val user = api.login("alice", "pw")
 
         assertEquals(User("alice", "alice", "jwt"), user)
         assertEquals("http://host:8080/login", seenUrl)
-        assertTrue("uid=alice" in seenBody && "password=pw" in seenBody)
+        assertTrue("account=alice" in seenBody && "password=pw" in seenBody)
+    }
+
+    @Test
+    fun registerParsesProfileAndResolvesAvatar() = runTest {
+        var seenBody = ""
+        val engine = MockEngine { request ->
+            seenBody = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+            respond(
+                """{"uid":"100000","nickname":"小明","username":"小明","email":"a@b.co","avatar_url":"/avatar/9","token":"jwt"}""",
+                HttpStatusCode.OK,
+                jsonHeaders,
+            )
+        }
+        val api = GoImApi(createHttpClient(engine)) { "https://im.example.com/" }
+
+        val user = api.register("a@b.co", "123456", "secret")
+
+        assertEquals(User("100000", "小明", "jwt", email = "a@b.co", avatarUrl = "https://im.example.com/avatar/9"), user)
+        assertTrue("email=a%40b.co" in seenBody && "code=123456" in seenBody && "password=secret" in seenBody)
     }
 
     @Test
@@ -41,7 +60,7 @@ class GoImApiTest {
         val engine = MockEngine { respondError(HttpStatusCode.Conflict, "user exists\n") }
         val api = GoImApi(createHttpClient(engine)) { "http://h" }
 
-        val error = assertFailsWith<DomainError.Server> { api.register("a", "a", "p") }
+        val error = assertFailsWith<DomainError.Server> { api.register("a@b.co", "123456", "p") }
         assertEquals(409, error.code)
         assertEquals("user exists", error.body)
     }

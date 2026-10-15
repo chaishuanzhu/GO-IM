@@ -60,7 +60,7 @@ class ChatViewModel(
     private var lastSeenIncomingId: String? = null
 
     /** 自己消息旁的头像名。 */
-    val selfName: String get() = self.username.ifEmpty { self.uid }
+    val selfName: String get() = self.displayName
 
     private val _draft = MutableStateFlow("")
     val draft: StateFlow<String> = _draft.asStateFlow()

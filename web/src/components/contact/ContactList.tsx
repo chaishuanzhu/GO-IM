@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useContactStore } from '@/stores/contactStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useFriendStore } from '@/stores/friendStore';
+import { useProfileStore } from '@/stores/profileStore';
 import { getFriendList, acceptFriendRequest, rejectFriendRequest } from '@/lib/api';
 import { wsManager } from '@/lib/ws';
 import { Cmd, ChatType, MsgType } from '@/types';
@@ -23,6 +24,10 @@ export default function ContactList() {
       .then((data) => {
         setFriends(data.friends || []);
         setPendingRequests(data.pending_requests || []);
+        useProfileStore.getState().put([
+          ...(data.friends || []).filter((f) => f.nickname).map((f) => ({ uid: f.uid, nickname: f.nickname!, avatar_url: f.avatar_url ?? '' })),
+          ...(data.pending_requests || []).map((r) => ({ uid: r.from_uid, nickname: r.nickname || r.from_uid, avatar_url: r.avatar_url ?? '' })),
+        ]);
       })
       .catch(() => {});
   }, [uid, setFriends, setPendingRequests]);
@@ -79,7 +84,8 @@ export default function ContactList() {
               <div className="flex-1 min-w-0">
                 <ContactItem
                   uid={req.from_uid}
-                  name={req.username || req.from_uid}
+                  name={req.nickname || req.from_uid}
+                  avatarUrl={req.avatar_url}
                   isOnline={onlineUsers.includes(req.from_uid)}
                   onClick={() => navigate(`/user/${req.from_uid}`)}
                 />
@@ -117,7 +123,8 @@ export default function ContactList() {
             <ContactItem
               key={f.uid}
               uid={f.uid}
-              name={f.uid}
+              name={f.nickname || f.uid}
+              avatarUrl={f.avatar_url}
               isOnline={onlineUsers.includes(f.uid)}
               onClick={() => navigate(`/user/${f.uid}`)}
             />

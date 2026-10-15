@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { wsManager } from '@/lib/ws';
 import { changePassword } from '@/lib/api';
-import { User, Moon, Sun, Key, Shield, Info, LogOut, Check, X } from 'lucide-react';
+import ProfileSection from '@/components/settings/ProfileSection';
+import { Moon, Sun, Key, Shield, Info, LogOut, Check, X } from 'lucide-react';
 
 /** 基于 <html> 上的 CSS class 实现的简单暗色模式切换。
  *  挂载时读取 localStorage(或回退到系统偏好),与
@@ -31,7 +32,7 @@ function useDarkMode() {
 }
 
 export default function SettingsPage() {
-  const { uid, username, logout } = useAuthStore();
+  const logout = useAuthStore((s) => s.logout);
   const { dark, toggle: toggleDark } = useDarkMode();
 
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -87,31 +88,7 @@ export default function SettingsPage() {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">管理您的账户和应用偏好</p>
         </div>
 
-        {/* 个人信息区块 */}
-        <section className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 dark:border-gray-800">
-            <div className="flex items-center gap-2">
-              <User className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">个人信息</h2>
-            </div>
-          </div>
-          <div className="p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500 dark:text-gray-400">头像</span>
-              <div className="w-12 h-12 rounded-full bg-primary-500 flex items-center justify-center text-white text-lg font-bold">
-                {username.slice(0, 2).toUpperCase()}
-              </div>
-            </div>
-            <div className="flex items-center justify-between py-1">
-              <span className="text-sm text-gray-500 dark:text-gray-400">用户名</span>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{username}</span>
-            </div>
-            <div className="flex items-center justify-between py-1">
-              <span className="text-sm text-gray-500 dark:text-gray-400">UID</span>
-              <span className="text-sm font-mono text-gray-600 dark:text-gray-400">{uid}</span>
-            </div>
-          </div>
-        </section>
+        <ProfileSection />
 
         {/* 外观区块 */}
         <section className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">

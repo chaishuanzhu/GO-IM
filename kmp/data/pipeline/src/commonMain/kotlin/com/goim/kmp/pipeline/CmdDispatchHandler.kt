@@ -67,7 +67,7 @@ class CmdDispatchHandler(
     }
 
     /**
-     * 同一 cmd 承载两种帧：他人请求 `{"from_uid","username"}`（from=请求方），
+     * 同一 cmd 承载两种帧：他人请求 `{"from_uid","nickname","avatar_url"}`（from=请求方；旧网关只有 `username`），
      * 以及自己请求的回执 `{"status":"sent"}` / `{"error":"..."}`（from=目标）。
      */
     private fun mapFriendRequest(w: WireMessage): InboundEvent {
@@ -77,7 +77,7 @@ class CmdDispatchHandler(
         if (status != null || error != null) return InboundEvent.FriendRequestResult(peerUid = w.from, error = error)
         return InboundEvent.FriendRequestReceived(
             fromUid = obj?.string("from_uid")?.takeIf { it.isNotEmpty() } ?: w.from,
-            username = obj?.string("username"),
+            nickname = obj?.string("nickname") ?: obj?.string("username"),
             timestampMs = w.timestamp,
         )
     }

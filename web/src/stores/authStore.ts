@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { saveAuth, clearAuth, getStoredUid, getStoredUsername, getToken, isTokenExpired } from '@/lib/auth';
+import { saveAuth, saveProfile, clearAuth, getStoredUid, getStoredProfile, getToken, isTokenExpired } from '@/lib/auth';
+import type { LoginResponse, UserProfile } from '@/types';
 
 /** 从 JWT 载荷中解码角色字段。 */
 function getRoleFromToken(token: string): boolean {
@@ -15,42 +16,61 @@ function getRoleFromToken(token: string): boolean {
 
 interface AuthState {
   uid: string;
-  username: string;
+  /** 显示用昵称，未知时为 uid */
+  nickname: string;
+  email: string;
+  /** 相对网关的头像路径，未设置时为空串 */
+  avatarUrl: string;
   token: string;
   isLoggedIn: boolean;
   isAdmin: boolean;
 
-  login: (uid: string, username: string, token: string) => void;
+  login: (res: LoginResponse) => void;
+  /** 资料修改或刷新后同步 */
+  setProfile: (profile: UserProfile) => void;
   logout: () => void;
   restore: () => boolean;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   uid: '',
-  username: '',
+  nickname: '',
+  email: '',
+  avatarUrl: '',
   token: '',
   isLoggedIn: false,
   isAdmin: false,
 
-  login: (uid, username, token) => {
-    saveAuth(uid, username, token);
-    set({ uid, username, token, isLoggedIn: true, isAdmin: getRoleFromToken(token) });
+  login: (res) => {
+    const profile = { nickname: res.nickname || res.uid, email: res.email ?? '', avatarUrl: res.avatar_url ?? '' };
+    saveAuth(res.uid, res.token, profile);
+    set({ uid: res.uid, token: res.token, ...profile, isLoggedIn: true, isAdmin: getRoleFromToken(res.token) });
+  },
+
+  setProfile: (p) => {
+    const s = get();
+    if (!s.isLoggedIn || p.uid !== s.uid) return;
+    const profile = { nickname: p.nickname || s.uid, email: p.email ?? s.email, avatarUrl: p.avatar_url ?? '' };
+    saveProfile(profile);
+    set(profile);
   },
 
   logout: () => {
     clearAuth();
-    set({ uid: '', username: '', token: '', isLoggedIn: false, isAdmin: false });
+    set({ uid: '', nickname: '', email: '', avatarUrl: '', token: '', isLoggedIn: false, isAdmin: false });
   },
 
   restore: () => {
     const uid = getStoredUid();
-    const username = getStoredUsername();
     const token = getToken();
     if (uid && token && !isTokenExpired()) {
+      const profile = getStoredProfile();
       set({
         uid,
-        username: username || uid,
         token,
+        nickname: profile.nickname || uid,
+        email: profile.email,
+        avatarUrl: profile.avatarUrl,
         isLoggedIn: true,
         isAdmin: getRoleFromToken(token),
       });

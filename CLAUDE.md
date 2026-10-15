@@ -45,6 +45,14 @@ TCP data     → GnetHandler.OnTraffic           → frame decode (4-byte len pr
                                                → Router.Route(ctx, …) via WorkerPool
              → Client.WriteLoop()              → outbound messages → gnet.Conn.AsyncWrite (4-byte len prefix + protobuf)
 
+# Accounts (server_account.go; requires MySQL)
+HTTP /auth/email-code → CodeStore.Issue (Redis or memory; 6 digits, 10 min, 60 s cooldown) → Mailer.Send (SMTP, or log in dev_mode)
+HTTP /register → CodeStore.Verify(register) → UserStore.CreateWithAutoUID (uid_seq, from 100000; nickname = email local part)
+HTTP /login → account = uid or email ('@') → bcrypt → JWT; response carries nickname, email, avatar_url
+HTTP /password/reset, /user/email → CodeStore.Verify(reset_password | bind_email) → update password / bind email
+HTTP /user/profile (GET own or ?target, POST nickname / avatar_file_id), /user/profiles?uids=, /user/search?q=
+HTTP /avatar/{file_id}[?thumb=1] → public, only files marked is_avatar, immutable cache
+
 # Message history (CmdHistory)
 CmdHistory    → Router.handleHistory(ctx, …)    → LogicClient.QueryHistory (gRPC) or MessageStore.QueryHistory (local)
              → sender.Send(historyMsg)        → sender.Send(completion) with Seq=delivered count
@@ -96,7 +104,7 @@ routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.
 | Component | File | Role |
 |-----------|------|------|
 | `App` | `cmd/gateway/main.go` | Wires everything together; owns `ClientRegistry`, `Server`, `Config`. Supports dual-transport (WebSocket + gnet TCP) startup via `transport` config. |
-| `Server` | `internal/gateway/server.go` | HTTP handlers: `/login` (JWT issue), `/register`, `/online`, `/health`, group CRUD, upload/download, search, unread. Depends on `ClientRegistry` (not concrete `*Hub`). Also owns `StartGNet()` for gnet TCP server. |
+| `Server` | `internal/gateway/server.go`, `server_account.go` | HTTP handlers: `/login` (JWT issue), `/register` (email code), `/auth/email-code`, `/password/reset`, `/user/*` profile + search, `/avatar/`, `/online`, `/health`, group CRUD, upload/download, search, unread. Depends on `ClientRegistry` (not concrete `*Hub`). Also owns `StartGNet()` for gnet TCP server. |
 | `Hub` | `internal/gateway/hub.go` | Implements `ClientRegistry` + `OfflineStore`. Connection registry (`map[UID]*Client`) + offline message queue (in-memory, max 1000/user). All methods accept `context.Context`. |
 | `ClientRegistry` | `internal/gateway/interfaces.go` | Interface for connection management: `Register`, `Unregister`, `Get`, `IsOnline`, `OnlineUsers`, `Count`. Implemented by `*Hub`; Redis impl planned. |
 | `OfflineStore` | `internal/gateway/interfaces.go` | Interface for offline message queues: `StoreOffline`, `DrainOffline`. Implemented by `*Hub` (in-memory) and `*RedisOfflineStore` (Redis-backed, with in-memory fallback). |
@@ -231,7 +239,7 @@ The server loads `configs/config.json`, falling back to `Default()` if the file 
 
 Default config values:
 - Transport: `"websocket"` (options: `"websocket"`, `"gnet"`, `"both"`)
-- HTTP: `:8080` (serves /login, /register, /online, /health, /ws, /upload, /file, /search, /unread, /group/*)
+- HTTP: `:8080` (serves /login, /register, /auth/email-code, /password/reset, /user/*, /avatar/, /online, /health, /ws, /upload, /file, /search, /unread, /group/*)
 - TCP: `:8081` (gnet raw TCP, port used when transport is "gnet" or "both")
 - JWT secret: `"change-me-in-production"`, 7-day expiration, HS256
 - Snowflake worker ID: 1
@@ -246,6 +254,7 @@ Default config values:
 - gRPC server: `addr: ""` (empty = disabled, set `:50050` with node_id + peer_addrs for multi-gateway)
 - gRPC discovery: `mode: ""` (empty or "static" = use peer_addrs; "redis" = Redis service discovery with TTL heartbeat)
 - Auth: `dev_mode: true` (no password required; set false for production with MySQL)
+- Mail: `enabled: false`; SMTP host/port/username/from in config, password only via env `GOIM_MAIL_PASSWORD` (k8s Secret `goim-infra` key `MAIL_PASSWORD`). Port 465 = implicit TLS, others STARTTLS. Without mail, codes are logged in dev_mode and the code endpoints return 503 otherwise
 - Object storage: `enabled: false` (in-memory fallback), endpoint `localhost:9000`, bucket `im-files`, max_upload 10MB
 - Stability: `max_connections: 0` (unlimited), HTTP timeouts (read 10s, write 10s, idle 120s), `shutdown_timeout: 30s`, `pprof_enabled: false`
 

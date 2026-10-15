@@ -262,7 +262,7 @@ func (h *GnetHandler) handleLogin(frame []byte, c gnet.Conn) (*Client, error) {
 	}
 
 	transport := newGnetTransport(c)
-	client := NewClient(claims.UID, claims.Username, transport, h.clients, h.sendBufSize)
+	client := NewClient(claims.UID, claims.Nickname, transport, h.clients, h.sendBufSize)
 	client.SetHeartbeat(time.Now())
 
 	// 注册到 Hub(可能踢掉旧连接)。
@@ -273,14 +273,14 @@ func (h *GnetHandler) handleLogin(frame []byte, c gnet.Conn) (*Client, error) {
 	client.Send(&proto.Message{
 		Cmd:       proto.CmdLoginResp,
 		To:        claims.UID,
-		Content:   claims.Username,
+		Content:   claims.Nickname,
 		Timestamp: time.Now().UnixMilli(),
 	})
 
 	// 启动写循环。
 	go client.WriteLoop()
 
-	log.Printf("[gnet] client connected uid=%s username=%s fd=%d", claims.UID, claims.Username, c.Fd())
+	log.Printf("[gnet] client connected uid=%s nickname=%s fd=%d", claims.UID, claims.Nickname, c.Fd())
 	return client, nil
 }
 

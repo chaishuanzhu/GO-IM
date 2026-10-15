@@ -2,6 +2,8 @@ import type { Conversation } from '@/types';
 import { ChatType } from '@/types';
 import { formatDate, getAvatarLetters } from '@/lib/utils';
 import { useContactStore } from '@/stores/contactStore';
+import { useDisplayName } from '@/stores/profileStore';
+import UserAvatar from '@/components/common/UserAvatar';
 import { Users } from 'lucide-react';
 
 interface ConversationItemProps {
@@ -13,9 +15,12 @@ interface ConversationItemProps {
 export default function ConversationItem({ conversation, isActive, onClick }: ConversationItemProps) {
   const { name, peerId, lastMessage, lastTime, unread, chatType } = conversation;
   const contactStore = useContactStore();
+  const isGroup = chatType === ChatType.Group;
+  const peerName = useDisplayName(peerId, name !== peerId ? name : undefined);
 
   // 解析显示名称:对于群组,优先使用 contactStore 中的名称而非原始 peerId
   const displayName = (() => {
+    if (!isGroup) return peerName;
     if (name && name !== peerId) return name;
     if (peerId.startsWith('g_')) {
       const group = contactStore.groups.find(g => g.id === peerId);
@@ -37,9 +42,13 @@ export default function ConversationItem({ conversation, isActive, onClick }: Co
     >
       {/* 头像 */}
       <div className="relative flex-shrink-0">
-        <div className="w-11 h-11 rounded-full bg-primary-500 flex items-center justify-center text-white font-semibold text-sm">
-          {avatar}
-        </div>
+        {isGroup ? (
+          <div className="w-11 h-11 rounded-full bg-primary-500 flex items-center justify-center text-white font-semibold text-sm">
+            {avatar}
+          </div>
+        ) : (
+          <UserAvatar uid={peerId} name={displayName} className="w-11 h-11 text-sm" />
+        )}
         {chatType === ChatType.Group && (
           <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
             <Users className="w-2.5 h-2.5 text-white" />

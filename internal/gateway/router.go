@@ -44,6 +44,7 @@ type Router struct {
 
 	// 好友关系管理(nil = 好友系统禁用)。
 	friendStore repo.FriendStore // MySQL 禁用时为 nil
+	userStore   repo.UserStore   // MySQL 禁用时为 nil
 
 	// 文件元数据与会话引用(nil = 不校验文件消息)。
 	fileStore repo.FileStore
@@ -129,6 +130,11 @@ func (r *Router) SetDedupRedis(rdb *redis.Client) {
 // 为 nil(默认值)时,好友管理不可用。
 func (r *Router) SetFriendStore(fs repo.FriendStore) {
 	r.friendStore = fs
+}
+
+// SetUserStore 让推送（如好友请求）携带用户最新的昵称与头像。
+func (r *Router) SetUserStore(us repo.UserStore) {
+	r.userStore = us
 }
 
 // RouterConfig 保存 Router 可调运行参数。
@@ -1602,7 +1608,7 @@ func (r *Router) handleFriendRequest(ctx context.Context, sender *Client, msg *p
 	}
 
 	log.Printf("[router] friend request: %s → %s", sender.UID, msg.To)
-	r.NotifyFriendRequest(ctx, sender.UID, sender.Username, msg.To)
+	r.NotifyFriendRequest(ctx, sender.UID, sender.Nickname, msg.To)
 
 	// 向发送方发送 ACK
 	sender.Send(&proto.Message{
@@ -1662,10 +1668,21 @@ func (r *Router) handleFriendResponse(ctx context.Context, sender *Client, msg *
 
 // NotifyFriendRequest 把好友请求推送给 toUID（WS 与 HTTP 入口共用）。
 func (r *Router) NotifyFriendRequest(ctx context.Context, fromUID, fromName, toUID string) {
+	avatar := ""
+	if r.userStore != nil {
+		if u, err := r.userStore.GetByUID(ctx, fromUID); err == nil && u != nil {
+			fromName, avatar = u.Nickname, avatarURL(u.AvatarFileID)
+		}
+	}
 	if fromName == "" {
 		fromName = fromUID
 	}
-	content, _ := json.Marshal(map[string]string{"from_uid": fromUID, "username": fromName})
+	content, _ := json.Marshal(map[string]string{
+		"from_uid":   fromUID,
+		"nickname":   fromName,
+		"username":   fromName,
+		"avatar_url": avatar,
+	})
 	r.deliverToUser(ctx, toUID, &proto.Message{
 		Cmd:       proto.CmdFriendRequest,
 		MsgId:     r.snow.Next(),

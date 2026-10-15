@@ -212,7 +212,7 @@ func newTestSmallBufClient(t *testing.T, uid, name string, bufSize int) *Client 
 	t.Helper()
 	return &Client{
 		UID:      uid,
-		Username: name,
+		Nickname: name,
 		send:     make(chan []byte, bufSize),
 		closed:   make(chan struct{}),
 	}

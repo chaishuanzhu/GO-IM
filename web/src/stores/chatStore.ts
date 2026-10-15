@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import type { ChatMessage, Conversation, ChatTypeValue, MsgTypeValue, CmdType } from '@/types';
 import { Cmd, ChatType, MsgType } from '@/types';
+import { cachedNickname } from '@/stores/profileStore';
 import { bigintToString, formatTime, tryParseJSON } from '@/lib/utils';
 
 interface ChatState {
@@ -128,19 +129,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (msg.recalled) {
       previewText = '[消息已撤回]';
     } else if (msg.msgType === MsgType.Text) {
-      const parsed = tryParseJSON<{ text?: string; type?: string; username?: string; name?: string; uid?: string }>(msg.content);
+      const parsed = tryParseJSON<{ text?: string; type?: string; nickname?: string; username?: string; from_uid?: string; name?: string; uid?: string }>(msg.content);
       if (parsed?.text) {
         previewText = parsed.text;
       } else if (parsed?.type === 'friend_request') {
-        previewText = `${parsed.username || '用户'} 请求添加好友`;
+        previewText = `${parsed.nickname || parsed.username || (parsed.from_uid && cachedNickname(parsed.from_uid)) || '用户'} 请求添加好友`;
       } else if (parsed?.type === 'friend_accepted') {
         previewText = '已同意好友请求';
       } else if (parsed?.type === 'group_created') {
         previewText = `群组 "${parsed.name || ''}" 已创建`;
       } else if (parsed?.type === 'member_joined') {
-        previewText = `${parsed.uid || '用户'} 加入了群聊`;
+        previewText = `${(parsed.uid && (cachedNickname(parsed.uid) || parsed.uid)) || '用户'} 加入了群聊`;
       } else if (parsed?.type === 'member_left') {
-        previewText = `${parsed.uid || '用户'} 退出了群聊`;
+        previewText = `${(parsed.uid && (cachedNickname(parsed.uid) || parsed.uid)) || '用户'} 退出了群聊`;
       } else {
         previewText = msg.content;
       }

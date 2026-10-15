@@ -55,6 +55,7 @@ class UserSession internal constructor(
     val search: SearchRepositoryImpl,
     val files: FileRepositoryImpl,
     val stickers: StickerRepositoryImpl,
+    val profiles: ProfileRepositoryImpl,
     private val scope: CoroutineScope,
     private val coordinator: SessionCoordinator,
 ) {
@@ -203,11 +204,15 @@ class SessionManager(
             scope,
         )
         val stickers = StickerRepositoryImpl(StickerCdnApi(httpClient), directories.root / "Catalog" / "Stickers", database)
-        val coordinator = SessionCoordinator(user, connection, messages, conversations, scope, groups, friends, files) { reason ->
+        val profiles = ProfileRepositoryImpl(userApi, database, files, user, scope, onSelfChanged = { profile ->
+            auth.updateSavedProfile(profile)
+            _accounts.value = auth.savedAccounts()
+        })
+        val coordinator = SessionCoordinator(user, connection, messages, conversations, scope, groups, friends, files, profiles) { reason ->
             appScope.launch { logout(reason) }
         }
         return UserSession(
-            user, home, database, connection, messages, conversations, groups, friends, search, files, stickers,
+            user, home, database, connection, messages, conversations, groups, friends, search, files, stickers, profiles,
             scope, coordinator,
         )
     }

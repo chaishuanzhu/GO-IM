@@ -106,6 +106,16 @@ export function getConversationName(
   return peerId === myUid ? '我' : peerId;
 }
 
+/** 宽松的邮箱格式检查，最终以服务端校验为准 */
+export function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@.]+$/.test(value.trim());
+}
+
+/** 网关为头像生成的缩略图（无缩略图时网关返回原图） */
+export function avatarThumbUrl(url: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}thumb=1`;
+}
+
 /** 根据名称生成头像字母 */
 export function getAvatarLetters(name: string): string {
   return name.slice(0, 2).toUpperCase();

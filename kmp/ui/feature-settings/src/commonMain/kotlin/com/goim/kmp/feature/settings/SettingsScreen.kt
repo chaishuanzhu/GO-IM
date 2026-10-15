@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
@@ -60,7 +61,7 @@ import com.goim.kmp.designsystem.ChoiceDialog
 import com.goim.kmp.designsystem.ConfirmDialog
 import com.goim.kmp.designsystem.TonalIcon
 import com.goim.kmp.designsystem.GoImIcons
-import com.goim.kmp.designsystem.MonogramAvatar
+import com.goim.kmp.designsystem.UserAvatar
 import com.goim.kmp.designsystem.SettingsRow
 import com.goim.kmp.designsystem.SettingsSection
 import com.goim.kmp.designsystem.TextInputDialog
@@ -71,11 +72,18 @@ import com.goim.kmp.model.Appearance
 import com.goim.kmp.model.ConnectionState
 import com.goim.kmp.model.TransportKind
 import com.goim.kmp.model.User
+import com.goim.kmp.model.UserProfile
 
 /** 主页「设置」Tab。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel, onOpenDeveloper: (() -> Unit)? = null) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel,
+    onOpenDeveloper: (() -> Unit)? = null,
+    /** 当前账号的最新资料（昵称 / 头像）；为 null 时用登录时保存的信息。 */
+    profile: UserProfile? = null,
+    onOpenProfile: (() -> Unit)? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var confirmLogout by remember { mutableStateOf(false) }
     var showAccounts by remember { mutableStateOf(false) }
@@ -97,7 +105,10 @@ fun SettingsScreen(viewModel: SettingsViewModel, onOpenDeveloper: (() -> Unit)? 
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             state.user?.let { user ->
-                ProfileCard(user)
+                ProfileCard(
+                    profile ?: UserProfile(user.uid, user.nickname, user.avatarUrl, user.email),
+                    onClick = onOpenProfile,
+                )
                 SettingsSection(title = "账号") {
                     if (viewModel.supportsAccounts) {
                         SettingsRow(
@@ -184,19 +195,26 @@ fun SettingsScreen(viewModel: SettingsViewModel, onOpenDeveloper: (() -> Unit)? 
 }
 
 @Composable
-private fun ProfileCard(user: User) {
-    val name = user.username.ifEmpty { user.uid }
+private fun ProfileCard(profile: UserProfile, onClick: (() -> Unit)?) {
+    val name = profile.displayName
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.extraLarge,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(MaterialTheme.shapes.extraLarge)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClickLabel = "编辑个人资料", onClick = onClick) else Modifier),
     ) {
         Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            MonogramAvatar(name, size = 64.dp)
+            UserAvatar(profile.uid, name, size = 64.dp, avatarUrl = profile.avatarUrl)
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("ID：${user.uid}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("ID：${profile.uid}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (onClick != null) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -219,11 +237,11 @@ private fun AccountSwitcherDialog(
             Column {
                 accounts.forEach { account ->
                     val isCurrent = account.uid == current
-                    val name = account.username.ifEmpty { account.uid }
+                    val name = account.displayName
                     ListItem(
                         headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = { Text(if (isCurrent) "当前账号" else account.uid) },
-                        leadingContent = { MonogramAvatar(name, size = 40.dp) },
+                        leadingContent = { UserAvatar(account.uid, name, size = 40.dp, avatarUrl = account.avatarUrl) },
                         trailingContent = {
                             if (isCurrent) {
                                 Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -260,7 +278,7 @@ private fun AccountSwitcherDialog(
     forgetting?.let { account ->
         ConfirmDialog(
             title = "移除账号？",
-            text = "移除 ${account.username.ifEmpty { account.uid }} 的登录信息，下次需重新登录；聊天记录保留。",
+            text = "移除 ${account.displayName} 的登录信息，下次需重新登录；聊天记录保留。",
             confirmLabel = "移除",
             destructive = true,
             onConfirm = {

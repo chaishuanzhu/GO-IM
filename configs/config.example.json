@@ -41,6 +41,15 @@
             "dsn": "im:im-dev@tcp(127.0.0.1:3307)/im?parseTime=true&charset=utf8mb4"
         },
 
+        "mail": {
+            "enabled": false,
+            "host": "smtp.exmail.qq.com",
+            "port": 465,
+            "username": "no_reply@example.com",
+            "password": "",
+            "from": "GO-IM <no_reply@example.com>"
+        },
+
         "auth": {
             "dev_mode": true
         },

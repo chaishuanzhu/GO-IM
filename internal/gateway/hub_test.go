@@ -15,7 +15,7 @@ func newTestClient(t *testing.T, uid, username string) *Client {
 	t.Helper()
 	return &Client{
 		UID:           uid,
-		Username:      username,
+		Nickname:      username,
 		send:          make(chan []byte, 256),
 		closed:        make(chan struct{}),
 		lastHeartbeat: time.Now(),

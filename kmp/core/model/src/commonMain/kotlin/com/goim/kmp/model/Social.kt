@@ -17,9 +17,10 @@ data class GroupMember(
 
 data class Friend(
     val uid: String,
-    val username: String = uid,
+    val nickname: String = uid,
+    val avatarUrl: String = "",
 ) {
-    val displayName: String get() = username.ifBlank { uid }
+    val displayName: String get() = nickname.ifBlank { uid }
 }
 
 /** `raw` 与 iOS `FriendRequestStatus` 存库取值一致。 */
@@ -39,9 +40,10 @@ data class FriendRequest(
     val toUid: String,
     val status: FriendRequestStatus = FriendRequestStatus.PENDING,
     val createdAt: Long = 0,
-    val username: String? = null,
+    val nickname: String? = null,
+    val avatarUrl: String = "",
 ) {
-    val displayName: String get() = username?.takeIf { it.isNotBlank() } ?: fromUid
+    val displayName: String get() = nickname?.takeIf { it.isNotBlank() } ?: fromUid
 }
 
 /** 搜索命中；带会话定位信息以便跳转。 */

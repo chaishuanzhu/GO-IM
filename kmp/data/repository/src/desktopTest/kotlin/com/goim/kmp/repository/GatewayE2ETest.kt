@@ -56,7 +56,7 @@ class GatewayE2ETest {
 
         suspend fun login(uid: String, transport: TransportKind): UserSession {
             settings.setPreferredTransport(transport)
-            val user = auth.login(uid, uid, "")
+            val user = auth.login(uid, "")
             auth.saveSession(user)
             manager.mount(user)
             return connected()

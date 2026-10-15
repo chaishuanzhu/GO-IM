@@ -1,9 +1,12 @@
 package com.goim.kmp.database
 
+import androidx.room.AutoMigration
 import androidx.room.ConstructedBy
 import androidx.room.Database
+import androidx.room.RenameColumn
 import androidx.room.RoomDatabase
 import androidx.room.RoomDatabaseConstructor
+import androidx.room.migration.AutoMigrationSpec
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import com.goim.kmp.common.PlatformContext
 import com.goim.kmp.common.ioDispatcher
@@ -17,9 +20,11 @@ import com.goim.kmp.common.ioDispatcher
         FriendEntity::class,
         FriendRequestEntity::class,
         MetaEntity::class,
+        ProfileEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2, spec = AppDatabase.NicknameMigration::class)],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -28,6 +33,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun groupDao(): GroupDao
     abstract fun friendDao(): FriendDao
     abstract fun metaDao(): MetaDao
+    abstract fun profileDao(): ProfileDao
+
+    /** 1.3.0：username → nickname，新增头像列与资料缓存表。 */
+    @RenameColumn(tableName = "friends", fromColumnName = "username", toColumnName = "nickname")
+    @RenameColumn(tableName = "friend_requests", fromColumnName = "username", toColumnName = "nickname")
+    class NicknameMigration : AutoMigrationSpec
 
     companion object {
         const val FILE_NAME = "goim.sqlite"

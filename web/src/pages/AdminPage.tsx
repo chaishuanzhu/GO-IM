@@ -4,6 +4,7 @@ import { useAdminStore } from '@/stores/adminStore';
 import { formatTime, tryParseJSON } from '@/lib/utils';
 import type { AdminStats, AdminUser, SearchResultMessage } from '@/types';
 import {
+
   Activity,
   Users,
   MessageSquare,
@@ -232,7 +233,8 @@ function UsersTab({ users, total, loading, error, onDelete, uid, token }: {
           <thead>
             <tr className="border-b border-gray-100 dark:border-gray-800">
               <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 dark:text-gray-400">UID</th>
-              <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 dark:text-gray-400">用户名</th>
+              <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 dark:text-gray-400">昵称</th>
+              <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 dark:text-gray-400">邮箱</th>
               <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 dark:text-gray-400">角色</th>
               <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 dark:text-gray-400">状态</th>
               <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 dark:text-gray-400">注册时间</th>
@@ -243,7 +245,8 @@ function UsersTab({ users, total, loading, error, onDelete, uid, token }: {
             {users.map((u) => (
               <tr key={u.uid} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                 <td className="px-5 py-3 text-gray-900 dark:text-gray-100 font-mono text-xs">{u.uid}</td>
-                <td className="px-5 py-3 text-gray-700 dark:text-gray-300">{u.username}</td>
+                <td className="px-5 py-3 text-gray-700 dark:text-gray-300">{u.nickname}</td>
+                <td className="px-5 py-3 text-gray-500 dark:text-gray-400 text-xs">{u.email || '—'}</td>
                 <td className="px-5 py-3">
                   <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
                     u.role === 'admin'
@@ -271,7 +274,7 @@ function UsersTab({ users, total, loading, error, onDelete, uid, token }: {
                         alert('不能删除自己');
                         return;
                       }
-                      if (confirm(`确定要删除用户 ${u.username || u.uid} 吗？此操作不可撤销。`)) {
+                      if (confirm(`确定要删除用户 ${u.nickname || u.uid} 吗？此操作不可撤销。`)) {
                         onDelete(u.uid);
                       }
                     }}
@@ -285,7 +288,7 @@ function UsersTab({ users, total, loading, error, onDelete, uid, token }: {
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-sm text-gray-400">暂无用户</td>
+                <td colSpan={7} className="px-5 py-8 text-center text-sm text-gray-400">暂无用户</td>
               </tr>
             )}
           </tbody>
@@ -299,10 +302,10 @@ function UsersTab({ users, total, loading, error, onDelete, uid, token }: {
 
 /** 从消息内容中提取人类可读文本(可能是 JSON) */
 function extractMessageText(content: string): string {
-  const parsed = tryParseJSON<{ text?: string; type?: string; name?: string; username?: string; uid?: string; from_uid?: string }>(content);
+  const parsed = tryParseJSON<{ text?: string; type?: string; name?: string; nickname?: string; username?: string; uid?: string; from_uid?: string }>(content);
   if (!parsed) return content;
   if (parsed.text) return parsed.text;
-  if (parsed.type === 'friend_request') return `[好友请求] ${parsed.username || parsed.from_uid || ''}`;
+  if (parsed.type === 'friend_request') return `[好友请求] ${parsed.nickname || parsed.username || parsed.from_uid || ''}`;
   if (parsed.type === 'friend_accepted') return '[已同意好友请求]';
   if (parsed.type === 'group_created') return `[创建群组] ${parsed.name || ''}`;
   if (parsed.type === 'member_joined') return `[${parsed.uid || ''} 加入群聊]`;

@@ -19,7 +19,7 @@ var (
 // Claims 携带已认证用户的身份信息。
 type Claims struct {
 	UID      string `json:"uid"`
-	Username string `json:"username"`
+	Nickname string `json:"nickname"`
 	Role     string `json:"role"` // "user" 或 "admin"
 	jwtlib.RegisteredClaims
 }
@@ -39,10 +39,10 @@ func New(secret string, expiration time.Duration) *Manager {
 }
 
 // Generate 为用户创建带签名的 JWT 令牌。
-func (m *Manager) Generate(uid, username, role string) (string, error) {
+func (m *Manager) Generate(uid, nickname, role string) (string, error) {
 	claims := Claims{
 		UID:      uid,
-		Username: username,
+		Nickname: nickname,
 		Role:     role,
 		RegisteredClaims: jwtlib.RegisteredClaims{
 			ExpiresAt: jwtlib.NewNumericDate(time.Now().Add(m.expiration)),

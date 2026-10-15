@@ -7,6 +7,7 @@ import { useContactStore } from '@/stores/contactStore';
 import { useFriendStore } from '@/stores/friendStore';
 import { Cmd, ChatType, MsgType } from '@/types';
 import type { CmdType, IMMessage, ChatMessage, MsgTypeValue, ChatTypeValue } from '@/types';
+import { useProfileStore } from '@/stores/profileStore';
 import { isRecalled, isGroupNotification, tryParseJSON } from '@/lib/utils';
 
 /**
@@ -280,11 +281,14 @@ export function useWebSocket() {
           if (data.from_uid && data.from_uid !== uid) {
             // 收到好友请求
             const friendStore = useFriendStore.getState();
+            const nickname: string = data.nickname || data.username || data.from_uid;
             friendStore.addPendingRequest({
               from_uid: data.from_uid,
-              username: data.username || data.from_uid,
+              nickname,
+              avatar_url: data.avatar_url || '',
               created_at: Date.now(),
             });
+            useProfileStore.getState().put([{ uid: data.from_uid, nickname, avatar_url: data.avatar_url || '' }]);
             // 作为系统通知展示
             const chatMsg: ChatMessage = {
               ...msg,
@@ -295,7 +299,7 @@ export function useWebSocket() {
               content: JSON.stringify({
                 type: 'friend_request',
                 from_uid: data.from_uid,
-                username: data.username || data.from_uid,
+                nickname,
               }),
             };
             addMessage(data.from_uid, chatMsg, uid);

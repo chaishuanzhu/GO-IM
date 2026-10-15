@@ -218,7 +218,7 @@ class FriendRepositoryImpl(
                         fromUid = event.fromUid,
                         toUid = selfUid,
                         createdAt = event.timestampMs,
-                        username = event.username?.takeIf { it != event.fromUid },
+                        nickname = event.nickname?.takeIf { it != event.fromUid },
                     ).toEntity(),
                 ),
             )

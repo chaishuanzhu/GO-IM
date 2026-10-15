@@ -66,6 +66,7 @@ type GatewayConfig struct {
 	GNet          GNetConfig          `json:"gnet"`           // gnet TCP 设置
 	MySQL         MySQLConfig         `json:"mysql"`          // MySQL（Enabled=false = 内存模式）
 	Auth          AuthConfig          `json:"auth"`           // 认证设置
+	Mail          MailConfig          `json:"mail"`           // 邮箱验证码 SMTP
 	Kafka         KafkaConfig         `json:"kafka"`          // Kafka（Enabled=false = 直接写 MySQL）
 	LogicGateway  LogicConfig         `json:"logic"`          // Gateway→Logic 的 gRPC 客户端（Addr）；与顶层 Config.Logic 不同
 	Grpc          GrpcConfig          `json:"grpc"`           // 网关自身的 gRPC 服务器（用于跨网关，未来扩展）
@@ -95,6 +96,18 @@ type MySQLConfig struct {
 // AuthConfig 保存认证设置。
 type AuthConfig struct {
 	DevMode bool `json:"dev_mode"` // true = 跳过密码校验（开发环境）
+}
+
+// MailConfig 保存发送邮箱验证码用的 SMTP 设置。
+// Enabled=false 时开发模式下验证码只写入日志；生产模式下邮箱注册、找回密码与绑定邮箱不可用。
+// Password 可由环境变量 GOIM_MAIL_PASSWORD 覆盖，避免写进配置文件。
+type MailConfig struct {
+	Enabled  bool   `json:"enabled"`
+	Host     string `json:"host"`     // 例如 "smtp.exmail.qq.com"
+	Port     int    `json:"port"`     // 465 = 隐式 TLS；其他端口使用 STARTTLS
+	Username string `json:"username"` // SMTP 登录账号，通常即发件地址
+	Password string `json:"password"`
+	From     string `json:"from"` // 发件人，例如 "GO-IM <no_reply@example.com>"；空 = Username
 }
 
 // KafkaConfig 保存 Kafka 生产者设置。
@@ -300,15 +313,18 @@ func Default() *Config {
 func Load(path string) (*Config, error) {
 	cfg := Default()
 	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			log.Printf("[config] no config file at %s, using defaults", path)
-			return cfg, nil
+	switch {
+	case os.IsNotExist(err):
+		log.Printf("[config] no config file at %s, using defaults", path)
+	case err != nil:
+		return nil, err
+	default:
+		if err := json.Unmarshal(data, cfg); err != nil {
+			return nil, err
 		}
-		return nil, err
 	}
-	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, err
+	if pw := os.Getenv("GOIM_MAIL_PASSWORD"); pw != "" {
+		cfg.Gateway.Mail.Password = pw
 	}
 	return cfg, nil
 }

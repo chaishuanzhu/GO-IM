@@ -25,9 +25,9 @@ func (s *MySQLStore) CreateFile(ctx context.Context, f *File) error {
 func (s *MySQLStore) GetFile(ctx context.Context, fileID int64) (*File, error) {
 	f := &File{}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT file_id, owner_uid, name, size, mime, width, height, has_thumb, status, created_at
+		`SELECT file_id, owner_uid, name, size, mime, width, height, has_thumb, status, is_avatar, created_at
 		 FROM files WHERE file_id = ?`, fileID,
-	).Scan(&f.FileID, &f.OwnerUID, &f.Name, &f.Size, &f.Mime, &f.Width, &f.Height, &f.HasThumb, &f.Status, &f.CreatedAt)
+	).Scan(&f.FileID, &f.OwnerUID, &f.Name, &f.Size, &f.Mime, &f.Width, &f.Height, &f.HasThumb, &f.Status, &f.IsAvatar, &f.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -44,6 +44,14 @@ func (s *MySQLStore) MarkFileReady(ctx context.Context, fileID int64, mime strin
 		FileStatusReady, mime, width, height, fileID)
 	if err != nil {
 		return fmt.Errorf("mark file ready: %w", err)
+	}
+	return nil
+}
+
+// MarkAvatar 把文件标记为头像（公开可读）。
+func (s *MySQLStore) MarkAvatar(ctx context.Context, fileID int64) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE files SET is_avatar = 1 WHERE file_id = ?`, fileID); err != nil {
+		return fmt.Errorf("mark avatar: %w", err)
 	}
 	return nil
 }

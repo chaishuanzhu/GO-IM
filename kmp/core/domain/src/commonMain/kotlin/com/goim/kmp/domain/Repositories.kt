@@ -4,6 +4,7 @@ import com.goim.kmp.model.Appearance
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.ConnectionState
 import com.goim.kmp.model.Conversation
+import com.goim.kmp.model.EmailCodePurpose
 import com.goim.kmp.model.FileMeta
 import com.goim.kmp.model.Friend
 import com.goim.kmp.model.FriendRequest
@@ -17,13 +18,24 @@ import com.goim.kmp.model.StickerRef
 import com.goim.kmp.model.MessageStatus
 import com.goim.kmp.model.TransportKind
 import com.goim.kmp.model.User
+import com.goim.kmp.model.UserProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 interface AuthRepository {
-    suspend fun login(uid: String, username: String, password: String): User
+    /** [account] 为邮箱或用户 ID。 */
+    suspend fun login(account: String, password: String): User
 
-    suspend fun register(uid: String, username: String, password: String): User
+    /** 邮箱 + 验证码注册，服务端分配用户 ID。 */
+    suspend fun register(email: String, code: String, password: String): User
+
+    /** 发送注册 / 找回密码验证码。 */
+    suspend fun sendEmailCode(email: String, purpose: EmailCodePurpose)
+
+    suspend fun resetPassword(email: String, code: String, newPassword: String)
+
+    /** 资料修改后同步已保存账号的昵称 / 头像 / 邮箱。 */
+    fun updateSavedProfile(profile: UserProfile)
 
     fun currentUser(): User?
 
@@ -175,6 +187,32 @@ interface FriendRepository {
 
     /** 删除好友（双向解除），对方在线时会收到通知。 */
     suspend fun remove(uid: String)
+}
+
+/** 用户资料：本地缓存 + 按需批量拉取；自己的资料可修改。 */
+interface ProfileRepository {
+    /** 缓存中的资料；未缓存或过期时自动后台拉取。 */
+    fun observe(uid: String): Flow<UserProfile?>
+
+    /** 预取（列表渲染前批量请求）。 */
+    fun prefetch(uids: Collection<String>)
+
+    /** 自己的完整资料（含邮箱）。 */
+    val me: StateFlow<UserProfile>
+
+    suspend fun refreshMe(): UserProfile
+
+    suspend fun updateNickname(nickname: String): UserProfile
+
+    /** 上传图片并设为头像。 */
+    suspend fun updateAvatar(bytes: ByteArray, fileName: String, mime: String): UserProfile
+
+    /** 按昵称（包含）、邮箱或用户 ID（精确）搜索用户。 */
+    suspend fun search(query: String): List<UserProfile>
+
+    suspend fun sendBindEmailCode(email: String)
+
+    suspend fun bindEmail(email: String, code: String): UserProfile
 }
 
 interface SearchRepository {

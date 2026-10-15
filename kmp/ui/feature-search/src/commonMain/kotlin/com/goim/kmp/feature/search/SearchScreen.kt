@@ -1,5 +1,7 @@
 package com.goim.kmp.feature.search
 
+import com.goim.kmp.model.ChatType
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +54,8 @@ import androidx.compose.ui.graphics.Color
 import com.goim.kmp.designsystem.EmptyState
 import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.MonogramAvatar
+import com.goim.kmp.designsystem.UserAvatar
+import com.goim.kmp.designsystem.rememberDisplayName
 import com.goim.kmp.model.SearchHit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -113,12 +117,17 @@ private fun HitRow(row: SearchRow, query: String, onClick: () -> Unit) {
         background = MaterialTheme.colorScheme.tertiaryContainer,
         fontWeight = FontWeight.SemiBold,
     )
+    val isGroup = row.hit.chatType == ChatType.GROUP
+    val title = if (isGroup) row.conversationTitle else rememberDisplayName(row.hit.peerOrGroupId, row.conversationTitle)
+    val sender = rememberDisplayName(row.hit.fromUid)
     ListItem(
-        headlineContent = { Text(row.conversationTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        headlineContent = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
-            Text(highlight("${row.hit.fromUid}: ${row.hit.content}", query, highlightStyle), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(highlight("$sender: ${row.hit.content}", query, highlightStyle), maxLines = 2, overflow = TextOverflow.Ellipsis)
         },
-        leadingContent = { MonogramAvatar(row.conversationTitle) },
+        leadingContent = {
+            if (isGroup) MonogramAvatar(title) else UserAvatar(row.hit.peerOrGroupId, title)
+        },
         trailingContent = {
             Text(
                 GoImFormat.conversationTime(row.hit.timestampMs),

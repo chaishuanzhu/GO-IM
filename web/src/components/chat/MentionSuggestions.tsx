@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import UserAvatar from '@/components/common/UserAvatar';
+import UserName from '@/components/common/UserName';
 
 interface MentionSuggestionsProps {
   query: string;
@@ -58,10 +60,9 @@ export default function MentionSuggestions({
           onClick={() => onSelect(member)}
           className="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-primary-50 hover:text-primary-700 transition-colors flex items-center gap-2"
         >
-          <span className="w-6 h-6 rounded-full bg-primary-500 flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
-            {member.slice(0, 2).toUpperCase()}
-          </span>
-          <span>@{member}</span>
+          <UserAvatar uid={member} className="w-6 h-6 text-[10px]" />
+          <span className="truncate"><UserName uid={member} /></span>
+          <span className="text-xs text-gray-400">@{member}</span>
         </button>
       ))}
     </div>

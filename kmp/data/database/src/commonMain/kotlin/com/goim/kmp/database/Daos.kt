@@ -243,3 +243,15 @@ interface MetaDao {
     @Upsert
     suspend fun set(entity: MetaEntity)
 }
+
+@Dao
+abstract class ProfileDao {
+    @Query("SELECT * FROM profiles WHERE uid = :uid")
+    abstract fun observe(uid: String): Flow<ProfileEntity?>
+
+    @Query("SELECT * FROM profiles WHERE uid IN (:uids)")
+    abstract suspend fun byIds(uids: List<String>): List<ProfileEntity>
+
+    @Upsert
+    abstract suspend fun upsert(entities: List<ProfileEntity>)
+}

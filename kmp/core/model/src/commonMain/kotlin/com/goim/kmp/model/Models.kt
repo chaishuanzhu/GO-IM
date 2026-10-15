@@ -98,9 +98,31 @@ enum class ConnectionState {
 
 data class User(
     val uid: String,
-    val username: String,
+    val nickname: String,
     val token: String,
-)
+    val email: String = "",
+    /** 绝对地址；未设置头像时为空。 */
+    val avatarUrl: String = "",
+) {
+    val displayName: String get() = nickname.ifBlank { uid }
+}
+
+/** 邮箱验证码用途，取值与网关 `purpose` 一致。 */
+enum class EmailCodePurpose(val raw: String) {
+    REGISTER("register"),
+    RESET_PASSWORD("reset_password"),
+    BIND_EMAIL("bind_email"),
+}
+
+/** 公开资料（昵称 / 头像）；[email] 只有自己的资料才有。 */
+data class UserProfile(
+    val uid: String,
+    val nickname: String,
+    val avatarUrl: String = "",
+    val email: String = "",
+) {
+    val displayName: String get() = nickname.ifBlank { uid }
+}
 
 data class Message(
     val id: String = newMessageId(),

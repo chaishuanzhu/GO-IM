@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.map
 class ConversationRepositoryImpl(database: AppDatabase) : ConversationRepository {
     private val dao = database.conversationDao()
     private val groups = database.groupDao()
+    private val profiles = database.profileDao()
     private val active = MutableStateFlow<String?>(null)
 
     override var activeConversationId: String?
@@ -44,7 +45,9 @@ class ConversationRepositoryImpl(database: AppDatabase) : ConversationRepository
             !title.isNullOrEmpty() -> title
             from.chatType == ChatType.GROUP ->
                 groups.byId(peer)?.name?.takeIf { it.isNotEmpty() } ?: existing?.title ?: peer
-            else -> existing?.title ?: peer
+            else -> existing?.title?.takeIf { it != peer }
+                ?: profiles.byIds(listOf(peer)).firstOrNull()?.nickname?.takeIf { it.isNotBlank() }
+                ?: existing?.title ?: peer
         }
         // 补拉的旧历史不覆盖更新的预览（iOS 会被覆盖，这里修正）。
         val isNewest = existing == null || from.timestampMs >= existing.lastMsgAt

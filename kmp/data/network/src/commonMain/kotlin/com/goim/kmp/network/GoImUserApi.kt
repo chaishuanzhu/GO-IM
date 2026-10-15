@@ -3,11 +3,13 @@ package com.goim.kmp.network
 import com.goim.kmp.common.DomainError
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.ConversationId
+import com.goim.kmp.model.EmailCodePurpose
 import com.goim.kmp.model.Friend
 import com.goim.kmp.model.FriendRequest
 import com.goim.kmp.model.Group
 import com.goim.kmp.model.SearchHit
 import com.goim.kmp.model.User
+import com.goim.kmp.model.UserProfile
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.timeout
@@ -55,14 +57,30 @@ internal data class GroupMembersDto(
 internal data class FriendRowDto(
     val uid: String? = null,
     @SerialName("friend_uid") val friendUid: String = "",
+    val nickname: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
 )
 
 @Serializable
 internal data class PendingRequestDto(
     @SerialName("from_uid") val fromUid: String,
+    val nickname: String? = null,
+    /** 1.3.0 之前的网关字段。 */
     val username: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("created_at") val createdAt: Long? = null,
 )
+
+@Serializable
+internal data class ProfileDto(
+    val uid: String,
+    val nickname: String = "",
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+    val email: String? = null,
+)
+
+@Serializable
+internal data class ProfileListDto(val users: List<ProfileDto>? = null)
 
 @Serializable
 internal data class FriendListDto(
@@ -119,10 +137,18 @@ class GoImUserApi(
         val dto = get("friend/list").decode<FriendListDto>()
         val friends = dto.friends.orEmpty().mapNotNull { row ->
             val peer = row.uid?.takeIf { it.isNotEmpty() } ?: row.friendUid
-            peer.takeIf { it.isNotEmpty() && it != user.uid }?.let { Friend(it) }
+            peer.takeIf { it.isNotEmpty() && it != user.uid }?.let {
+                Friend(it, nickname = row.nickname.orEmpty().ifEmpty { it }, avatarUrl = absoluteUrl(baseUrl(), row.avatarUrl))
+            }
         }.distinctBy { it.uid }
         val pending = dto.pendingRequests.orEmpty().map {
-            FriendRequest(fromUid = it.fromUid, toUid = user.uid, createdAt = it.createdAt ?: 0, username = it.username)
+            FriendRequest(
+                fromUid = it.fromUid,
+                toUid = user.uid,
+                createdAt = it.createdAt ?: 0,
+                nickname = it.nickname ?: it.username,
+                avatarUrl = absoluteUrl(baseUrl(), it.avatarUrl),
+            )
         }
         return FriendSnapshot(friends, pending)
     }
@@ -138,6 +164,35 @@ class GoImUserApi(
     suspend fun removeFriend(friendUid: String) {
         post("friend/remove", "friend_uid" to friendUid)
     }
+
+    /** 自己的完整资料（含邮箱）。 */
+    suspend fun myProfile(): UserProfile = get("user/profile").decode<ProfileDto>().toDomain()
+
+    /** 批量公开资料；不存在的用户不返回。 */
+    suspend fun profiles(uids: List<String>): List<UserProfile> =
+        get("user/profiles", "uids" to uids.joinToString(",")).decode<ProfileListDto>().users.orEmpty().map { it.toDomain() }
+
+    /** [nickname] / [avatarFileId] 为 null 表示不修改；[avatarFileId] 为 "0" 清除头像。 */
+    suspend fun updateProfile(nickname: String? = null, avatarFileId: String? = null): UserProfile =
+        post("user/profile", "nickname" to nickname, "avatar_file_id" to avatarFileId).decode<ProfileDto>().toDomain()
+
+    /** 按昵称（包含）、邮箱或用户 ID（精确）搜索用户。 */
+    suspend fun searchUsers(query: String, limit: Int = 20): List<UserProfile> =
+        get("user/search", "q" to query, "limit" to limit.toString()).decode<ProfileListDto>().users.orEmpty().map { it.toDomain() }
+
+    suspend fun sendBindEmailCode(email: String) {
+        post("auth/email-code", "email" to email, "purpose" to EmailCodePurpose.BIND_EMAIL.raw)
+    }
+
+    suspend fun bindEmail(email: String, code: String): UserProfile =
+        post("user/email", "email" to email, "code" to code).decode<ProfileDto>().toDomain()
+
+    private fun ProfileDto.toDomain() = UserProfile(
+        uid = uid,
+        nickname = nickname.ifEmpty { uid },
+        avatarUrl = absoluteUrl(baseUrl(), avatarUrl),
+        email = email.orEmpty(),
+    )
 
     suspend fun search(query: String, limit: Int): List<SearchHit> =
         get("search", "q" to query, "limit" to limit.toString()).decode<SearchResponseDto>().messages.orEmpty().map { m ->

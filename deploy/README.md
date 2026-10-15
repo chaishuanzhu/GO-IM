@@ -10,7 +10,7 @@
 
 最小化部署由 Gateway 直接写 MySQL，聊天、群聊、历史、搜索、文件全部可用；全量部署把写库交给 Logic 消费 Kafka，Gateway 热路径更轻。两者用户可见功能一致，数据库表结构相同。
 
-部署完成后浏览器打开站点地址注册账号；[桌面端 / 移动端客户端](https://blog.chaisz.com/GO-IM/)的服务器地址填同一个地址。
+部署完成后浏览器打开站点地址，用邮箱注册账号（需先[配置 SMTP](#邮件验证码)）；[桌面端 / 移动端客户端](https://blog.chaisz.com/GO-IM/)的服务器地址填同一个地址。
 
 ## Docker 最小化部署
 
@@ -54,7 +54,7 @@ docker compose ps
 ```bash
 docker compose logs -f gateway                  # 查看日志
 docker compose pull && docker compose up -d     # 升级到 latest
-GOIM_TAG=1.2.0 docker compose up -d             # 固定 / 回滚到指定版本
+GOIM_TAG=1.3.0 docker compose up -d             # 固定 / 回滚到指定版本
 docker compose down                             # 停止（保留数据卷）
 docker compose down -v                          # 停止并删除所有数据
 ```
@@ -63,14 +63,36 @@ docker compose down -v                          # 停止并删除所有数据
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `GOIM_TAG` | `latest` | 镜像版本，生产建议固定（如 `1.2.0`） |
+| `GOIM_TAG` | `latest` | 镜像版本，生产建议固定（如 `1.3.0`） |
 | `WEB_PORT` | `80` | Web 端口 |
 | `TCP_PORT` | `8081` | 原生 TCP 长连接端口 |
 | `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` | `im-root` / `im-dev` | 改 `MYSQL_PASSWORD` 需同步改配置里两处 `dsn` |
 | `RUSTFS_SECRET_KEY` | `rustfsadmin` | 对象存储密钥，需同步改配置里的 `object_storage.secret_key` |
+| `MAIL_PASSWORD` | 空 | SMTP 密码，见下文「邮件验证码」 |
 | `OSS_BIND` / `OSS_PORT` | `127.0.0.1` / `9000` | RustFS S3 端口的宿主机映射，供 OSS 域名的反向代理接入（见下文「文件直传」） |
 
 数据库密码只在**首次**创建数据卷时生效，之后修改需进 MySQL 手动改。
+
+## 邮件验证码
+
+注册、找回密码、绑定邮箱都通过邮件验证码完成，用户 ID 由服务端从 100000 起自动分配。未配置 SMTP 时这三个功能返回 503，已有账号仍可用 ID + 密码登录。
+
+在配置文件的 `gateway.mail` 中填写 SMTP 服务器并设 `enabled: true`；密码不要写进配置文件，通过环境变量 `GOIM_MAIL_PASSWORD` 传入：
+
+```json
+"mail": {
+    "enabled": true,
+    "host": "smtp.exmail.qq.com",
+    "port": 465,
+    "username": "no_reply@example.com",
+    "from": "GO-IM <no_reply@example.com>"
+}
+```
+
+- 端口 465 使用隐式 TLS，其他端口（如 587）使用 STARTTLS
+- Docker：在 `.env` 中写 `MAIL_PASSWORD=...`，compose 会传给 gateway
+- Kubernetes：填 `kustomization.yaml` 中 goim-infra 的 `MAIL_PASSWORD`
+- 验证码 10 分钟有效，同一邮箱 60 秒内只发一次、每天最多 10 次；启用 Redis 时多个网关共享验证码
 
 ## Kubernetes 全量部署
 
@@ -84,6 +106,7 @@ cd GO-IM/deploy/k8s
 sed -i.bak "s|CHANGE_ME_run_openssl_rand_base64_48|$(openssl rand -base64 48 | tr -d '\n/+=')|" config.json
 # 2. ingress.yaml：把 im.example.com 换成你的域名，按需设置 ingressClassName / tls
 # 3. kustomization.yaml：按需修改 goim-infra 中的密码（同步改 config.json）和镜像版本 newTag
+# 4. 邮件验证码：config.json 的 gateway.mail 设 enabled: true，SMTP 密码填 goim-infra 的 MAIL_PASSWORD
 
 kubectl apply -k .
 kubectl -n go-im get pods -w
@@ -98,7 +121,7 @@ kubectl -n go-im get pods -w
 | go-im | Ingress | `/ws`、`/upload` → gateway，其余 → web |
 | go-im-oss | Ingress | `oss.example.com` → rustfs，文件直传入口（见下文「文件直传」） |
 | goim-config | Secret（由 `config.json` 生成） | 挂载到 gateway、logic 的 `/etc/im/config.json` |
-| goim-infra | Secret | MySQL、RustFS 的账号密码 |
+| goim-infra | Secret | MySQL、RustFS 的账号密码，SMTP 密码 `MAIL_PASSWORD` |
 
 常用操作：
 

@@ -10,6 +10,7 @@ import com.goim.kmp.model.GroupMember
 import com.goim.kmp.model.Message
 import com.goim.kmp.model.MessageStatus
 import com.goim.kmp.model.MsgType
+import com.goim.kmp.model.UserProfile
 
 fun MessageEntity.toDomain() = Message(
     id = id,
@@ -67,16 +68,19 @@ fun Group.toEntity() = GroupEntity(groupId = groupId, name = name, ownerUid = ow
 
 fun GroupMemberEntity.toDomain() = GroupMember(groupId = groupId, uid = uid, role = role)
 
-fun FriendEntity.toDomain() = Friend(uid = uid, username = username)
+fun FriendEntity.toDomain() = Friend(uid = uid, nickname = nickname, avatarUrl = avatarUrl)
 
-fun Friend.toEntity() = FriendEntity(uid = uid, username = username)
+fun Friend.toEntity() = FriendEntity(uid = uid, nickname = nickname, avatarUrl = avatarUrl)
+
+fun ProfileEntity.toDomain() = UserProfile(uid = uid, nickname = nickname, avatarUrl = avatarUrl)
 
 fun FriendRequestEntity.toDomain() = FriendRequest(
     fromUid = fromUid,
     toUid = toUid,
     status = FriendRequestStatus.fromRaw(status),
     createdAt = createdAt,
-    username = username,
+    nickname = nickname,
+    avatarUrl = avatarUrl,
 )
 
 fun FriendRequest.toEntity() = FriendRequestEntity(
@@ -84,5 +88,6 @@ fun FriendRequest.toEntity() = FriendRequestEntity(
     toUid = toUid,
     status = status.raw,
     createdAt = createdAt,
-    username = username,
+    nickname = nickname,
+    avatarUrl = avatarUrl,
 )

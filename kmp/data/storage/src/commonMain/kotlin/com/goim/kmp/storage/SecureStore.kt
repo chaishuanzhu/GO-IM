@@ -29,7 +29,7 @@ class InMemorySecureStore : SecureStore {
 }
 
 /**
- * 会话凭据：`session.{uid}` → `{username, token}`，活跃 UID 记在 device.json（与 iOS `KeychainStore` 同模型）。
+ * 会话凭据：`session.{uid}` → `{nickname, token, email, avatarUrl}`，活跃 UID 记在 device.json（与 iOS `KeychainStore` 同模型）。
  * 多账号：凭据保存过的 UID 按最近使用排在 `accounts` 里，切换账号不需要重新登录。
  */
 class SessionStore(
@@ -37,8 +37,19 @@ class SessionStore(
     private val device: DevicePreferencesStore,
 ) {
     fun save(user: User) {
-        secure.set(key(user.uid), json.encodeToString(Payload.serializer(), Payload(user.username, user.token)))
+        write(user)
         activate(user.uid)
+    }
+
+    /** 资料变化后更新已保存账号的昵称 / 头像（账号切换列表展示用），不改变活跃账号。 */
+    fun updateProfile(uid: String, nickname: String, avatarUrl: String, email: String? = null) {
+        val user = load(uid) ?: return
+        write(user.copy(nickname = nickname, avatarUrl = avatarUrl, email = email ?: user.email))
+    }
+
+    private fun write(user: User) {
+        val payload = Payload(nickname = user.nickname, token = user.token, email = user.email, avatarUrl = user.avatarUrl)
+        secure.set(key(user.uid), json.encodeToString(Payload.serializer(), payload))
     }
 
     /** 已保存凭据的账号，最近使用在前；凭据已失效的条目会被跳过。 */
@@ -73,7 +84,13 @@ class SessionStore(
         val raw = secure.get(key(uid)) ?: return null
         val payload = runCatching { json.decodeFromString(Payload.serializer(), raw) }.getOrNull() ?: return null
         if (payload.token.isEmpty()) return null
-        return User(uid = uid, username = payload.username.ifEmpty { uid }, token = payload.token)
+        return User(
+            uid = uid,
+            nickname = payload.nickname.ifEmpty { payload.username }.ifEmpty { uid },
+            token = payload.token,
+            email = payload.email,
+            avatarUrl = payload.avatarUrl,
+        )
     }
 
     fun loadActive(): User? = device.load().activeUID?.takeIf { it.isNotEmpty() }?.let(::load)
@@ -85,7 +102,14 @@ class SessionStore(
     private fun key(uid: String) = "session.${UserHome.sanitizeUid(uid)}"
 
     @Serializable
-    private data class Payload(val username: String, val token: String)
+    private data class Payload(
+        val token: String,
+        val nickname: String = "",
+        /** 1.3.0 之前保存的凭据只有 username。 */
+        val username: String = "",
+        val email: String = "",
+        val avatarUrl: String = "",
+    )
 
     private companion object {
         val json = Json { ignoreUnknownKeys = true }

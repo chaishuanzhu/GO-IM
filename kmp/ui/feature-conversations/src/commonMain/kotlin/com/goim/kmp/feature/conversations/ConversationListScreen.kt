@@ -54,10 +54,13 @@ import com.goim.kmp.designsystem.EmptyState
 import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.GoImIcons
 import com.goim.kmp.designsystem.MonogramAvatar
+import com.goim.kmp.designsystem.UserAvatar
+import com.goim.kmp.designsystem.rememberDisplayName
 import com.goim.kmp.designsystem.TextInputDialog
 import com.goim.kmp.designsystem.UnreadBadge
 import com.goim.kmp.designsystem.title
 import com.goim.kmp.model.ConnectionState
+import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.Conversation
 import com.goim.kmp.model.MessagePreview
 
@@ -199,10 +202,12 @@ private fun ConversationRowContent(conversation: Conversation, selected: Boolean
     val unread = conversation.unreadCount > 0
     val preview = MessagePreview.sanitizedListPreview(conversation.lastMessagePreview)
     val unreadLabel = if (unread) "，${conversation.unreadCount} 条未读" else ""
+    val isGroup = conversation.chatType == ChatType.GROUP
+    val title = if (isGroup) conversation.title else rememberDisplayName(conversation.peerOrGroupId, conversation.title)
     ListItem(
         headlineContent = {
             Text(
-                conversation.title,
+                title,
                 fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -216,7 +221,9 @@ private fun ConversationRowContent(conversation: Conversation, selected: Boolean
                 color = if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
-        leadingContent = { MonogramAvatar(conversation.title) },
+        leadingContent = {
+            if (isGroup) MonogramAvatar(title) else UserAvatar(conversation.peerOrGroupId, title)
+        },
         trailingContent = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
@@ -236,7 +243,7 @@ private fun ConversationRowContent(conversation: Conversation, selected: Boolean
             .clip(MaterialTheme.shapes.large)
             .then(modifier)
             .semantics(mergeDescendants = true) {
-                contentDescription = "${conversation.title}$unreadLabel，$preview"
+                contentDescription = "$title$unreadLabel，$preview"
             },
     )
 }

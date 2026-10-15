@@ -23,4 +23,4 @@ suspend fun AppDatabase.exportSnapshot(targetPath: String) {
     }
 }
 
-private val DIAGNOSTIC_TABLES = listOf("messages", "conversations", "groups", "group_members", "friends", "friend_requests", "meta")
+private val DIAGNOSTIC_TABLES = listOf("messages", "conversations", "groups", "group_members", "friends", "friend_requests", "profiles", "meta")

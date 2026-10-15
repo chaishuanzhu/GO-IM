@@ -38,16 +38,16 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 	connCtx := context.Background()
 
 	transport := newWsTransport(conn)
-	client := NewClient(claims.UID, claims.Username, transport, s.clients, s.connCfg.SendBufSize)
+	client := NewClient(claims.UID, claims.Nickname, transport, s.clients, s.connCfg.SendBufSize)
 	s.clients.Register(connCtx, client)
 
-	log.Printf("[server] client connected uid=%s username=%s", claims.UID, claims.Username)
+	log.Printf("[server] client connected uid=%s nickname=%s", claims.UID, claims.Nickname)
 
 	// 发送登录成功响应
 	client.Send(&proto.Message{
 		Cmd:       proto.CmdLoginResp,
 		To:        claims.UID,
-		Content:   claims.Username,
+		Content:   claims.Nickname,
 		Timestamp: time.Now().UnixMilli(),
 	})
 

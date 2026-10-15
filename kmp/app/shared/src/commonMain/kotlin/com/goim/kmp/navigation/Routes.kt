@@ -22,6 +22,9 @@ data object NewFriendsRoute
 data object DeveloperRoute
 
 @Serializable
+data object ProfileRoute
+
+@Serializable
 data object GroupsRoute
 
 @Serializable

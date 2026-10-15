@@ -47,6 +47,9 @@ spec:
           env:
             - { name: CONFIG_PATH, value: /etc/im/config.json }
             - { name: TZ, value: Asia/Shanghai }
+            - name: GOIM_MAIL_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: goim-infra, key: MAIL_PASSWORD, optional: true }
           ports:
             - name: http
               containerPort: 8080

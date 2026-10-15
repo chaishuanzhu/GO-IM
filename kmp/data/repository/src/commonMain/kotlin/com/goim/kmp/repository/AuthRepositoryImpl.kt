@@ -3,8 +3,10 @@ package com.goim.kmp.repository
 import com.goim.kmp.domain.AuthRepository
 import com.goim.kmp.domain.ServerSettingsRepository
 import com.goim.kmp.model.Appearance
+import com.goim.kmp.model.EmailCodePurpose
 import com.goim.kmp.model.TransportKind
 import com.goim.kmp.model.User
+import com.goim.kmp.model.UserProfile
 import com.goim.kmp.network.GoImApi
 import com.goim.kmp.storage.DevicePreferencesStore
 import com.goim.kmp.storage.SessionStore
@@ -16,9 +18,17 @@ class AuthRepositoryImpl(
     private val api: GoImApi,
     private val sessions: SessionStore,
 ) : AuthRepository {
-    override suspend fun login(uid: String, username: String, password: String): User = api.login(uid, username, password)
+    override suspend fun login(account: String, password: String): User = api.login(account, password)
 
-    override suspend fun register(uid: String, username: String, password: String): User = api.register(uid, username, password)
+    override suspend fun register(email: String, code: String, password: String): User = api.register(email, code, password)
+
+    override suspend fun sendEmailCode(email: String, purpose: EmailCodePurpose) = api.sendEmailCode(email, purpose)
+
+    override suspend fun resetPassword(email: String, code: String, newPassword: String) =
+        api.resetPassword(email, code, newPassword)
+
+    override fun updateSavedProfile(profile: UserProfile) =
+        sessions.updateProfile(profile.uid, profile.nickname, profile.avatarUrl, profile.email.ifEmpty { null })
 
     override fun currentUser(): User? = sessions.loadActive()
 

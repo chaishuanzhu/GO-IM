@@ -7,6 +7,8 @@ import { useChatStore } from '@/stores/chatStore';
 import { wsManager } from '@/lib/ws';
 import { getFriendList, sendFriendRequest, acceptFriendRequest, removeFriend } from '@/lib/api';
 import { Cmd, ChatType, MsgType } from '@/types';
+import { useDisplayName } from '@/stores/profileStore';
+import UserAvatar from '@/components/common/UserAvatar';
 import { ArrowLeft, MessageCircle, UserPlus, UserCheck, UserX, Clock } from 'lucide-react';
 
 export default function UserProfilePage() {
@@ -23,6 +25,7 @@ export default function UserProfilePage() {
 
   const isOnline = onlineUsers.includes(profileUid || '');
   const isSelf = profileUid === myUid;
+  const profileName = useDisplayName(profileUid || '');
 
   // 判断好友关系状态
   const friendRel = friends.find((f) => f.uid === profileUid);
@@ -149,10 +152,11 @@ export default function UserProfilePage() {
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
           {/* 头部 */}
           <div className="p-6 text-center">
-            <div className="w-20 h-20 rounded-full bg-primary-500 flex items-center justify-center text-white text-2xl font-bold mx-auto">
-              {profileUid.slice(0, 2).toUpperCase()}
+            <div className="flex justify-center">
+              <UserAvatar uid={profileUid} name={profileName} className="w-20 h-20 text-2xl" />
             </div>
-            <h1 className="mt-3 text-xl font-bold text-gray-900 dark:text-gray-100">{profileUid}</h1>
+            <h1 className="mt-3 text-xl font-bold text-gray-900 dark:text-gray-100">{profileName}</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-mono">ID：{profileUid}</p>
             <div className="flex items-center justify-center gap-2 mt-1">
               <span className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
               <span className="text-sm text-gray-500 dark:text-gray-400">{isOnline ? '在线' : '离线'}</span>

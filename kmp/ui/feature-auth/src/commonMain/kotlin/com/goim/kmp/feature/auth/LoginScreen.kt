@@ -20,7 +20,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
@@ -41,6 +43,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -60,7 +63,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.goim.kmp.designsystem.GoImIcons
-import com.goim.kmp.designsystem.MonogramAvatar
+import com.goim.kmp.designsystem.UserAvatar
 import com.goim.kmp.designsystem.TonalIcon
 import com.goim.kmp.model.User
 
@@ -109,45 +112,82 @@ fun LoginScreen(
                     )
                     Text("GO-IM", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
                     Text(
-                        if (state.isRegister) "创建新账号" else "登录以继续",
+                        when (state.mode) {
+                            AuthMode.LOGIN -> "登录以继续"
+                            AuthMode.REGISTER -> "用邮箱创建新账号"
+                            AuthMode.RESET -> "通过邮箱验证码重置密码"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    listOf(false to "登录", true to "注册").forEachIndexed { index, (register, label) ->
-                        SegmentedButton(
-                            selected = state.isRegister == register,
-                            onClick = { viewModel.onRegisterChange(register) },
-                            shape = SegmentedButtonDefaults.itemShape(index, 2),
-                        ) { Text(label) }
+                if (state.mode != AuthMode.RESET) {
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        listOf(AuthMode.LOGIN to "登录", AuthMode.REGISTER to "注册").forEachIndexed { index, (mode, label) ->
+                            SegmentedButton(
+                                selected = state.mode == mode,
+                                onClick = { viewModel.onModeChange(mode) },
+                                shape = SegmentedButtonDefaults.itemShape(index, 2),
+                            ) { Text(label) }
+                        }
                     }
                 }
 
-                OutlinedTextField(
-                    value = state.uid,
-                    onValueChange = viewModel::onUidChange,
-                    label = { Text("用户 ID") },
-                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Next),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = state.username,
-                    onValueChange = viewModel::onUsernameChange,
-                    label = { Text("用户名") },
-                    supportingText = { Text("可选，留空则使用用户 ID") },
-                    leadingIcon = { Icon(Icons.Filled.Face, contentDescription = null) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Next),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (state.mode == AuthMode.LOGIN) {
+                    OutlinedTextField(
+                        value = state.account,
+                        onValueChange = viewModel::onAccountChange,
+                        label = { Text("邮箱或用户 ID") },
+                        leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            autoCorrectEnabled = false,
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = state.email,
+                        onValueChange = viewModel::onEmailChange,
+                        label = { Text("邮箱") },
+                        leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            autoCorrectEnabled = false,
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = state.code,
+                        onValueChange = viewModel::onCodeChange,
+                        label = { Text("验证码") },
+                        leadingIcon = { Icon(Icons.Filled.CheckCircle, contentDescription = null) },
+                        trailingIcon = {
+                            TextButton(onClick = viewModel::sendCode, enabled = state.canSendCode) {
+                                Text(
+                                    when {
+                                        state.isSendingCode -> "发送中…"
+                                        state.codeCooldown > 0 -> "${state.codeCooldown} 秒后重发"
+                                        else -> "获取验证码"
+                                    },
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Next),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 OutlinedTextField(
                     value = state.password,
                     onValueChange = viewModel::onPasswordChange,
-                    label = { Text("密码") },
+                    label = { Text(if (state.mode == AuthMode.RESET) "新密码" else "密码") },
+                    supportingText = if (state.mode == AuthMode.LOGIN) null else ({ Text("至少 6 位") }),
                     leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
                     trailingIcon = {
                         IconButton(onClick = { showPassword = !showPassword }) {
@@ -165,10 +205,11 @@ fun LoginScreen(
                 )
 
                 state.error?.let { ErrorBanner(it) }
+                state.info?.let { InfoBanner(it) }
 
                 Button(
                     onClick = viewModel::submit,
-                    enabled = state.canSubmit,
+                    enabled = !state.isLoading,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                 ) {
                     if (state.isLoading) {
@@ -178,8 +219,25 @@ fun LoginScreen(
                             color = MaterialTheme.colorScheme.onPrimary,
                         )
                     } else {
-                        Text(if (state.isRegister) "注册并登录" else "登录")
+                        Text(
+                            when (state.mode) {
+                                AuthMode.LOGIN -> "登录"
+                                AuthMode.REGISTER -> "注册并登录"
+                                AuthMode.RESET -> "重置密码"
+                            },
+                        )
                     }
+                }
+                when (state.mode) {
+                    AuthMode.LOGIN -> TextButton(
+                        onClick = { viewModel.onModeChange(AuthMode.RESET) },
+                        modifier = Modifier.align(Alignment.End),
+                    ) { Text("忘记密码？") }
+                    AuthMode.RESET -> TextButton(
+                        onClick = { viewModel.onModeChange(AuthMode.LOGIN) },
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    ) { Text("返回登录") }
+                    AuthMode.REGISTER -> Unit
                 }
 
                 if (savedAccounts.isNotEmpty()) {
@@ -192,11 +250,11 @@ fun LoginScreen(
                     )
                     OutlinedCard(Modifier.fillMaxWidth()) {
                         savedAccounts.forEach { account ->
-                            val name = account.username.ifEmpty { account.uid }
+                            val name = account.displayName
                             ListItem(
                                 headlineContent = { Text(name) },
-                                supportingContent = { Text(account.uid) },
-                                leadingContent = { MonogramAvatar(name, size = 40.dp) },
+                                supportingContent = { Text(account.email.ifEmpty { "ID：${account.uid}" }) },
+                                leadingContent = { UserAvatar(account.uid, name, size = 40.dp, avatarUrl = account.avatarUrl) },
                                 trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                 modifier = Modifier.clickable(enabled = !state.isLoading, role = Role.Button, onClickLabel = "进入") {
@@ -221,6 +279,22 @@ private fun ErrorBanner(message: String) {
     ) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(message, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun InfoBanner(message: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Text(message, style = MaterialTheme.typography.bodyMedium)
         }

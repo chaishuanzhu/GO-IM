@@ -2,11 +2,64 @@
  * REST 接口的 HTTP API 客户端。
  */
 
-import type { LoginResponse, User, GroupInfo, GroupListItem, UploadResponse, SearchResponse, SearchParams, AdminStats, AdminUsersResponse, AdminBrowseResponse } from '@/types';
+import type { LoginResponse, User, UserProfile, EmailCodePurpose, GroupInfo, GroupListItem, UploadResponse, SearchResponse, SearchParams, AdminStats, AdminUsersResponse, AdminBrowseResponse } from '@/types';
 import { getToken, getStoredUid } from './auth';
 import { LEGACY_UPLOAD_SIZE, MAX_UPLOAD_SIZE } from './constants';
 
 type RequestMethod = 'GET' | 'POST';
+
+/** 网关错误：[message] 已转成中文提示，[body] 为原始响应文本。 */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly body: string;
+  readonly retryAfter: number;
+
+  constructor(status: number, body: string, retryAfter = 0) {
+    super(errorText(status, body));
+    this.status = status;
+    this.body = body;
+    this.retryAfter = retryAfter;
+  }
+}
+
+const ERROR_TEXTS: [string, string][] = [
+  ['invalid account or password', '账号或密码错误'],
+  ['account disabled', '账号已被禁用'],
+  ['password required', '请输入密码'],
+  ['email already registered', '该邮箱已被注册'],
+  ['email not registered', '该邮箱未注册'],
+  ['invalid or expired verification code', '验证码错误或已过期'],
+  ['requested too frequently', '验证码发送太频繁，请稍后再试'],
+  ['too many verification codes', '验证码发送次数已达上限，请稍后再试'],
+  ['failed to send email', '邮件发送失败，请稍后重试'],
+  ['invalid email', '邮箱格式不正确'],
+  ['password must be at least', '密码至少 6 位'],
+  ['password too long', '密码过长'],
+  ['nickname required', '昵称不能为空'],
+  ['nickname too long', '昵称最多 32 个字'],
+  ['nickname contains invalid', '昵称包含不支持的字符'],
+  ['avatar must be an image', '头像必须是图片'],
+  ['avatar file not found', '头像图片无效，请重新上传'],
+  ['query too long', '搜索内容过长'],
+  ['friend request already exists', '已发送过请求或已是好友'],
+  ['already friends', '已经是好友'],
+  ['cannot friend yourself', '不能添加自己为好友'],
+  ['user not found', '用户不存在'],
+  ['not available', '服务端未启用该功能'],
+];
+
+function errorText(status: number, body: string): string {
+  const lower = body.toLowerCase();
+  const hit = ERROR_TEXTS.find(([key]) => lower.includes(key));
+  if (hit) return hit[1];
+  switch (status) {
+    case 401: return '登录已过期，请重新登录';
+    case 403: return '没有权限';
+    case 429: return '操作过于频繁，请稍后再试';
+    case 503: return '服务端未启用该功能';
+    default: return `请求失败 (${status}): ${body.trim() || '未知错误'}`;
+  }
+}
 
 function getAuthParams(): URLSearchParams {
   // 必须与 auth.ts 中定义的键一致 (im_uid、im_token —— 下划线)。
@@ -48,7 +101,7 @@ async function request<T>(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`请求失败 (${res.status}): ${text || '未知错误'}`);
+    throw new ApiError(res.status, text, Number(res.headers.get('Retry-After')) || 0);
   }
 
   return res.json();
@@ -56,16 +109,35 @@ async function request<T>(
 
 // ---- 认证 ----
 
-export async function login(uid: string, username?: string, password?: string): Promise<LoginResponse> {
-  const params = new URLSearchParams({ uid });
-  if (username) params.set('username', username);
-  if (password) params.set('password', password);
-  return request<LoginResponse>('/login', 'POST', params);
+/** 不带当前会话凭据的表单 POST（登录、注册、找回密码）。 */
+async function publicPost<T>(path: string, fields: Record<string, string>): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(fields).toString(),
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, await res.text(), Number(res.headers.get('Retry-After')) || 0);
+  }
+  return res.json();
 }
 
-export async function register(uid: string, username: string, password: string): Promise<LoginResponse> {
-  const params = new URLSearchParams({ uid, username, password });
-  return request<LoginResponse>('/register', 'POST', params);
+/** [account] 为邮箱或用户 ID。 */
+export async function login(account: string, password: string): Promise<LoginResponse> {
+  return publicPost<LoginResponse>('/login', { account, password });
+}
+
+export async function register(email: string, code: string, password: string): Promise<LoginResponse> {
+  return publicPost<LoginResponse>('/register', { email, code, password });
+}
+
+/** 注册 / 找回密码验证码；绑定邮箱用 [sendBindEmailCode]（需登录）。 */
+export async function sendEmailCode(email: string, purpose: Exclude<EmailCodePurpose, 'bind_email'>): Promise<{ status: string }> {
+  return publicPost('/auth/email-code', { email, purpose });
+}
+
+export async function resetPassword(email: string, code: string, newPassword: string): Promise<{ status: string }> {
+  return publicPost('/password/reset', { email, code, new_password: newPassword });
 }
 
 export async function changePassword(oldPassword: string, newPassword: string): Promise<{ status: string }> {
@@ -75,6 +147,37 @@ export async function changePassword(oldPassword: string, newPassword: string): 
 }
 
 // ---- 用户 ----
+
+/** 自己的完整资料（含邮箱）。 */
+export async function getMyProfile(): Promise<UserProfile> {
+  return request('/user/profile');
+}
+
+/** 批量读取公开资料（最多 200 个）。 */
+export async function getProfiles(uids: string[]): Promise<{ users: UserProfile[] }> {
+  return request(`/user/profiles?uids=${encodeURIComponent(uids.join(','))}`);
+}
+
+/** 修改昵称 / 头像；[avatarFileId] 为 /upload 返回的 file_id，"0" 清除头像。 */
+export async function updateProfile(fields: { nickname?: string; avatarFileId?: string }): Promise<UserProfile> {
+  const params = new URLSearchParams();
+  if (fields.nickname !== undefined) params.set('nickname', fields.nickname);
+  if (fields.avatarFileId !== undefined) params.set('avatar_file_id', fields.avatarFileId);
+  return request('/user/profile', 'POST', params);
+}
+
+/** 按昵称（包含）、邮箱或用户 ID（精确）搜索用户。 */
+export async function searchUsers(q: string, limit = 20): Promise<{ users: UserProfile[] }> {
+  return request(`/user/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+}
+
+export async function sendBindEmailCode(email: string): Promise<{ status: string }> {
+  return request('/auth/email-code', 'POST', new URLSearchParams({ email, purpose: 'bind_email' }));
+}
+
+export async function bindEmail(email: string, code: string): Promise<UserProfile> {
+  return request('/user/email', 'POST', new URLSearchParams({ email, code }));
+}
 
 export async function getOnlineUsers(): Promise<{ count: number; users: string[] }> {
   return request('/online');
@@ -312,8 +415,8 @@ export async function searchMessages(
 
 export interface FriendListResponse {
   uid: string;
-  friends: { uid: string; friend_uid: string; status: number; created_at: number }[];
-  pending_requests: { from_uid: string; username: string; created_at: number }[];
+  friends: { uid: string; friend_uid: string; status: number; created_at: number; nickname?: string; avatar_url?: string }[];
+  pending_requests: { from_uid: string; nickname: string; avatar_url?: string; created_at: number }[];
 }
 
 export async function sendFriendRequest(toUid: string): Promise<{ status: string }> {

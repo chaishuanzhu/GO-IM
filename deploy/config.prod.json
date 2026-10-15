@@ -43,6 +43,15 @@
             "dsn": "im:CHANGE_ME_PASSWORD@tcp(mysql:3306)/im?parseTime=true&charset=utf8mb4"
         },
 
+        "mail": {
+            "enabled": false,
+            "host": "smtp.exmail.qq.com",
+            "port": 465,
+            "username": "no_reply@example.com",
+            "password": "",
+            "from": "GO-IM <no_reply@example.com>"
+        },
+
         "auth": {
             "_comment": "生产环境必须关闭 dev_mode",
             "dev_mode": false
