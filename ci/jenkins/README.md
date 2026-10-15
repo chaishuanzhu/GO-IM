@@ -9,7 +9,6 @@
 | `go-im` | [go-im.groovy](go-im.groovy) | 手动；或由 `go-im-tags` 以 `TAG` 参数启动 | 全端客户端构建（Android / macOS / iOS / Windows / Linux）、服务端镜像推送 Docker Hub、发布 GitHub Release `v<VERSION>`、部署 k8s 测试环境；`TAG` 构建再部署生产环境 |
 | `go-im-tags` | [go-im-tags.groovy](go-im-tags.groovy) | 定时轮询 `H/3 * * * *` | 发现新的 `v<MAJOR.MINOR.PATCH>` tag 时启动 `go-im` |
 | `go-im-server` | [go-im-server.groovy](go-im-server.groovy) | 手动 | 只构建服务端镜像（tag `sha-<7>`）并部署测试环境 |
-| `go-im-ci` | [go-im-ci.groovy](go-im-ci.groovy) | 定时轮询 `H/5 * * * *`，`BRANCH` 有新提交才构建 | 持续集成：Go 格式 / vet / 单元测试（MySQL）/ Kafka 端到端 / 集成测试 / 镜像构建（ci-01）；KMP `check` + iOS 模拟器单测（node-mac） |
 
 ## 发布新版本
 
@@ -44,8 +43,6 @@
 **go-im**：`TAG`（设置后忽略 `BRANCH` / `VERSION`）、`BRANCH`、`VERSION`（MAJOR ≥ 1，DMG / MSI 的限制）、`BUILD_ANDROID`、`BUILD_DESKTOP`（macOS）、`BUILD_IOS`、`BUILD_WINDOWS`、`BUILD_LINUX`、`BUILD_IMAGES`、`DOCKERHUB_NAMESPACE`（留空 = Docker Hub 凭据的用户名）、`PUBLISH`、`PRERELEASE`、`DEPLOY_TEST`、`DEPLOY_PROD`（默认开；只对 `TAG` 构建、且镜像推送到 `870027381` 时生效）
 
 **go-im-server**：`BRANCH`、`DOCKERHUB_NAMESPACE`、`PLATFORMS`、`REBUILD`、`DEPLOY`
-
-**go-im-ci**：`BRANCH`（默认 `main`）、`FORCE`（该提交已测过也重测）。测过的提交记在 ci-01 的 `/data/jenkins-agent/state/goim-ci-<分支>.txt`；Jenkins 只在内网，PR 不会自动测，需手动以 `BRANCH` 启动。
 
 ## 节点
 

@@ -1,0 +1,49 @@
+# KMP 客户端流水线(kmp/)
+#
+#   check   macOS: ./gradlew check(Android / Desktop / iOS 模拟器单测、Android Lint,含与 Go 服务端的
+#           protobuf 黄金字节测试)+ 链接 iOS Shared.framework。iOS 目标只能在 macOS 上编译,故不用 Linux runner。
+
+name: KMP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kmp/**"
+      - "api/proto/message.proto"
+      - ".github/workflows/kmp.yml"
+  pull_request:
+    paths:
+      - "kmp/**"
+      - "api/proto/message.proto"
+      - ".github/workflows/kmp.yml"
+
+concurrency:
+  group: kmp-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: kmp
+
+jobs:
+  check:
+    name: Check · Android + Desktop + iOS
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('kmp/gradle/libs.versions.toml') }}
+
+      - name: ./gradlew check + iOS framework
+        run: ./gradlew check :app:shared:linkDebugFrameworkIosSimulatorArm64 --console=plain

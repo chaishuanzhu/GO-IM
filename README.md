@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![PRs](https://img.shields.io/badge/PRs-Welcome-8A2BE2)
 
-基于 Go 构建的即时通讯（IM）系统：WebSocket / TCP 双传输协议、单聊 / 群聊、文件上传、全文搜索、消息撤回、多网关集群。客户端为 Kotlin Multiplatform（Android / iOS / macOS / Windows / Linux），Docker 一键部署，Jenkins 持续集成与发布。
+基于 Go 构建的即时通讯（IM）系统：WebSocket / TCP 双传输协议、单聊 / 群聊、文件上传、全文搜索、消息撤回、多网关集群。客户端为 Kotlin Multiplatform（Android / iOS / macOS / Windows / Linux），Docker 一键部署，GitHub Actions 持续集成，Jenkins 构建发布。
 
 ## 架构
 
@@ -181,7 +181,7 @@ im/
 ├── docs/                    # 设计文档、架构图、压测报告
 ├── deploy/                  # 部署：Docker / k8s 清单、init-ssl.sh / nginx.prod.conf / config.prod.json
 ├── ci/jenkins/              # Jenkins 任务脚本（全端构建、发布、部署）
-├── .github/workflows/       # GitHub Pages 落地页部署
+├── .github/workflows/       # GitHub Actions：CI（Go / KMP）+ 落地页部署
 ├── docker-compose.yml       # 开发编排（一键部署）
 ├── docker-compose.prod.yml  # 生产编排（SSL 终止 + 自动续期）
 ├── Dockerfile.gateway / .logic
@@ -213,7 +213,7 @@ cd kmp && ./gradlew :app:desktop:run
 ### 运行测试
 
 ```bash
-# 全部单元测试（MySQL 未运行时 repo 测试自动跳过；Jenkins go-im-ci 中带 MySQL 完整跑）
+# 全部单元测试（MySQL 未运行时 repo 测试自动跳过；GitHub Actions CI 中带 MySQL 完整跑）
 go test ./internal/...
 
 # 集成测试（内存模式，无需外部服务；本地需 Gateway 跑在 :18080）
@@ -329,13 +329,23 @@ message Message {
 
 ## CI/CD
 
-CI/CD 都在 Jenkins（[jenkins.chaisz.com](https://jenkins.chaisz.com)，仅内网），任务脚本与说明见 [ci/jenkins/](ci/jenkins/README.md)。GitHub Actions 只保留落地页部署（`pages.yml`）。
+### 持续集成（GitHub Actions）
 
-| 任务 | 触发 | 内容 |
+push main / PR 触发，concurrency 自动取消旧 run：
+
+| 工作流 | Job | 内容 |
 |------|------|------|
-| `go-im-ci` | 每 5 分钟轮询 main，有新提交才构建 | gofmt / vet / build、单元测试（MySQL 8.4）、Kafka 端到端、5 个集成测试、gateway / logic 镜像构建；KMP `./gradlew check`（含 iOS 模拟器单测） |
-| `go-im` | 推送 `vX.Y.Z` tag（由 `go-im-tags` 轮询启动） | 全端安装包 → GitHub Release，镜像 → Docker Hub，部署测试环境，再部署生产 |
-| `go-im-server` | 手动 | 任意分支的服务端镜像（`sha-<7>`）部署到测试环境 |
+| `ci.yml` | `lint` | gofmt 检查 + go vet + go build |
+| | `unit` | 单元测试（MySQL 8.4 service container，自动激活 repo 测试） |
+| | `integration` | 5 个集成测试（内存模式，无需外部服务） |
+| | `kafka` | Kafka Producer→Consumer 端到端（KRaft 单节点） |
+| | `docker` | gateway / logic 镜像构建（buildx + GHA 缓存，只构建不推送） |
+| `kmp.yml` | `check` | macOS runner：KMP `./gradlew check`（Android / Desktop / iOS 模拟器单测、Lint）+ 链接 iOS framework；仅 `kmp/` 或 `message.proto` 变更时触发 |
+| `pages.yml` | | 部署落地页 `site/` |
+
+### 发布与部署（Jenkins）
+
+[jenkins.chaisz.com](https://jenkins.chaisz.com)（仅内网），任务脚本与说明见 [ci/jenkins/](ci/jenkins/README.md)：推送 `vX.Y.Z` tag 后 `go-im` 构建全端安装包发布 GitHub Release、推送 Docker Hub 镜像、部署测试环境再部署生产；`go-im-server` 手动把任意分支的服务端部署到测试环境。
 
 ## 生产部署
 
@@ -449,7 +459,7 @@ curl -s localhost:8080/metrics | grep '^im_'   # im_online_connections / im_mess
 | 认证 | JWT HS256 + bcrypt |
 | 反向代理 | nginx（SSL 终止，单机生产编排） |
 | 容器化 | Docker + Docker Compose |
-| CI/CD | Jenkins（持续集成、全端构建发布、测试 / 生产部署） |
+| CI/CD | GitHub Actions（持续集成）+ Jenkins（全端构建发布、测试 / 生产部署） |
 | 可观测性 | Prometheus（client_golang）+ Grafana Cloud（可选） |
 
 ## 文档
