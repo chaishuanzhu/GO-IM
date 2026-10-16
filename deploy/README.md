@@ -133,6 +133,12 @@ kubectl -n go-im rollout undo deploy/gateway        # 回滚
 kubectl delete -k .                                 # 删除（PVC 需手动删除）
 ```
 
+logic / gateway 均为滚动更新（`maxSurge: 1`、`maxUnavailable: 0`）：新 Pod 就绪后才停旧 Pod，升级不中断服务。
+
+- 新旧 Pod 并存的几秒内，各自从 Redis 租用不同的 snowflake worker ID（`im:snowflake:worker:<id>`，网关 16–511、logic 512–1023），消息 / 群组 ID 不会冲突。Redis 不可用时回退到配置里的固定 `worker_id`，此时不应并存多个实例。
+- 连在旧 Pod 上的用户在新 Pod 看来是离线，发给他们的消息进 Redis 离线队列；旧 Pod 退出后客户端重连到新 Pod 并拉取，不会丢消息。未读计数在进程内，重启后清零（与之前相同）。
+- **数据库变更须向前兼容**：新旧版本会同时读写同一个库，一个版本里只加表 / 加列，删除或改名放到下一个版本。
+
 已有 MySQL / Redis / Kafka / 对象存储时，从 `kustomization.yaml` 的 `resources` 中去掉对应文件，把 `config.json` 中的地址改成外部服务即可。
 
 ## 配置说明

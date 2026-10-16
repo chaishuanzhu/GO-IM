@@ -127,7 +127,8 @@ type LogicConfig struct {
 	ListenAddr string      `json:"listen_addr"` // Logic 服务自身的 gRPC 绑定地址；空 = ":50051"
 	MySQL      MySQLConfig `json:"mysql"`       // Logic 自身的 MySQL 配置（回退到 gateway.mysql）
 	Kafka      KafkaConfig `json:"kafka"`       // Logic 自身的 Kafka 配置（回退到 gateway.kafka）
-	WorkerID   int64       `json:"worker_id"`   // 用于群组 ID 的 Snowflake worker ID；默认 2（网关使用 1）
+	Redis      RedisConfig `json:"redis"`       // Logic 自身的 Redis（租用 snowflake worker ID；回退到 gateway.redis）
+	WorkerID   int64       `json:"worker_id"`   // 用于群组 ID 的 Snowflake worker ID；Redis 不可用时使用，默认 2（网关使用 1）
 }
 
 // ObjectStorageConfig 保存文件/图片消息的对象存储（S3 兼容，默认 RustFS）设置。

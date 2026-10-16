@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -30,6 +31,7 @@ type App struct {
 	Server        *gateway.Server
 	Config        *configs.Config
 	redisClient   *redis.Client           // Redis 禁用或不可用时为 nil
+	snowLease     *snowflake.Lease        // Redis 不可用（使用固定 worker ID）时为 nil
 	mysqlStore    *repo.MySQLStore        // MySQL 禁用时为 nil
 	kafkaProducer *mq.Producer            // Kafka 禁用时为 nil
 	logicClient   *gateway.LogicClient    // Logic gRPC 禁用时为 nil
@@ -43,10 +45,6 @@ type App struct {
 
 // NewApp 根据配置初始化所有应用组件。
 func NewApp(cfg *configs.Config) (*App, error) {
-	snow, err := snowflake.New(cfg.Snow.WorkerID)
-	if err != nil {
-		return nil, fmt.Errorf("snowflake: %w", err)
-	}
 	jwtMgr := jwt.New(cfg.JWT.Secret, time.Duration(cfg.JWT.Expiration))
 	hub := gateway.NewHub(cfg.Gateway.Conn.OfflineMaxSize)
 
@@ -73,6 +71,11 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		}
 	} else {
 		log.Printf("[main] Redis disabled (empty addr), using in-memory offline store")
+	}
+
+	snow, snowLease, err := newSnowflake(rdb, cfg.Snow.WorkerID)
+	if err != nil {
+		return nil, err
 	}
 
 	// 如果启用则初始化 MySQL 存储。
@@ -362,6 +365,7 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		Server:        server,
 		Config:        cfg,
 		redisClient:   rdb,
+		snowLease:     snowLease,
 		mysqlStore:    mysqlStore,
 		kafkaProducer: kafkaProducer,
 		logicClient:   logicClient,
@@ -371,6 +375,30 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		router:        router,
 		metrics:       metrics,
 	}, nil
+}
+
+// gatewayWorkerIDs 是网关从 Redis 租用 worker ID 的范围（logic 用 512-1023）。
+// 不含配置里的固定 worker ID（网关 1、logic 2），它们只在 Redis 不可用时使用。
+var gatewayWorkerIDs = snowflake.LeaseConfig{Min: 16, Max: 511}
+
+// newSnowflake 在 Redis 可用时租用 worker ID，使滚动更新时并存的新旧实例 ID 不冲突；
+// 否则使用配置的固定 worker ID（单实例）。
+func newSnowflake(rdb *redis.Client, fixedID int64) (*snowflake.Generator, *snowflake.Lease, error) {
+	if rdb != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		gen, lease, err := snowflake.NewLeased(ctx, rdb, gatewayWorkerIDs)
+		if err == nil {
+			log.Printf("[main] snowflake worker ID %d leased from Redis", gen.WorkerID())
+			return gen, lease, nil
+		}
+		log.Printf("[main] snowflake worker ID lease failed (%v), using configured worker ID %d", err, fixedID)
+	}
+	gen, err := snowflake.New(fixedID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snowflake: %w", err)
+	}
+	return gen, nil, nil
 }
 
 // Close 按依赖顺序清理应用资源。
@@ -419,7 +447,10 @@ func (app *App) Close() {
 		}
 	}
 
-	// 8. Redis。
+	// 8. 释放 snowflake worker ID 租约，再关闭 Redis。
+	if app.snowLease != nil {
+		app.snowLease.Close()
+	}
 	if app.redisClient != nil {
 		if err := app.redisClient.Close(); err != nil {
 			log.Printf("[main] Redis close error: %v", err)
@@ -566,7 +597,9 @@ func (app *App) Run(ctx context.Context) error {
 		IdleTimeout:  idleTimeout,
 	}
 
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		<-ctx.Done()
 		log.Println("[main] shutting down...")
 
@@ -590,7 +623,12 @@ func (app *App) Run(ctx context.Context) error {
 	}()
 
 	log.Printf("[main] IM Gateway starting on %s (transport=%s)", app.Config.Gateway.HTTPAddr, transport)
-	return srv.ListenAndServe()
+	err := srv.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		// Shutdown 一开始 ListenAndServe 就返回；等进行中的请求和 TCP 连接排空后再退出
+		<-shutdownDone
+	}
+	return err
 }
 
 func main() {

@@ -20,23 +20,18 @@ type Server struct {
 	unreadStore *repo.MySQLUnreadStore // 用于未读 RPC
 }
 
-// NewServer 创建一个 Logic gRPC 服务器。
-func NewServer(mysql *repo.MySQLStore, workerID int64) *Server {
+// NewServer 创建一个 Logic gRPC 服务器。sf 生成群组 ID，其 worker ID 须与网关的不同；
+// 为 nil 时群组 RPC 不可用。
+func NewServer(mysql *repo.MySQLStore, sf *snowflake.Generator) *Server {
 	s := &Server{
 		mysql:    mysql,
 		userRepo: mysql,
 	}
 	if mysql != nil {
-		// 为群组 ID 创建 snowflake 生成器。worker ID 应与
-		// 网关的 worker ID 不同，以避免 ID 冲突。
-		if workerID <= 0 {
-			workerID = 2 // 默认回退值
-		}
-		sf, err := snowflake.New(workerID)
-		if err != nil {
-			log.Printf("[logic] WARNING: snowflake init failed: %v — group ID generation may not be unique", err)
-		} else {
+		if sf != nil {
 			s.groupStore = repo.NewMySQLGroupStore(mysql.DB(), func() int64 { return sf.Next() })
+		} else {
+			log.Printf("[logic] WARNING: no snowflake generator — group RPCs disabled")
 		}
 		s.unreadStore = repo.NewMySQLUnreadStore(mysql.DB())
 	}

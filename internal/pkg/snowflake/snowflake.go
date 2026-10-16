@@ -44,6 +44,24 @@ func New(workerID int64) (*Generator, error) {
 	return &Generator{workerID: workerID}, nil
 }
 
+// WorkerID 返回当前使用的 worker ID。
+func (g *Generator) WorkerID() int64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.workerID
+}
+
+// SetWorkerID 切换 worker ID（租约丢失后换用新租到的 ID）。
+func (g *Generator) SetWorkerID(workerID int64) error {
+	if workerID < 0 || workerID > workerMax {
+		return fmt.Errorf("%w: %d (must be 0-%d)", ErrWorkerIDInvalid, workerID, workerMax)
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.workerID = workerID
+	return nil
+}
+
 // Next 生成下一个唯一 ID。
 // 遇到严重时钟回拨（>10ms）时记录错误并返回 0。
 func (g *Generator) Next() int64 {

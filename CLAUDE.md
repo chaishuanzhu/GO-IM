@@ -145,7 +145,8 @@ routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.
 
 - **`msg.From` is server-set**: The client's claimed sender is ignored; `readPump` overwrites it with the authenticated UID. This is a security feature, not a bug.
 - **Online push, offline pull**: Online users receive messages in real-time via WebSocket; offline users get messages delivered when they reconnect and send `CmdOffline`.
-- **Snowflake IDs**: 10-bit worker + 12-bit sequence, epoch 2024-01-01. WorkerID is currently hardcoded to 1.
+- **Snowflake IDs**: 10-bit worker + 12-bit sequence, epoch 2024-01-01. With Redis, each instance leases its worker ID (`snowflake.NewLeased`, keys `im:snowflake:worker:<id>`; gateway 16–511, logic 512–1023) so rolling-update pods never share one; without Redis the configured `snowflake.worker_id` (gateway 1) / `logic.worker_id` (2) is used.
+- **Rolling updates**: k8s gateway/logic use `RollingUpdate` (maxSurge 1, maxUnavailable 0). Old and new versions run side by side briefly, so schema changes must be backward compatible (add first, drop in a later release).
 - **No persistence by default**: Everything is in-memory — restart loses all state. MySQL persistence is available via `mysql.enabled: true` in config (see `internal/repo/`). Message history query (CmdHistory) requires MySQL.
 
 ## Phase history

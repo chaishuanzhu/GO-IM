@@ -19,10 +19,16 @@ kind: Deployment
 metadata:
   name: gateway
 spec:
-  # 单副本：连接表与群组在进程内，多副本需配置 grpc 集群（见 configs/config.example.json）。
+  # 单副本：连接表在进程内，多副本需配置 grpc 集群（见 configs/config.example.json）。
   replicas: 1
+  # 滚动更新：新 Pod 就绪后再停旧 Pod。新旧并存期间各自从 Redis 租用不同的 snowflake worker ID；
+  # 连在旧 Pod 上的用户在新 Pod 看来是离线，消息进 Redis 离线队列，重连新 Pod 后拉取。
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  minReadySeconds: 5
   selector:
     matchLabels:
       app: gateway
@@ -31,6 +37,8 @@ spec:
       labels:
         app: gateway
     spec:
+      # 须大于 preStop 5s + stability.shutdown_timeout 30s
+      terminationGracePeriodSeconds: 45
       initContainers:
         - name: wait-deps
           image: busybox:1.37
@@ -50,6 +58,11 @@ spec:
             - name: GOIM_MAIL_PASSWORD
               valueFrom:
                 secretKeyRef: { name: goim-infra, key: MAIL_PASSWORD, optional: true }
+          lifecycle:
+            # 先等 Service / Ingress 摘掉本 Pod，再开始关闭，避免新连接落到正在退出的 Pod
+            preStop:
+              exec:
+                command: ["sleep", "5"]
           ports:
             - name: http
               containerPort: 8080

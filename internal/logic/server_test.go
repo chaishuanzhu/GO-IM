@@ -9,7 +9,7 @@ import (
 
 // TestNewServer 构造服务器而不触发 panic。
 func TestNewServer(t *testing.T) {
-	srv := NewServer(nil, 0)
+	srv := NewServer(nil, nil)
 	if srv == nil {
 		t.Fatal("NewServer returned nil")
 	}

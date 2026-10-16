@@ -16,8 +16,14 @@ metadata:
   name: logic
 spec:
   replicas: 1
+  # 滚动更新：新 Pod 就绪后再停旧 Pod；新旧并存期间各自从 Redis 租用不同的 snowflake worker ID，
+  # Kafka 消费组自动重平衡。
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  minReadySeconds: 5
   selector:
     matchLabels:
       app: logic
@@ -26,13 +32,14 @@ spec:
       labels:
         app: logic
     spec:
+      terminationGracePeriodSeconds: 45
       initContainers:
         - name: wait-deps
           image: busybox:1.37
           command:
             - sh
             - -c
-            - for d in mysql:3306 kafka:9093; do until nc -z -w 2 ${d%:*} ${d#*:}; do echo "waiting for $d"; sleep 2; done; done
+            - for d in mysql:3306 redis:6379 kafka:9093; do until nc -z -w 2 ${d%:*} ${d#*:}; do echo "waiting for $d"; sleep 2; done; done
           resources:
             requests: { cpu: 5m, memory: 8Mi }
             limits: { cpu: 100m, memory: 32Mi }
@@ -42,6 +49,11 @@ spec:
           env:
             - { name: CONFIG_PATH, value: /etc/im/config.json }
             - { name: TZ, value: Asia/Shanghai }
+          lifecycle:
+            # 先等 Service 摘掉本 Pod 再 GracefulStop（GOAWAY 后网关的 gRPC 连接重连到新 Pod）
+            preStop:
+              exec:
+                command: ["sleep", "5"]
           ports:
             - name: grpc
               containerPort: 50051

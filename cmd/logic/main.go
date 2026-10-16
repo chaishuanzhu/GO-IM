@@ -16,12 +16,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/im/api/proto"
 	"github.com/im/configs"
 	"github.com/im/internal/logic"
 	"github.com/im/internal/mq"
+	"github.com/im/internal/pkg/snowflake"
 	"github.com/im/internal/repo"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -72,8 +75,16 @@ func main() {
 		log.Fatalf("[logic] gRPC listen %s: %v", grpcAddr, err)
 	}
 
+	// --- 群组 ID 的 snowflake 生成器 ---
+	redisCfg := cfg.Logic.Redis
+	if redisCfg.Addr == "" {
+		redisCfg = cfg.Gateway.Redis
+	}
+	snow, releaseSnow := newSnowflake(redisCfg, cfg.Logic.WorkerID)
+	defer releaseSnow()
+
 	grpcServer := grpc.NewServer()
-	logicSrv := logic.NewServer(mysqlStore, cfg.Logic.WorkerID)
+	logicSrv := logic.NewServer(mysqlStore, snow)
 	proto.RegisterLogicServer(grpcServer, logicSrv)
 	reflection.Register(grpcServer) // 启用 grpcurl 便于调试
 	log.Printf("[logic] gRPC server listening on %s", grpcAddr)
@@ -147,4 +158,35 @@ func main() {
 	}
 
 	log.Println("[logic] stopped")
+}
+
+// logicWorkerIDs 是 logic 从 Redis 租用 worker ID 的范围（网关用 16-511）。
+var logicWorkerIDs = snowflake.LeaseConfig{Min: 512, Max: 1023}
+
+// newSnowflake 在 Redis 可用时租用 worker ID，使滚动更新时并存的新旧实例 ID 不冲突；
+// 否则使用配置的固定 worker ID（默认 2）。返回的 Generator 为 nil 表示 worker ID 无效；
+// release 在退出时释放租约。
+func newSnowflake(rc configs.RedisConfig, fixedID int64) (gen *snowflake.Generator, release func()) {
+	release = func() {}
+	if rc.Addr != "" {
+		rdb := redis.NewClient(&redis.Options{Addr: rc.Addr, Password: rc.Password, DB: rc.DB})
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		leased, lease, err := snowflake.NewLeased(ctx, rdb, logicWorkerIDs)
+		cancel()
+		if err == nil {
+			log.Printf("[logic] snowflake worker ID %d leased from Redis", leased.WorkerID())
+			return leased, func() { lease.Close(); rdb.Close() }
+		}
+		rdb.Close()
+		log.Printf("[logic] snowflake worker ID lease failed (%v), using configured worker ID %d", err, fixedID)
+	}
+	if fixedID <= 0 {
+		fixedID = 2
+	}
+	gen, err := snowflake.New(fixedID)
+	if err != nil {
+		log.Printf("[logic] WARNING: snowflake init failed: %v", err)
+		return nil, release
+	}
+	return gen, release
 }
