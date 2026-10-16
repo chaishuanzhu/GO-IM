@@ -2,7 +2,7 @@
 //   Images  ci-01: gateway / logic images of one commit, tagged sha-<7>, pushed to Docker Hub
 //           (skipped when both tags already exist, unless REBUILD)
 //   Deploy  ci-01: kubectl set image in namespace go-im-test (logic -> gateway, each waits for its rollout),
-//           rolls back on failure, then checks https://test-go-im.chaisz.com/health
+//           rolls back on failure, then checks https://go-im.test.chaisz.com/health
 // Release builds (version tags, installers) stay in go-im. Infra, config Secret and manifests: scripts/17-goim-test.ps1.
 //
 // Parameters: BRANCH, DOCKERHUB_NAMESPACE (empty = dockerhub credential user), PLATFORMS, REBUILD, DEPLOY
@@ -12,7 +12,7 @@
 
 def repoUrl = 'https://github.com/chaishuanzhu/GO-IM.git'
 def k8sNamespace = 'go-im-test'
-def siteUrl = 'https://test-go-im.chaisz.com'
+def siteUrl = 'https://go-im.test.chaisz.com'
 def commit = ''
 def tag = ''
 def imageNs = ''

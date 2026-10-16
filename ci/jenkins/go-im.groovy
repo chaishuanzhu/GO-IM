@@ -3,7 +3,7 @@
 //   win-host   Windows MSI（jpackage 只能在目标系统上打包）
 //   ci-01      Linux DEB（容器内构建）；服务端 gateway / logic 多架构镜像推送 Docker Hub
 //   最后在 node-mac 汇总产物发布到 GitHub Release（tag v<VERSION>，已存在则覆盖同名产物）
-//   镜像推送后把 <VERSION> 镜像部署到 k8s 测试环境 go-im-test（https://test-go-im.chaisz.com）
+//   镜像推送后把 <VERSION> 镜像部署到 k8s 测试环境 go-im-test（https://go-im.test.chaisz.com）
 //   TAG 构建在测试环境通过后再部署生产（docker compose，仅 gateway；地址见凭据 goim-prod-target）
 // 各节点各自检出同一个提交；Jenkins 控制器到 GitHub 的网络不稳定，控制器上不做检出。
 // 自动触发：任务 go-im-tags 轮询 GitHub，发现新的 v<版本> tag 就以 TAG 参数启动本任务。
@@ -339,7 +339,7 @@ stage('Deploy test') {
         sh '''
             set -u
             for i in $(seq 1 12); do
-                out=$(curl -fsS --max-time 10 https://test-go-im.chaisz.com/health 2>&1) && echo "$out" | grep -q '"status":"ok"' && { echo "$out"; exit 0; }
+                out=$(curl -fsS --max-time 10 https://go-im.test.chaisz.com/health 2>&1) && echo "$out" | grep -q '"status":"ok"' && { echo "$out"; exit 0; }
                 sleep 5
             done
             echo "健康检查失败：$out"

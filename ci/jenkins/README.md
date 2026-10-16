@@ -32,7 +32,7 @@
 5. **核对**：
    - [GitHub Release](https://github.com/chaishuanzhu/GO-IM/releases) `v1.2.0`：APK / DMG / MSI / DEB / IPA + `SHA256SUMS.txt`（发布脚本见 [kmp/ci/publish-github-release.sh](../../kmp/ci/publish-github-release.sh)，说明自动生成）
    - Docker Hub `go-im-{gateway,logic}`：`1.2.0` 与 `latest` 标签，Overview 为新文档（[deploy/dockerhub/sync-readme.sh](../../deploy/dockerhub/sync-readme.sh) 同步，失败只告警不影响构建，需看构建日志里的「overview 已更新」）
-   - 测试环境 <https://test-go-im.chaisz.com/health> 正常，`logic` / `gateway` 两个 Deployment 镜像为 `1.2.0`
+   - 测试环境 <https://go-im.test.chaisz.com/health> 正常，`logic` / `gateway` 两个 Deployment 镜像为 `1.2.0`
    - 生产环境：构建描述以「→ prod」结尾，`Deploy prod` 阶段日志里的健康检查为 `"status":"ok"`（见下文「生产环境」）
    - 落地页（[site/](../../site/)）显示「当前版本 1.2.0」：页面运行时读取最新的 `v*` Release，无需为发布重新部署
 
