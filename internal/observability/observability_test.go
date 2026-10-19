@@ -24,6 +24,13 @@ var allFamilies = []string{
 	"im_persist_success_total",
 	"im_persist_fail_total",
 	"im_persist_queue_drop_total",
+	"im_persist_batch_success_total",
+	"im_persist_batch_fail_total",
+	"im_persist_retry_total",
+	"im_persist_batch_size",
+	"im_persist_batch_duration_seconds",
+	"im_persist_queue_depth",
+	"im_persist_queue_capacity",
 	"im_message_delivery_duration_seconds",
 	"im_gnet_pool_drop_total",
 	"go_goroutines",
@@ -55,6 +62,9 @@ func TestNewMetricsRegistersFamilies(t *testing.T) {
 	m.RecordPersistSuccess()
 	m.RecordPersistFail()
 	m.RecordPersistQueueDrop()
+	m.RecordPersistRetry()
+	m.RecordPersistBatch(10, 5*time.Millisecond, true)
+	m.RecordPersistBatch(5, 10*time.Millisecond, false)
 	m.RecordDeliveredDuration("single", time.Millisecond)
 	seen := registeredNames(t, m)
 	for _, f := range allFamilies {
@@ -78,6 +88,8 @@ func TestRecordMethodsIncrementCounters(t *testing.T) {
 	m.RecordPersistSuccess()
 	m.RecordPersistFail()
 	m.RecordPersistQueueDrop()
+	m.RecordPersistRetry()
+	m.RecordPersistBatch(10, time.Millisecond, true)
 
 	if got := testutil.ToFloat64(m.Commands.WithLabelValues("CmdChat")); got != 2 {
 		t.Errorf("im_commands_total{CmdChat}: expected 2, got %v", got)
@@ -92,12 +104,14 @@ func TestRecordMethodsIncrementCounters(t *testing.T) {
 		t.Errorf("im_messages_delivered_total{group}: expected 1, got %v", got)
 	}
 	for name, c := range map[string]func() float64{
-		"im_delivery_failures_total":  func() float64 { return testutil.ToFloat64(m.DeliveryFailures) },
-		"im_duplicate_dropped_total":  func() float64 { return testutil.ToFloat64(m.DuplicateDropped) },
-		"im_group_fanout_sends_total": func() float64 { return testutil.ToFloat64(m.GroupFanoutSends) },
-		"im_persist_success_total":    func() float64 { return testutil.ToFloat64(m.PersistSuccess) },
-		"im_persist_fail_total":       func() float64 { return testutil.ToFloat64(m.PersistFail) },
-		"im_persist_queue_drop_total": func() float64 { return testutil.ToFloat64(m.PersistQueueDrop) },
+		"im_delivery_failures_total":     func() float64 { return testutil.ToFloat64(m.DeliveryFailures) },
+		"im_duplicate_dropped_total":     func() float64 { return testutil.ToFloat64(m.DuplicateDropped) },
+		"im_group_fanout_sends_total":    func() float64 { return testutil.ToFloat64(m.GroupFanoutSends) },
+		"im_persist_success_total":       func() float64 { return testutil.ToFloat64(m.PersistSuccess) },
+		"im_persist_fail_total":          func() float64 { return testutil.ToFloat64(m.PersistFail) },
+		"im_persist_queue_drop_total":    func() float64 { return testutil.ToFloat64(m.PersistQueueDrop) },
+		"im_persist_batch_success_total": func() float64 { return testutil.ToFloat64(m.PersistBatchSuccess) },
+		"im_persist_retry_total":         func() float64 { return testutil.ToFloat64(m.PersistRetry) },
 	} {
 		if got := c(); got != 1 {
 			t.Errorf("%s: expected 1, got %v", name, got)
@@ -142,6 +156,7 @@ func TestGaugeFuncsReflectOptions(t *testing.T) {
 		RateLimitStats:    func() (int64, int64) { return 10, 3 },
 		DedupMarks:        func() int64 { return 42 },
 		GnetPoolDrops:     func() int64 { return 1 },
+		PersistQueueStats: func() (int, int) { return 12, 8192 },
 	})
 	ms, err := m.registry.Gather()
 	if err != nil {
@@ -159,6 +174,8 @@ func TestGaugeFuncsReflectOptions(t *testing.T) {
 		"im_rate_limit_rejected_total": 3,
 		"im_dedup_marks_total":         42,
 		"im_gnet_pool_drop_total":      1,
+		"im_persist_queue_depth":       12,
+		"im_persist_queue_capacity":    8192,
 	}
 	for name, w := range want {
 		if got, ok := vals[name]; !ok || got != w {
@@ -177,8 +194,12 @@ func TestNilSafety(t *testing.T) {
 	m.RecordDuplicateDropped()
 	m.RecordGroupFanoutSend()
 	m.RecordPersistSuccess()
+	m.RecordPersistSuccessN(10)
 	m.RecordPersistFail()
+	m.RecordPersistFailN(10)
 	m.RecordPersistQueueDrop()
+	m.RecordPersistRetry()
+	m.RecordPersistBatch(10, time.Millisecond, true)
 	m.RecordDeliveredDuration("single", time.Millisecond)
 }
 

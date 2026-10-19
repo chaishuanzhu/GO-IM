@@ -74,11 +74,17 @@ type GatewayConfig struct {
 	ObjectStorage ObjectStorageConfig `json:"object_storage"` // 用于文件/图片消息的 S3 兼容存储（RustFS）
 
 	// 运行参数（之前为硬编码常量）。
-	RecallWindowMs      int64    `json:"recall_window_ms"`      // 消息撤回时间窗口（毫秒），默认 120000
-	HistoryDefaultLimit int      `json:"history_default_limit"` // 默认历史记录每页条数，默认 30
-	SearchDefaultLimit  int      `json:"search_default_limit"`  // 默认搜索结果条数，默认 20
-	DedupTTL            Duration `json:"dedup_ttl"`             // 去重缓存条目 TTL，默认 "5m"
-	PersistConcurrency  int      `json:"persist_concurrency"`   // 最大并发异步持久化 goroutine 数，默认 64
+	RecallWindowMs        int64    `json:"recall_window_ms"`        // 消息撤回时间窗口（毫秒），默认 120000
+	HistoryDefaultLimit   int      `json:"history_default_limit"`   // 默认历史记录每页条数，默认 30
+	SearchDefaultLimit    int      `json:"search_default_limit"`    // 默认搜索结果条数，默认 20
+	DedupTTL              Duration `json:"dedup_ttl"`               // 去重缓存条目 TTL，默认 "5m"
+	PersistConcurrency    int      `json:"persist_concurrency"`     // 已弃用：保留用于旧配置兼容
+	PersistQueueSize      int      `json:"persist_queue_size"`      // 持久化任务队列容量，默认 8192
+	PersistBatchSize      int      `json:"persist_batch_size"`      // 每批最大消息数，默认 200
+	PersistFlushInterval  Duration `json:"persist_flush_interval"`  // 未满批次最长等待，默认 "10ms"
+	PersistBatchWorkers   int      `json:"persist_batch_workers"`   // 批量写 worker 数，默认 2
+	PersistEnqueueTimeout Duration `json:"persist_enqueue_timeout"` // 入队最长等待，默认 "10ms"
+	PersistMaxRetries     int      `json:"persist_max_retries"`     // 批量写失败重试次数，默认 3
 }
 
 // GNetConfig 保存 gnet TCP 服务器设置。
@@ -90,8 +96,12 @@ type GNetConfig struct {
 // MySQLConfig 保存 MySQL 连接设置。
 // Enabled=false 表示 MySQL 被禁用（回退到内存模式）。
 type MySQLConfig struct {
-	Enabled bool   `json:"enabled"` // false = 内存模式
-	DSN     string `json:"dsn"`     // 例如 "im:im-dev@tcp(127.0.0.1:3306)/im?parseTime=true"
+	Enabled         bool     `json:"enabled"`            // false = 内存模式
+	DSN             string   `json:"dsn"`                // 例如 "im:im-dev@tcp(127.0.0.1:3306)/im?parseTime=true"
+	MaxOpenConns    int      `json:"max_open_conns"`     // 默认 32
+	MaxIdleConns    int      `json:"max_idle_conns"`     // 默认 16
+	ConnMaxLifetime Duration `json:"conn_max_lifetime"`  // 默认 "30m"
+	ConnMaxIdleTime Duration `json:"conn_max_idle_time"` // 默认 "5m"
 }
 
 // AuthConfig 保存认证设置。
@@ -238,8 +248,12 @@ func Default() *Config {
 				WorkerPoolSize: 0, // 自动（runtime.NumCPU() * 2）
 			},
 			MySQL: MySQLConfig{
-				Enabled: false, // 默认使用内存模式
-				DSN:     "im:im-dev@tcp(127.0.0.1:3307)/im?parseTime=true&charset=utf8mb4",
+				Enabled:         false, // 默认使用内存模式
+				DSN:             "im:im-dev@tcp(127.0.0.1:3307)/im?parseTime=true&charset=utf8mb4",
+				MaxOpenConns:    32,
+				MaxIdleConns:    16,
+				ConnMaxLifetime: Duration(30 * time.Minute),
+				ConnMaxIdleTime: Duration(5 * time.Minute),
 			},
 			Auth: AuthConfig{
 				DevMode: true, // 开发环境跳过密码
@@ -284,11 +298,17 @@ func Default() *Config {
 			},
 
 			// 运行参数。
-			RecallWindowMs:      120_000,
-			HistoryDefaultLimit: 30,
-			SearchDefaultLimit:  20,
-			DedupTTL:            Duration(5 * time.Minute),
-			PersistConcurrency:  64,
+			RecallWindowMs:        120_000,
+			HistoryDefaultLimit:   30,
+			SearchDefaultLimit:    20,
+			DedupTTL:              Duration(5 * time.Minute),
+			PersistConcurrency:    64,
+			PersistQueueSize:      8192,
+			PersistBatchSize:      200,
+			PersistFlushInterval:  Duration(10 * time.Millisecond),
+			PersistBatchWorkers:   2,
+			PersistEnqueueTimeout: Duration(10 * time.Millisecond),
+			PersistMaxRetries:     3,
 		},
 		JWT: JWTConfig{
 			Secret:     "change-me-in-production",

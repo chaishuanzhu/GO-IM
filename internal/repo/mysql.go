@@ -17,14 +17,33 @@ import (
 
 // 编译期接口合规性检查。
 var (
-	_ UserStore    = (*MySQLStore)(nil)
-	_ MessageStore = (*MySQLStore)(nil)
-	_ FriendStore  = (*MySQLStore)(nil)
+	_ UserStore         = (*MySQLStore)(nil)
+	_ MessageStore      = (*MySQLStore)(nil)
+	_ BatchMessageStore = (*MySQLStore)(nil)
+	_ FriendStore       = (*MySQLStore)(nil)
 )
 
 // MySQLStore 基于 MySQL 实现 UserStore 与 MessageStore。
 type MySQLStore struct {
 	db *sql.DB
+}
+
+// MySQLPoolConfig 控制 database/sql 连接池。
+type MySQLPoolConfig struct {
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
+}
+
+// DefaultMySQLPoolConfig 返回适合批量写与 API 查询共享的默认连接池设置。
+func DefaultMySQLPoolConfig() MySQLPoolConfig {
+	return MySQLPoolConfig{
+		MaxOpenConns:    32,
+		MaxIdleConns:    16,
+		ConnMaxLifetime: 30 * time.Minute,
+		ConnMaxIdleTime: 5 * time.Minute,
+	}
 }
 
 // RedactDSN 返回不含密码的 DSN 描述（user@addr/db），用于日志。
@@ -39,14 +58,36 @@ func RedactDSN(dsn string) string {
 // NewMySQLStore 打开 MySQL 连接，验证连接并创建表。
 // 调用方负责通过 Close() 关闭存储。
 func NewMySQLStore(dsn string) (*MySQLStore, error) {
+	return NewMySQLStoreWithPool(dsn, DefaultMySQLPoolConfig())
+}
+
+// NewMySQLStoreWithPool 使用指定连接池设置创建 MySQLStore。
+func NewMySQLStoreWithPool(dsn string, pool MySQLPoolConfig) (*MySQLStore, error) {
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("mysql open: %w", err)
 	}
 
-	// 连接池设置。
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
+	defaults := DefaultMySQLPoolConfig()
+	if pool.MaxOpenConns <= 0 {
+		pool.MaxOpenConns = defaults.MaxOpenConns
+	}
+	if pool.MaxIdleConns <= 0 {
+		pool.MaxIdleConns = defaults.MaxIdleConns
+	}
+	if pool.MaxIdleConns > pool.MaxOpenConns {
+		pool.MaxIdleConns = pool.MaxOpenConns
+	}
+	if pool.ConnMaxLifetime <= 0 {
+		pool.ConnMaxLifetime = defaults.ConnMaxLifetime
+	}
+	if pool.ConnMaxIdleTime <= 0 {
+		pool.ConnMaxIdleTime = defaults.ConnMaxIdleTime
+	}
+	db.SetMaxOpenConns(pool.MaxOpenConns)
+	db.SetMaxIdleConns(pool.MaxIdleConns)
+	db.SetConnMaxLifetime(pool.ConnMaxLifetime)
+	db.SetConnMaxIdleTime(pool.ConnMaxIdleTime)
 
 	if err := db.Ping(); err != nil {
 		db.Close()
@@ -500,6 +541,50 @@ func (s *MySQLStore) Save(ctx context.Context, msg *proto.Message) error {
 	)
 	if err != nil {
 		return fmt.Errorf("insert message: %w", err)
+	}
+	return nil
+}
+
+// SaveBatch 使用单条多值 INSERT 持久化一批消息。
+// msg_id 主键配合 INSERT IGNORE 提供幂等性，适用于重试与 Kafka 重放。
+func (s *MySQLStore) SaveBatch(ctx context.Context, messages []*proto.Message) error {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	const row = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)"
+	var query strings.Builder
+	query.Grow(160 + len(messages)*len(row))
+	query.WriteString(`INSERT IGNORE INTO messages
+		(msg_id, seq, cmd, from_uid, to_uid, chat_type, msg_type, content, timestamp, need_ack, recalled)
+		VALUES `)
+
+	args := make([]any, 0, len(messages)*10)
+	rows := 0
+	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		if rows > 0 {
+			query.WriteByte(',')
+		}
+		query.WriteString(row)
+		needAck := 0
+		if msg.NeedAck {
+			needAck = 1
+		}
+		args = append(args,
+			msg.MsgId, msg.Seq, msg.Cmd, msg.From, msg.To,
+			msg.ChatType, msg.MsgType, msg.Content, msg.Timestamp, needAck,
+		)
+		rows++
+	}
+	if rows == 0 {
+		return nil
+	}
+
+	if _, err := s.db.ExecContext(ctx, query.String(), args...); err != nil {
+		return fmt.Errorf("insert message batch (%d rows): %w", rows, err)
 	}
 	return nil
 }

@@ -35,7 +35,11 @@
 
         "mysql": {
             "enabled": true,
-            "dsn": "im:im-dev@tcp(127.0.0.1:3307)/im?parseTime=true&charset=utf8mb4"
+            "dsn": "im:im-dev@tcp(127.0.0.1:3307)/im?parseTime=true&charset=utf8mb4",
+            "max_open_conns": 32,
+            "max_idle_conns": 16,
+            "conn_max_lifetime": "30m",
+            "conn_max_idle_time": "5m"
         },
 
         "auth": {
@@ -79,7 +83,13 @@
         "history_default_limit": 30,
         "search_default_limit": 20,
         "dedup_ttl": "5m",
-        "persist_concurrency": 64
+        "persist_concurrency": 64,
+        "persist_queue_size": 8192,
+        "persist_batch_size": 200,
+        "persist_flush_interval": "10ms",
+        "persist_batch_workers": 2,
+        "persist_enqueue_timeout": "10ms",
+        "persist_max_retries": 3
     },
 
     "admin_uids": [],

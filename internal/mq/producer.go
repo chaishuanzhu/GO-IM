@@ -7,6 +7,7 @@ package mq
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"log"
 	"time"
 
@@ -36,8 +37,9 @@ func NewProducer(cfg ProducerConfig) (*Producer, error) {
 		Addr:     kafka.TCP(cfg.Brokers...),
 		Topic:    cfg.Topic,
 		Balancer: &kafka.Hash{}, // 按键哈希以实现确定性分区
-		// 最小化热路径上的延迟开销。
-		BatchSize:    1,
+		// Router 按条数/时间聚合后一次提交；Writer 仍保留自身的小延迟聚合，
+		// 兼容单条 Publish 调用。
+		BatchSize:    200,
 		BatchTimeout: 10 * time.Millisecond,
 		// 尽力而为：不要无限期阻塞。
 		WriteTimeout: 2 * time.Second,
@@ -63,30 +65,39 @@ func (p *Producer) Publish(ctx context.Context, msg *proto.Message) {
 	if msg == nil {
 		return
 	}
-
-	// 将消息序列化为 protobuf 二进制。
-	data, err := pb.Marshal(msg)
-	if err != nil {
-		log.Printf("[mq] marshal error for msgId=%d: %v", msg.MsgId, err)
-		return
-	}
-
-	// 使用 MsgId（snowflake，8 字节）作为消息键以进行分区。
-	key := make([]byte, 8)
-	binary.BigEndian.PutUint64(key, uint64(msg.MsgId))
-
-	km := kafka.Message{
-		Key:   key,
-		Value: data,
-	}
-
-	// 使用带超时的子 context，避免卡住的 broker 泄漏 goroutine。
-	writeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-
-	if err := p.writer.WriteMessages(writeCtx, km); err != nil {
+	if err := p.PublishBatch(ctx, []*proto.Message{msg}); err != nil {
 		log.Printf("[mq] publish error for msgId=%d: %v", msg.MsgId, err)
 	}
+}
+
+// PublishBatch 将一批消息通过一次 WriteMessages 调用写入 Kafka。
+func (p *Producer) PublishBatch(ctx context.Context, messages []*proto.Message) error {
+	if len(messages) == 0 {
+		return nil
+	}
+	kms := make([]kafka.Message, 0, len(messages))
+	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		data, err := pb.Marshal(msg)
+		if err != nil {
+			return fmt.Errorf("marshal msgId=%d: %w", msg.MsgId, err)
+		}
+		key := make([]byte, 8)
+		binary.BigEndian.PutUint64(key, uint64(msg.MsgId))
+		kms = append(kms, kafka.Message{Key: key, Value: data})
+	}
+	if len(kms) == 0 {
+		return nil
+	}
+
+	writeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := p.writer.WriteMessages(writeCtx, kms...); err != nil {
+		return fmt.Errorf("write %d messages: %w", len(kms), err)
+	}
+	return nil
 }
 
 // Close 刷新并关闭底层的 Kafka writer。

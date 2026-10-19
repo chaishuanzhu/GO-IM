@@ -62,7 +62,7 @@ func loginAll(httpBase string, users, workers int) (map[string]string, error) {
 	// 生成 UID 列表。
 	uids := make([]string, users)
 	for i := 0; i < users; i++ {
-		uids[i] = fmt.Sprintf("user-%06d", i)
+		uids[i] = userUID(i)
 	}
 
 	type job struct {
@@ -78,7 +78,7 @@ func loginAll(httpBase string, users, workers int) (map[string]string, error) {
 		go func() {
 			for idx := range work {
 				uid := uids[idx]
-				token, _, err := kit.LoginDev(httpBase+"/login", uid, uid)
+				token, err := login(httpBase, uid)
 				results <- job{idx: idx, token: token, err: err}
 			}
 		}()

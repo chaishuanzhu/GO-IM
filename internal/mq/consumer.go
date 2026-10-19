@@ -28,6 +28,7 @@ type Consumer struct {
 
 	// 批量缓冲写入以减少往返次数。
 	mu      sync.Mutex
+	flushMu sync.Mutex // 串行化写库与 offset 提交，禁止后续批次越过失败批次
 	buffer  []bufferedMsg
 	flushCh chan struct{}
 	done    chan struct{}
@@ -110,31 +111,22 @@ func (c *Consumer) Run(ctx context.Context) {
 			// 使用独立的 context，确保关闭不会阻止提交
 			// 在取消前刚到达的格式错误消息。
 			commitCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
 			if err := c.reader.CommitMessages(commitCtx, msg); err != nil {
 				log.Printf("[mq] commit error for malformed msg: %v", err)
 			}
+			cancel()
 			continue
 		}
 
 		// 加入批处理 —— 跟踪 Kafka 消息，以便在存储刷新后提交 offset。
+		// 缓冲达到安全上限时同步 flush，对 Kafka 读取施加背压；不得提交并
+		// 丢弃最旧消息，否则数据库恢复后也无法重放。
 		c.mu.Lock()
-		// 安全上限：如果 MySQL 长时间宕机，不要让缓冲区无限增长。
-		// 丢弃并提交最旧的缓冲消息以腾出空间。
 		if len(c.buffer) >= maxBufferSize {
-			log.Printf("[mq] buffer at capacity (%d), dropping oldest message (msgId=%d offset=%d)",
-				maxBufferSize, c.buffer[0].msg.MsgId, c.buffer[0].km.Offset)
-			// 提交被丢弃的消息，避免其被重新投递 —— 这条消息已丢失。
-			// 这是极端场景（MySQL 宕机数分钟）；替代方案（OOM 崩溃）更糟。
-			dropped := c.buffer[0]
-			c.buffer = c.buffer[1:]
-			go func(km kafka.Message) {
-				commitCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				if err := c.reader.CommitMessages(commitCtx, km); err != nil {
-					log.Printf("[mq] commit error for dropped msg: %v", err)
-				}
-			}(dropped.km)
+			c.mu.Unlock()
+			log.Printf("[mq] buffer at capacity (%d), applying backpressure", maxBufferSize)
+			c.flushAll()
+			c.mu.Lock()
 		}
 		c.buffer = append(c.buffer, bufferedMsg{msg: &pm, km: msg})
 		shouldFlush := len(c.buffer) >= defaultBatchSize
@@ -184,6 +176,9 @@ func (c *Consumer) flushLoop(ctx context.Context) {
 // offset 在写入成功之后才提交，因此崩溃永远不会导致
 // 数据丢失（至少一次语义；INSERT IGNORE 处理重放）。
 func (c *Consumer) flushAll() {
+	c.flushMu.Lock()
+	defer c.flushMu.Unlock()
+
 	c.mu.Lock()
 	if len(c.buffer) == 0 {
 		c.mu.Unlock()
@@ -197,36 +192,46 @@ func (c *Consumer) flushAll() {
 	writeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var succeeded []kafka.Message
+	writeOK := true
 	if c.store == nil {
-		// 未配置存储（测试模式）—— 提交所有 offset，避免
-		// 卡在相同的消息上。
+		// 未配置存储（测试模式）—— 直接提交，避免卡在相同消息上。
+	} else if batchStore, ok := c.store.(repo.BatchMessageStore); ok {
+		messages := make([]*proto.Message, 0, len(batch))
 		for _, bm := range batch {
-			succeeded = append(succeeded, bm.km)
+			messages = append(messages, bm.msg)
+		}
+		if err := batchStore.SaveBatch(writeCtx, messages); err != nil {
+			log.Printf("[mq] store batch save error (size=%d): %v", len(messages), err)
+			writeOK = false
 		}
 	} else {
 		for _, bm := range batch {
 			if err := c.store.Save(writeCtx, bm.msg); err != nil {
 				log.Printf("[mq] store save error (msgId=%d): %v", bm.msg.MsgId, err)
-				// 不提交此 offset —— 消息将被重新投递。
-			} else {
-				succeeded = append(succeeded, bm.km)
+				writeOK = false
+				break
 			}
 		}
 	}
 
-	// 只为成功写入的消息提交 Kafka offset。
-	if len(succeeded) > 0 {
-		commitCtx, commitCancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer commitCancel()
-		if err := c.reader.CommitMessages(commitCtx, succeeded...); err != nil {
-			log.Printf("[mq] commit error: %v", err)
-			// 重启后消息将被重新投递 —— INSERT IGNORE
-			// 会静默跳过重复。
-		}
+	if !writeOK {
+		// 整批放回队首持续重试。不能提交同一分区中更高的 offset，
+		// 否则前面的失败消息会永久丢失。
+		c.mu.Lock()
+		c.buffer = append(batch, c.buffer...)
+		c.mu.Unlock()
+		return
 	}
 
-	if len(succeeded) > 0 {
-		log.Printf("[mq] flushed %d/%d messages to store", len(succeeded), len(batch))
+	succeeded := make([]kafka.Message, 0, len(batch))
+	for _, bm := range batch {
+		succeeded = append(succeeded, bm.km)
 	}
+	commitCtx, commitCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer commitCancel()
+	if err := c.reader.CommitMessages(commitCtx, succeeded...); err != nil {
+		log.Printf("[mq] commit error: %v", err)
+		// 重启后消息将被重新投递，INSERT IGNORE 会跳过重复。
+	}
+	log.Printf("[mq] flushed %d messages to store", len(batch))
 }

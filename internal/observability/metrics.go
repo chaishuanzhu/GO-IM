@@ -27,6 +27,8 @@ type Options struct {
 	DedupMarks func() int64
 	// GnetPoolDrops 返回 gnet worker 池满丢弃的消息数。
 	GnetPoolDrops func() int64
+	// PersistQueueStats 返回持久化任务队列当前深度与容量。
+	PersistQueueStats func() (depth, capacity int)
 }
 
 // Metrics 聚合全部业务指标。Prometheus collector 自身线程安全,可并发读写。
@@ -34,16 +36,21 @@ type Options struct {
 type Metrics struct {
 	registry *prometheus.Registry
 
-	Commands          *prometheus.CounterVec   // im_commands_total{cmd}
-	MessagesReceived  *prometheus.CounterVec   // im_messages_received_total{chat_type}
-	MessagesDelivered *prometheus.CounterVec   // im_messages_delivered_total{chat_type}
-	DeliveryFailures  prometheus.Counter       // im_delivery_failures_total
-	DuplicateDropped  prometheus.Counter       // im_duplicate_dropped_total
-	GroupFanoutSends  prometheus.Counter       // im_group_fanout_sends_total
-	PersistSuccess    prometheus.Counter       // im_persist_success_total
-	PersistFail       prometheus.Counter       // im_persist_fail_total
-	PersistQueueDrop  prometheus.Counter       // im_persist_queue_drop_total
-	DeliveryDuration  *prometheus.HistogramVec // im_message_delivery_duration_seconds{chat_type}
+	Commands             *prometheus.CounterVec   // im_commands_total{cmd}
+	MessagesReceived     *prometheus.CounterVec   // im_messages_received_total{chat_type}
+	MessagesDelivered    *prometheus.CounterVec   // im_messages_delivered_total{chat_type}
+	DeliveryFailures     prometheus.Counter       // im_delivery_failures_total
+	DuplicateDropped     prometheus.Counter       // im_duplicate_dropped_total
+	GroupFanoutSends     prometheus.Counter       // im_group_fanout_sends_total
+	PersistSuccess       prometheus.Counter       // im_persist_success_total
+	PersistFail          prometheus.Counter       // im_persist_fail_total
+	PersistQueueDrop     prometheus.Counter       // im_persist_queue_drop_total
+	PersistBatchSuccess  prometheus.Counter       // im_persist_batch_success_total
+	PersistBatchFail     prometheus.Counter       // im_persist_batch_fail_total
+	PersistRetry         prometheus.Counter       // im_persist_retry_total
+	PersistBatchSize     prometheus.Histogram     // im_persist_batch_size
+	PersistBatchDuration prometheus.Histogram     // im_persist_batch_duration_seconds
+	DeliveryDuration     *prometheus.HistogramVec // im_message_delivery_duration_seconds{chat_type}
 }
 
 // 投递延迟直方图的桶边界(秒)。IM 投递延迟多在毫秒级,低端密集覆盖。
@@ -97,6 +104,28 @@ func NewMetrics(opts Options) *Metrics {
 		Name: "im_persist_queue_drop_total",
 		Help: "持久化队列满被丢弃的消息数(背压信号)。",
 	})
+	m.PersistBatchSuccess = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "im_persist_batch_success_total",
+		Help: "成功写入全部后端的持久化批次数。",
+	})
+	m.PersistBatchFail = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "im_persist_batch_fail_total",
+		Help: "重试耗尽后仍失败的持久化批次数。",
+	})
+	m.PersistRetry = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "im_persist_retry_total",
+		Help: "持久化批量写重试次数。",
+	})
+	m.PersistBatchSize = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "im_persist_batch_size",
+		Help:    "持久化批次包含的消息数。",
+		Buckets: []float64{1, 5, 10, 20, 50, 100, 200, 500},
+	})
+	m.PersistBatchDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "im_persist_batch_duration_seconds",
+		Help:    "持久化批次从首次写入到最终成功或失败的耗时。",
+		Buckets: []float64{0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.5, 1, 5, 10},
+	})
 	m.DeliveryDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "im_message_delivery_duration_seconds",
 		Help:    "从网关收到消息到向发送方回写 ACK 的耗时(仅 NeedAck 消息)。",
@@ -107,6 +136,8 @@ func NewMetrics(opts Options) *Metrics {
 		m.Commands, m.MessagesReceived, m.MessagesDelivered,
 		m.DeliveryFailures, m.DuplicateDropped, m.GroupFanoutSends,
 		m.PersistSuccess, m.PersistFail, m.PersistQueueDrop,
+		m.PersistBatchSuccess, m.PersistBatchFail, m.PersistRetry,
+		m.PersistBatchSize, m.PersistBatchDuration,
 		m.DeliveryDuration,
 	)
 
@@ -155,6 +186,26 @@ func NewMetrics(opts Options) *Metrics {
 	}, func() float64 {
 		if opts.GnetPoolDrops != nil {
 			return float64(opts.GnetPoolDrops())
+		}
+		return 0
+	}))
+	reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "im_persist_queue_depth",
+		Help: "当前持久化任务队列深度。",
+	}, func() float64 {
+		if opts.PersistQueueStats != nil {
+			depth, _ := opts.PersistQueueStats()
+			return float64(depth)
+		}
+		return 0
+	}))
+	reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "im_persist_queue_capacity",
+		Help: "持久化任务队列容量。",
+	}, func() float64 {
+		if opts.PersistQueueStats != nil {
+			_, capacity := opts.PersistQueueStats()
+			return float64(capacity)
 		}
 		return 0
 	}))
@@ -224,18 +275,28 @@ func (m *Metrics) RecordGroupFanoutSend() {
 
 // RecordPersistSuccess 记录一次异步持久化成功。
 func (m *Metrics) RecordPersistSuccess() {
+	m.RecordPersistSuccessN(1)
+}
+
+// RecordPersistSuccessN 记录成功持久化的消息数。
+func (m *Metrics) RecordPersistSuccessN(n int) {
 	if m == nil {
 		return
 	}
-	m.PersistSuccess.Inc()
+	m.PersistSuccess.Add(float64(n))
 }
 
 // RecordPersistFail 记录一次异步持久化失败。
 func (m *Metrics) RecordPersistFail() {
+	m.RecordPersistFailN(1)
+}
+
+// RecordPersistFailN 记录最终持久化失败的消息数。
+func (m *Metrics) RecordPersistFailN(n int) {
 	if m == nil {
 		return
 	}
-	m.PersistFail.Inc()
+	m.PersistFail.Add(float64(n))
 }
 
 // RecordPersistQueueDrop 记录一次持久化队列满丢弃。
@@ -244,6 +305,28 @@ func (m *Metrics) RecordPersistQueueDrop() {
 		return
 	}
 	m.PersistQueueDrop.Inc()
+}
+
+// RecordPersistRetry 记录一次批量写重试。
+func (m *Metrics) RecordPersistRetry() {
+	if m == nil {
+		return
+	}
+	m.PersistRetry.Inc()
+}
+
+// RecordPersistBatch 记录一个批次的大小、耗时与最终结果。
+func (m *Metrics) RecordPersistBatch(size int, d time.Duration, success bool) {
+	if m == nil {
+		return
+	}
+	m.PersistBatchSize.Observe(float64(size))
+	m.PersistBatchDuration.Observe(d.Seconds())
+	if success {
+		m.PersistBatchSuccess.Inc()
+	} else {
+		m.PersistBatchFail.Inc()
+	}
 }
 
 // RecordDeliveredDuration 记录一次消息投递耗时(收到 → ACK 回写)。

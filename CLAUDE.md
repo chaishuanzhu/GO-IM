@@ -59,7 +59,8 @@ CmdHistory    → Router.handleHistory(ctx, …)    → LogicClient.QueryHistory
 
 # Message persistence (Kafka, Phase 3)
 CmdChat       → Router.handleChat(ctx, …)     → deliver + ACK (hot path, unchanged)
-             → go mq.Producer.Publish(context.WithoutCancel(ctx), msg) → Kafka "im.message.persist" → mq.Consumer → MySQL
+             → persist queue → batcher (200 msgs / 10ms) → Kafka or MySQL SaveBatch
+             → Kafka "im.message.persist" → mq.Consumer → MySQL SaveBatch
 
 # Group chat (Phase 4)
 CmdChat (ChatType=Group) → Router.handleChat → fanoutGroup(ctx, sender, msg)
@@ -125,7 +126,7 @@ routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.
 | `repo.MessageStore` | `internal/repo/repo.go` | Interface for message history persistence: `Save`, `QueryHistory`, `SearchMessages`, `RecallMessage`. Implemented by `*MySQLStore`. |
 | `MySQLStore` | `internal/repo/mysql.go` | MySQL-backed `UserStore` + `MessageStore` implementation using `database/sql`. Auto-creates `users` and `messages` tables on init. Disabled when `mysql.enabled: false` (default). |
 | `mq.Producer` | `internal/mq/producer.go` | Publishes messages to Kafka for async persistence (Phase 3). Fire-and-forget — failures are logged but never block the hot path. Disabled when `kafka.enabled: false` (default). |
-| `mq.Consumer` | `internal/mq/consumer.go` | Kafka consumer that reads from `im.message.persist` topic and batch-writes messages to a `repo.MessageStore`. Runs in the Logic service (`cmd/logic/`). |
+| `mq.Consumer` | `internal/mq/consumer.go` | Kafka consumer that reads from `im.message.persist`; uses optional `repo.BatchMessageStore` for one multi-row INSERT per batch, then commits offsets. Runs in the Logic service (`cmd/logic/`). |
 | `LogicClient` | `internal/gateway/grpc_client.go` | gRPC client for the Logic service. Used for synchronous queries (history, user lookup). Falls back to local `MessageStore` when gRPC is disabled. |
 | `Logic Server` | `internal/logic/server.go` | gRPC server implementing `proto.LogicServer`. Provides `QueryHistory` and `GetUser` RPCs backed by MySQL. |
 | `RateLimiter` | `internal/gateway/rate_limiter.go` | Per-UID token-bucket rate limiting with background stale-bucket cleanup. |
@@ -202,7 +203,7 @@ See `docs/06-phase4-completion.md` for the full report.
 | 9 | **Tests** — 183 total (all passing), +91 Phase 4 tests across 12 test files | ✅ |
 
 Phase 4 refinements:
-- **`persistSem` (capacity 64)**: Bounds concurrent async persistence goroutines; prevents goroutine explosion under high throughput.
+- **Batch persistence**: Gateway uses a bounded configurable queue, size/time batcher (default 200 messages / 10ms), and 2 batch writers. MySQL uses multi-row `INSERT IGNORE`; shutdown drains queued tasks before closing.
 - **Dedup Mark AFTER delivery**: `dedup.Mark` called only after successful online delivery — buffer-full failures leave the client free to retry.
 - **`routeOrStoreOffline` fallback chain**: Hash ring → gRPC forward → local offline store. Each layer degrades gracefully.
 - **Thumbnail decompression bomb defense**: Images > 4096px skip thumbnail generation.

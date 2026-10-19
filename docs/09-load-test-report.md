@@ -129,6 +129,8 @@ HTTP /search: 211 成功 / 37 失败 (3.5 rps)
 
 ## 4. 持久化链路验证
 
+> 本节记录的是批量持久化改造前的基线结果。当前代码已完成批量 Kafka/MySQL 写入、背压、重试和优雅排空，改造后数据待测试环境复测，见[批量写入优化方案](11-persistence-batch-write-optimization.md)。
+
 | 阶段 | 观测 |
 |------|------|
 | Gateway 在线投递 | 3k msg/s 下 100% 送达/ACK,投递 P99=8ms(健康) |
@@ -227,7 +229,7 @@ go run ./bench/loadtest -scenario search   -workers 50 -history-workers 10 -dura
 go run ./bench/loadtest -scenario heartbeat -connections 2000 -duration 10m -interval 15s
 ```
 
-> 说明:场景命令中 `-interval 15s` 用于 S5(实测 15s 心跳比 30s 更稳定,reader 超时会自适应为 interval/2)。S2 的 dedup 需先确认 MySQL 已有数据(可先跑一次小规模 chat 种子)。
+> 说明:场景命令中 `-interval 15s` 用于 S5。reader 的读截止时间设在压测结束后 3s(gorilla/websocket 读超时不可恢复,空闲超时会废掉连接,见 §10.6)。S2 的 dedup 需先确认 MySQL 已有数据(可先跑一次小规模 chat 种子)。
 
 ## 9. 附录
 
@@ -243,3 +245,141 @@ go run ./bench/loadtest -scenario heartbeat -connections 2000 -duration 10m -int
 ### 9.2 原始数据
 
 各场景完整输出保留于压测时终端,关键数字已摘录于 §3。服务端 `go tool pprof` 截图(goroutine 爆炸)位于 §6 修复 2 的观测记录。
+
+---
+
+## 10. 测试环境(go-im-test,k8s)压测 — 2026-10-16
+
+前 9 节是本机单进程压测。本节在 k8s 测试环境上实测,回答两个问题:测试环境能撑多少在线、多高的消息并发。
+
+### 10.1 环境与方法
+
+| 项 | 值 |
+|----|----|
+| 被测版本 | gateway / logic 镜像 `sha-4115a92`(v1.4.0 + 滚动更新) |
+| gateway | 1 副本,limits 1 CPU / 512Mi,`max_connections: 1000`,限流 10 msg/s·burst 20,`dedup_ttl: 5m`,`persist_concurrency: 64` |
+| logic | 1 副本,limits 1 CPU / 256Mi |
+| 依赖 | 集群外 MySQL / Redis / Kafka(同一台局域网主机),Kafka 持久化开启 |
+| 入口 | Traefik Ingress |
+| 压测机 | A/B 轮:ci-01(6 核 / 1.8 GB,局域网直连 Traefik,绕开代理和公网);C 轮:集群内临时 Pod(k8s-node2,直连 `gateway:8080` Service,gateway 在 k8s-node1) |
+| 令牌 | 压测工具用测试环境 JWT 密钥本地签发(测试环境关闭了 dev_mode),UID 前缀 `bench-` |
+| 观测 | 每 5–10s 采样 `kubectl top pod` + `/health`;每步前后抓 `/metrics`;每步结束等 15–30s 后统计 MySQL 中 `bench-%` 消息行数 |
+| 停止条件 | gateway 内存 > 420Mi(limit 的 ~80%)或 Pod 重启,watchdog 自动停压 |
+
+延迟只看 **ACK 往返**(客户端发出 → 收到服务端 ACK)。工具里的"投递延迟"是客户端时钟减服务端时间戳,跨主机受时钟偏差影响,本节不采用。
+
+B、C 两轮为测连接上限,临时把 `max_connections` 改成 20000 并滚动重启 gateway,结束后由 trap 恢复为 1000 并再次滚动重启(已核对)。全部 `bench-` 数据(MySQL 436,086 条消息、3 个群 / 1,400 条成员、Redis 182,867 个 dedup key)已清理。
+
+### 10.2 结果汇总
+
+| 维度 | 实测 | 瓶颈 |
+|------|------|------|
+| 在线连接(当前配置) | **1,000**(第 1,001 个起被拒) | 配置 `max_connections: 1000` |
+| 在线连接(gateway 本身) | 15,000 连接 30s 内建完并保持;内存涨到 425Mi 时停压 → 安全值约 **12k** | 内存 512Mi,约 25 KB/连接 |
+| 在线连接(经 Traefik) | 约 **3.8k** 后连接被成批断开,之后新连接 `connection refused` | Traefik 入口(无权限查看,待运维确认) |
+| 单聊投递 | **~7,000 msg/s** 零丢失;ACK P99 88ms(900 人)/ 257ms(4,000 人) | gateway CPU 打满 1 核 |
+| 群聊扇出 | 2 × 450 人群 **6,810 投递/s**,每条 449/449 全到 | 未到瓶颈(群主受 10 msg/s 限流) |
+| 消息落库 | **~1.2–1.7k msg/s**;超过即**静默丢历史**,突发流量下 885 msg/s 已丢 12% | gateway → Kafka 同步逐条发送 |
+
+结论:当前测试环境 **≤1,000 在线(配置上限)、实时消息 ~7k msg/s,但聊天记录只能可靠保存 ~1k msg/s**。真正需要优先修的是落库链路,其次是 Traefik 入口。
+
+### 10.3 分轮明细
+
+**A 轮 — 当前配置,经 Traefik(ci-01)**
+
+| 步骤 | 发送速率 | 送达 / ACK | ACK P50 / P95 / P99 (ms) | 落库 | gateway CPU 峰值 | gateway 内存 |
+|------|---------|-----------|--------------------------|------|-----------------|-------------|
+| 心跳 1,000 连接 90s | — | 心跳 2,005 / 0 失败 | 0.51 / 0.70 / 0.96 | — | 0.01 核 | 38Mi |
+| 心跳 1,100 连接 | — | 1,000 成功,**100 被拒** | 0.55 / 0.70 / 0.85 | — | — | — |
+| 单聊 900 人 × 1/s | 885 msg/s | 100% / 100% | 16.3 / 29.7 / 38.0 | 46,701 / 53,100(**88%**) | 0.27 | 62Mi |
+| 单聊 900 人 × 3/s | 2,685 msg/s | 100% / 100% | 18.6 / 37.4 / 49.9 | 79,153 / 161,100(49%) | 0.79 | 96Mi |
+| 单聊 900 人 × 5/s | 4,470 msg/s | 100% / 100% | 24.2 / 68.9 / 80.5 | 74,385 / 268,200(28%) | 0.89 | 179Mi |
+| 单聊 900 人 × 8/s | 7,170 msg/s | 100% / 100% | 27.4 / 66.9 / 87.9 | 72,247 / 430,200(17%) | **1.00**(打满) | 250Mi |
+| 群聊 1 × 500 人,群主 7.8 条/s | 3,867 投递/s | 每条 499/499 | — | 466 / 465 | 0.13 | 212Mi |
+| 群聊 2 × 450 人,群主各 7.6 条/s | 6,810 投递/s | 每条 449/449 | — | 912 / 910 | 0.20 | 223Mi |
+
+全程 0 投递失败、0 限流拒绝、0 Pod 重启。群聊落库行数多出的 1–2 条是建群通知。
+
+**B 轮 — 连接上限临时放开,经 Traefik(ci-01)**
+
+心跳场景顺序建 15,000 个连接。客户端侧拨号成功 10,323 个,但 gateway 最多只看到 3,782 个,随后掉到 1,445 个并保持;心跳 72,468 次失败。紧接着的 4,000 人单聊有 1,539 个连接直接 `connection refused`(Traefik 端口拒绝),另有少量 `unexpected EOF` / `connection reset`。gateway 自身此时内存仅 ~127Mi,无重启 —— 断连发生在 Traefik 这一层。CI 账号无权查看 Traefik 所在命名空间,无法进一步确认是重启、资源限制还是连接数限制。
+
+**C 轮 — 连接上限临时放开,集群内直连 gateway Service**
+
+| 步骤 | 结果 | ACK P50 / P95 / P99 (ms) | 落库 | gateway CPU / 内存 |
+|------|------|--------------------------|------|-------------------|
+| 心跳 15,000 连接 | 30s 内全部建立并保持;内存 358 → 412Mi 持续上升,425Mi 时 watchdog 停压(~2 分钟) | — | — | 0.31 核 / 425Mi |
+| 单聊 4,000 人 × 1/s | 3,733 msg/s,100% 送达 / ACK | 57.7 / 183 / 210 | 51,445 / 224,000(23%) | 0.58 / 300Mi |
+| 单聊 4,000 人 × 1.75/s | 6,867 msg/s,100% 送达 / ACK | 81.3 / 179 / 257 | 104,977 / 412,000(25%) | 0.89 / 417Mi |
+
+### 10.4 发现的问题
+
+**问题 1(严重，已完成代码改造，待复测)— 落库上限 ~1.2–1.7k msg/s,超出部分静默丢失。** 每一步的 MySQL 新增行数都恰好等于 gateway 的 `im_persist_success_total`(Kafka 发送成功数),丢的部分全部计入 `im_persist_queue_drop_total`,即丢在 gateway 的持久化队列(容量 1024)。根因是 `internal/mq/producer.go` 同步逐条发送:`BatchSize: 1`、`BatchTimeout: 10ms`、`Async: false`,64 个 worker 每次发送约 50ms → 上限 ≈ 64 / 0.05 ≈ 1,280 msg/s,与实测吻合。当前实现已改为默认 200 条/10ms 批量聚合、8192 队列、2 个 batch writer 和失败重试；目标值见[批量写入优化方案](11-persistence-batch-write-optimization.md)。
+
+**问题 2(重要)— 经 Traefik 的连接数约 3.8k 后不稳定。** 见 B 轮。gateway 本身在集群内能撑 15k 连接,因此这是入口层的限制,需要运维查看 Traefik 的资源限制、重启记录和连接数相关配置。
+
+**问题 3(中)— gateway 单核 CPU 是实时消息上限。** ~7k msg/s 时 CPU 打满 1 核 limit;连接数越多,同样速率下 ACK 延迟越高(900 人 P99 88ms,4,000 人 P99 257ms)。
+
+**问题 4(中,推算)— 去重缓存占内存。** 每条消息在内存去重表里保留 `dedup_ttl`(5 分钟)。C 轮结束、连接已全部断开后,gateway 堆仍有 237MB。按 7k msg/s 持续 5 分钟推算约 210 万条记录,加上连接本身占用,在 512Mi limit 下有 OOM 风险。高峰时 gateway 还打出了少量 `dedup redis queue full`(写 Redis 去重记录是尽力而为,只影响跨网关重试去重)。
+
+**问题 5(已修复，待复测)— logic 消费端报 `buffer at capacity (10000), dropping oldest message`(约 1.9 万次)和 `commit error for dropped msg`。** 本次实测 MySQL 行数与 gateway 发送成功数一致；当前 consumer 在缓冲区满时同步 flush 形成背压，失败时整批重新入队，不再提交并丢弃最旧消息。
+
+### 10.5 建议(按优先级)
+
+1. **Kafka producer 批量化**:改为 `Async: true`(或 `BatchSize` 100–500 + 每个 worker 批量 `WriteMessages`),预计落库吞吐提升一个数量级;同时检查 logic 消费端缓冲区满时的丢弃逻辑,改为背压而不是丢最旧的消息。
+2. **排查 Traefik**:确认 3.8k 连接附近断开的原因(资源限制 / 重启 / 连接上限)。
+3. **按目标在线数调整 gateway 配置**:`max_connections` 和内存 limit 一起调(约 25 KB/连接 + 去重缓存);例如 5k 在线可保持 512Mi,10k 以上建议 1Gi。
+4. **实时吞吐不够时**:调高 gateway CPU limit,或多副本(滚动更新已就绪,多副本需配置哈希环 / 服务发现)。
+5. **去重缓存加上限**(按条数或内存),或缩短 `dedup_ttl`。
+
+### 10.6 压测工具改动
+
+- `-scheme http|https`:选择 HTTP / WS 或 HTTPS / WSS。
+- `-uid-prefix`:所有生成的 UID 加前缀,便于事后清理。
+- 设置环境变量 `GOIM_BENCH_JWT_SECRET` 时本地签发令牌,不再依赖 dev_mode 的 `/login`。
+- 修复 reader:gorilla/websocket 读超时不可恢复(超时后每次读都返回同一错误),原来 1s 空闲就会废掉连接,且 `isTimeout` 对包装过的错误判断失效。低速率(≤1 msg/s)下 reader 全部提前退出、投递计数为 0。现在读截止时间设为压测结束后 3s,并用 `errors.As` 判断超时。
+
+复现(在能访问测试环境的机器上):
+
+```bash
+export GOIM_BENCH_JWT_SECRET=<测试环境 jwt.secret>
+go run ./bench/loadtest -scenario heartbeat -scheme https -addr go-im.test.chaisz.com -uid-prefix bench- -connections 1000 -interval 30s -duration 90s
+go run ./bench/loadtest -scenario chat      -scheme https -addr go-im.test.chaisz.com -uid-prefix bench- -users 900 -rate 3 -duration 60s -workers 50
+go run ./bench/loadtest -scenario group     -scheme https -addr go-im.test.chaisz.com -uid-prefix bench- -groups 2 -group-size 450 -msgs 480 -duration 60s -workers 50
+```
+
+压测后清理 `messages` / `groups` / `group_members` / `unread` 中 `bench-%` 的数据,以及 Redis 中 `*bench-*` 的 key。
+
+---
+
+## 11. 生产环境渐进压测 — 2026-10-19
+
+本轮经真实公网 HTTPS/WSS 入口发压。生产环境为单机最小栈:2 vCPU / 约 1.7GiB 内存,gateway 单副本(256Mi limit),Traefik 入口,gateway 直接异步写 MySQL,不启用 Kafka / Logic。测试采用专用 `prodbench-20261019-` UID,完成后已删除 MySQL 压测消息、未读记录和 Redis dedup key。
+
+### 11.1 在线连接
+
+| 连接数 | 建连 | 心跳 | ACK P99 | gateway 峰值 | 结论 |
+|--------|------|------|---------|--------------|------|
+| 500 | 500 / 500(100%) | 1,356 成功 / 0 失败 | 11.85ms | CPU 4.0%,内存 10.7% | 稳定 |
+| 1,000(建连并发 20) | 993 / 1,000(99.3%) | 2,767 成功 / 0 失败 | 110ms | CPU 12.8%,内存 15.7% | 已建立连接稳定,7 条握手失败 |
+| 2,000 | 未完成 | — | — | 已采样部分 CPU 11.4%,内存 10.9% | 单一来源约 453 条后,到 VPS 的新连接和 SSH 监控一起超时;终止该档后服务立即恢复 |
+
+2,000 档首先触发的是单源网络/NAT/云防护路径限制,不是 gateway 资源上限。该结果不能代表分布式真实用户的总连接上限;需要在多台压测机上分散源地址复测。全过程 gateway 重启数为 0。
+
+### 11.2 单聊吞吐与落库
+
+| 发送速率 | 实时投递 / ACK | ACK P50 / P95 / P99 | gateway CPU / 内存 | MySQL 落库 |
+|----------|-----------------|----------------------|----------------------|------------|
+| 95.6 msg/s | 4,300 / 4,300,100% | 36 / 80 / 94ms | 15.6% / 11.1% | 4,300 / 4,300(100%) |
+| 283.3 msg/s | 8,500 / 8,500,100% | 34 / 80 / 172ms | 25.1% / 14.2% | 与下一档合计约 98.4% |
+| 470.0 msg/s | 14,100 / 14,100,100% | 38 / 92 / 129ms | 33.8% / 13.0% | 与上一档合计约 98.4% |
+| 946.7 msg/s | 28,400 / 28,400,100% | 57 / 261 / 457ms | 44.9% / 15.3% | 8,441 / 28,400(29.7%) |
+
+累计发送 55,300 条,MySQL 最终只有 34,969 条(63.2%);等待 30 秒后数量不再增长,确认不是消费延迟。实时投递全程无丢失,但未落库的消息不会出现在历史记录和搜索中。约 947 msg/s 时 ACK P99 已接近 500ms 停止线,且持久化丢失 70.3%,因此没有继续升到 1,500–5,000 msg/s。
+
+### 11.3 结论
+
+- 当前生产环境建议控制在 **500 个长连接以内**,1,000 连接已有 0.7% 握手失败;更高连接数需多源压测确认入口/云防护限制。
+- 实时消息在约 **950 msg/s** 下仍能 100% 投递,但 ACK P99 已到 457ms。
+- 若要求历史消息可靠,当前安全速率只能保守定为 **约 100 msg/s**;283–470 msg/s 已出现约 1.6% 落库缺口。
+- 第一优先级仍是把持久化改为批量写 / Kafka 完整链路,队列满时不得静默丢弃;其次才是扩 gateway CPU 或副本。单机批量写设计、参数与提升预估见 [11-persistence-batch-write-optimization.md](11-persistence-batch-write-optimization.md)。

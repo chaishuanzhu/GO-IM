@@ -10,6 +10,8 @@
 
 最小化部署由 Gateway 直接写 MySQL，聊天、群聊、历史、搜索、文件全部可用；全量部署把写库交给 Logic 消费 Kafka，Gateway 热路径更轻。两者用户可见功能一致，数据库表结构相同。
 
+消息持久化默认按 200 条或 10ms 聚合后批量写入，队列容量 8192、批量 writer 2 个、失败重试 3 次。可通过 `gateway.persist_*` 参数调优；MySQL 连接池通过 `gateway.mysql.max_*` / `conn_max_*` 配置。设计与容量估算见 [单机持久化批量写入优化方案](../docs/11-persistence-batch-write-optimization.md)。
+
 服务端只提供 API 和长连接，没有网页端。部署完成后在[桌面端 / 移动端客户端](https://blog.chaisz.com/GO-IM/)中把服务器地址填为网关地址，用邮箱注册账号（需先[配置 SMTP](#邮件验证码)）。
 
 ## Docker 最小化部署
@@ -54,7 +56,7 @@ docker compose ps
 ```bash
 docker compose logs -f gateway                  # 查看日志
 docker compose pull && docker compose up -d     # 升级到 latest
-GOIM_TAG=1.4.0 docker compose up -d             # 固定 / 回滚到指定版本
+GOIM_TAG=1.5.0 docker compose up -d             # 固定 / 回滚到指定版本
 docker compose down                             # 停止（保留数据卷）
 docker compose down -v                          # 停止并删除所有数据
 ```
@@ -63,7 +65,7 @@ docker compose down -v                          # 停止并删除所有数据
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `GOIM_TAG` | `latest` | 镜像版本，生产建议固定（如 `1.4.0`） |
+| `GOIM_TAG` | `latest` | 镜像版本，生产建议固定（如 `1.5.0`） |
 | `HTTP_PORT` | `8080` | Gateway HTTP API + WebSocket 端口 |
 | `TCP_PORT` | `8081` | 原生 TCP 长连接端口 |
 | `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` | `im-root` / `im-dev` | 改 `MYSQL_PASSWORD` 需同步改配置里两处 `dsn` |

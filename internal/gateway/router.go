@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -52,14 +53,22 @@ type Router struct {
 	// Prometheus 指标记录器(nil = 未接入,所有指标调用为 no-op)。
 	metrics *observability.Metrics
 
-	// 异步持久化的固定 worker 池。
-	// persistTasks 是待持久化任务队列(有缓冲),persistDone 在 Stop 时关闭。
-	// 使用固定数量的 worker goroutine 消费队列,而不是每消息 spawn 一个
-	// goroutine —— 后者在高吞吐下会导致 goroutine 无限堆积(信号量只限制
-	// 并发,不限制排队数)。
-	persistTasks chan persistTask
-	persistDone  chan struct{}
-	persistWG    sync.WaitGroup
+	// 异步持久化：任务先进入有界队列，由 batcher 按条数/时间聚合，
+	// 再交给少量 batch writer。关闭时 close(persistTasks)，batcher 会排空并
+	// flush 最后一批；persistMu 防止入队与关闭 channel 并发。
+	persistTasks   chan persistTask
+	persistBatches chan []persistTask
+	persistWG      sync.WaitGroup
+	persistMu      sync.RWMutex
+	persistClosed  bool
+	persistCtx     context.Context
+	persistCancel  context.CancelFunc
+
+	persistBatchSize     int
+	persistFlushInterval time.Duration
+	persistEnqueueWait   time.Duration
+	persistMaxRetries    int
+	persistShutdownWait  time.Duration
 
 	// 可配置的运行参数(原为硬编码常量)。
 	recallWindow int64         // 消息撤回窗口(毫秒)
@@ -70,13 +79,8 @@ type Router struct {
 
 // persistTask 是一次异步持久化的目标(消息的独立副本,可并发读写)。
 type persistTask struct {
-	ctx context.Context // 已剥离取消(WithoutCancel),持久化不随请求取消而丢弃
 	msg *proto.Message
 }
-
-// 持久化任务队列的缓冲容量。缓冲允许短暂积压(背压)但不阻塞热路径;
-// 超过容量时丢弃任务并记录(尽力而为语义)。
-const persistQueueCap = 1024
 
 // SetKafkaProducer 注入用于异步消息持久化的 Kafka 生产者。
 // 为 nil(默认值)时不使用 Kafka。
@@ -140,50 +144,91 @@ func (r *Router) SetUserStore(us repo.UserStore) {
 // RouterConfig 保存 Router 可调运行参数。
 // 这些参数原为硬编码常量,现在可配置。
 type RouterConfig struct {
-	DedupTTL            time.Duration // 去重缓存条目 TTL,默认 5 分钟
-	PersistConcurrency  int           // 最大并发异步持久化 goroutine 数,默认 64
-	RecallWindowMs      int64         // 消息撤回窗口(毫秒),默认 120000
-	HistoryDefaultLimit int           // 默认历史记录分页大小,默认 30
-	SearchDefaultLimit  int           // 默认搜索结果上限,默认 20
-	RateLimitCleanup    time.Duration // 限流器过期桶清理间隔,默认 5 分钟
+	DedupTTL              time.Duration // 去重缓存条目 TTL,默认 5 分钟
+	PersistConcurrency    int           // 已弃用,仅保留旧配置兼容
+	PersistQueueSize      int           // 持久化任务队列容量,默认 8192
+	PersistBatchSize      int           // 每批最大消息数,默认 200
+	PersistFlushInterval  time.Duration // 未满批次最长等待,默认 10ms
+	PersistBatchWorkers   int           // 批量写 worker 数,默认 2
+	PersistEnqueueTimeout time.Duration // 入队最长等待,默认 10ms
+	PersistMaxRetries     int           // 批量写失败重试次数,默认 3
+	PersistShutdownWait   time.Duration // 关闭时排空持久化队列的最长时间,默认 30s
+	RecallWindowMs        int64         // 消息撤回窗口(毫秒),默认 120000
+	HistoryDefaultLimit   int           // 默认历史记录分页大小,默认 30
+	SearchDefaultLimit    int           // 默认搜索结果上限,默认 20
+	RateLimitCleanup      time.Duration // 限流器过期桶清理间隔,默认 5 分钟
 }
 
 // DefaultRouterConfig 返回 RouterConfig 的合理默认值。
 func DefaultRouterConfig() RouterConfig {
 	return RouterConfig{
-		DedupTTL:            5 * time.Minute,
-		PersistConcurrency:  64,
-		RecallWindowMs:      120_000,
-		HistoryDefaultLimit: 30,
-		SearchDefaultLimit:  20,
-		RateLimitCleanup:    5 * time.Minute,
+		DedupTTL:              5 * time.Minute,
+		PersistConcurrency:    64,
+		PersistQueueSize:      8192,
+		PersistBatchSize:      200,
+		PersistFlushInterval:  10 * time.Millisecond,
+		PersistBatchWorkers:   2,
+		PersistEnqueueTimeout: 10 * time.Millisecond,
+		PersistMaxRetries:     3,
+		PersistShutdownWait:   30 * time.Second,
+		RecallWindowMs:        120_000,
+		HistoryDefaultLimit:   30,
+		SearchDefaultLimit:    20,
+		RateLimitCleanup:      5 * time.Minute,
 	}
 }
 
 // NewRouter 创建一个 Router。限流通过 SetRateLimitConfig 单独设置。
 func NewRouter(clients ClientRegistry, offline OfflineStore, snow *snowflake.Generator, msgStore repo.MessageStore, cfg RouterConfig) *Router {
-	if cfg.PersistConcurrency <= 0 {
-		cfg.PersistConcurrency = 64
-	}
+	defaults := DefaultRouterConfig()
 	if cfg.DedupTTL <= 0 {
-		cfg.DedupTTL = 5 * time.Minute
+		cfg.DedupTTL = defaults.DedupTTL
 	}
+	if cfg.PersistQueueSize <= 0 {
+		cfg.PersistQueueSize = defaults.PersistQueueSize
+	}
+	if cfg.PersistBatchSize <= 0 {
+		cfg.PersistBatchSize = defaults.PersistBatchSize
+	}
+	if cfg.PersistFlushInterval <= 0 {
+		cfg.PersistFlushInterval = defaults.PersistFlushInterval
+	}
+	if cfg.PersistBatchWorkers <= 0 {
+		cfg.PersistBatchWorkers = defaults.PersistBatchWorkers
+	}
+	if cfg.PersistEnqueueTimeout <= 0 {
+		cfg.PersistEnqueueTimeout = defaults.PersistEnqueueTimeout
+	}
+	if cfg.PersistMaxRetries < 0 {
+		cfg.PersistMaxRetries = defaults.PersistMaxRetries
+	}
+	if cfg.PersistShutdownWait <= 0 {
+		cfg.PersistShutdownWait = defaults.PersistShutdownWait
+	}
+	persistCtx, persistCancel := context.WithCancel(context.Background())
 	r := &Router{
-		clients:      clients,
-		offline:      offline,
-		snow:         snow,
-		dedup:        NewDedupCache(cfg.DedupTTL),
-		msgStore:     msgStore,
-		persistTasks: make(chan persistTask, persistQueueCap),
-		persistDone:  make(chan struct{}),
-		recallWindow: cfg.RecallWindowMs,
-		historyLimit: cfg.HistoryDefaultLimit,
-		searchLimit:  cfg.SearchDefaultLimit,
-		rlCleanup:    cfg.RateLimitCleanup,
+		clients:              clients,
+		offline:              offline,
+		snow:                 snow,
+		dedup:                NewDedupCache(cfg.DedupTTL),
+		msgStore:             msgStore,
+		persistTasks:         make(chan persistTask, cfg.PersistQueueSize),
+		persistBatches:       make(chan []persistTask, cfg.PersistBatchWorkers*2),
+		persistBatchSize:     cfg.PersistBatchSize,
+		persistFlushInterval: cfg.PersistFlushInterval,
+		persistEnqueueWait:   cfg.PersistEnqueueTimeout,
+		persistMaxRetries:    cfg.PersistMaxRetries,
+		persistShutdownWait:  cfg.PersistShutdownWait,
+		persistCtx:           persistCtx,
+		persistCancel:        persistCancel,
+		recallWindow:         cfg.RecallWindowMs,
+		historyLimit:         cfg.HistoryDefaultLimit,
+		searchLimit:          cfg.SearchDefaultLimit,
+		rlCleanup:            cfg.RateLimitCleanup,
 	}
-	// 启动固定数量的持久化 worker。worker 数 = 配置的并发度,
-	// 它们常驻消费任务队列 —— 队列满时新任务被丢弃而非阻塞等待。
-	for i := 0; i < cfg.PersistConcurrency; i++ {
+	r.persistWG.Add(1)
+	go r.persistBatcher()
+	for i := 0; i < cfg.PersistBatchWorkers; i++ {
 		r.persistWG.Add(1)
 		go r.persistWorker()
 	}
@@ -195,39 +240,145 @@ func (r *Router) SetMetrics(m *observability.Metrics) {
 	r.metrics = m
 }
 
-// persistWorker 常驻消费持久化任务队列。worker 总数固定,
-// 不会随消息吞吐增长 —— 这是避免 goroutine 无限堆积的关键。
-func (r *Router) persistWorker() {
+// persistBatcher 按条数或时间将任务聚合成批次。关闭任务 channel 后会
+// 排空并 flush 最后一批，再关闭批次 channel。
+func (r *Router) persistBatcher() {
 	defer r.persistWG.Done()
+	defer close(r.persistBatches)
+
+	batch := make([]persistTask, 0, r.persistBatchSize)
+	timer := time.NewTimer(r.persistFlushInterval)
+	if !timer.Stop() {
+		<-timer.C
+	}
+	defer timer.Stop()
+	var timerC <-chan time.Time
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		out := batch
+		batch = make([]persistTask, 0, r.persistBatchSize)
+		r.persistBatches <- out
+		if timerC != nil && !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timerC = nil
+	}
+
 	for {
 		select {
-		case <-r.persistDone:
-			return
-		case task := <-r.persistTasks:
-			r.doPersist(task)
+		case task, ok := <-r.persistTasks:
+			if !ok {
+				flush()
+				return
+			}
+			batch = append(batch, task)
+			if len(batch) == 1 {
+				timer.Reset(r.persistFlushInterval)
+				timerC = timer.C
+			}
+			if len(batch) >= r.persistBatchSize {
+				flush()
+			}
+		case <-timerC:
+			flush()
 		}
 	}
 }
 
-// doPersist 执行单次异步持久化(与旧 persistAsync 的 goroutine 体一致)。
-func (r *Router) doPersist(task persistTask) {
-	msg := task.msg
-	if r.kafka != nil {
-		log.Printf("[router] persist: publishing msgId=%d cmd=%d via Kafka", msg.MsgId, msg.Cmd)
-		r.kafka.Publish(task.ctx, msg)
+// persistWorker 消费批次并执行带退避的重试。
+func (r *Router) persistWorker() {
+	defer r.persistWG.Done()
+	for batch := range r.persistBatches {
+		r.persistBatchWithRetry(batch)
 	}
-	if r.msgStore != nil {
-		if err := r.msgStore.Save(task.ctx, msg); err != nil {
-			r.metrics.RecordPersistFail()
-			slog.Error("mysql save failed", "msgId", msg.MsgId, "error", err)
-		} else {
-			r.metrics.RecordPersistSuccess()
-			log.Printf("[router] mysql save OK for msgId=%d", msg.MsgId)
+}
+
+func (r *Router) persistBatchWithRetry(batch []persistTask) {
+	if len(batch) == 0 {
+		return
+	}
+	start := time.Now()
+	var err error
+	for attempt := 0; attempt <= r.persistMaxRetries; attempt++ {
+		if err = r.persistCtx.Err(); err != nil {
+			break
+		}
+		if attempt > 0 {
+			r.metrics.RecordPersistRetry()
+			backoff := []time.Duration{20 * time.Millisecond, 100 * time.Millisecond, 500 * time.Millisecond}
+			d := backoff[len(backoff)-1]
+			if attempt-1 < len(backoff) {
+				d = backoff[attempt-1]
+			}
+			timer := time.NewTimer(d + time.Duration(rand.Int64N(int64(d/5)+1)))
+			select {
+			case <-timer.C:
+			case <-r.persistCtx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				err = r.persistCtx.Err()
+				break
+			}
+			if err != nil {
+				break
+			}
+		}
+		// 四次尝试（首次 + 3 次重试）最坏约 20 秒，加退避仍小于默认
+		// 30 秒 shutdown timeout，避免优雅关闭无限等待数据库。
+		writeCtx, cancel := context.WithTimeout(r.persistCtx, 5*time.Second)
+		err = r.doPersistBatch(writeCtx, batch)
+		cancel()
+		if err == nil {
+			r.metrics.RecordPersistSuccessN(len(batch))
+			r.metrics.RecordPersistBatch(len(batch), time.Since(start), true)
+			return
 		}
 	}
-	if r.kafka == nil && r.msgStore == nil {
-		log.Printf("[router] persist: no persistence backend configured (kafka=%v msgStore=%v)", r.kafka != nil, r.msgStore != nil)
+	r.metrics.RecordPersistFailN(len(batch))
+	r.metrics.RecordPersistBatch(len(batch), time.Since(start), false)
+	if err != context.Canceled {
+		slog.Error("persist batch failed after retries", "size", len(batch), "error", err)
 	}
+}
+
+// doPersistBatch 将一批消息写入所有已配置的持久化后端。
+func (r *Router) doPersistBatch(ctx context.Context, batch []persistTask) error {
+	messages := make([]*proto.Message, 0, len(batch))
+	for _, task := range batch {
+		if task.msg != nil {
+			messages = append(messages, task.msg)
+		}
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+
+	if r.kafka != nil {
+		if err := r.kafka.PublishBatch(ctx, messages); err != nil {
+			return fmt.Errorf("publish Kafka batch: %w", err)
+		}
+	}
+	if r.msgStore != nil {
+		if batchStore, ok := r.msgStore.(repo.BatchMessageStore); ok {
+			if err := batchStore.SaveBatch(ctx, messages); err != nil {
+				return fmt.Errorf("mysql save batch: %w", err)
+			}
+		} else {
+			for _, msg := range messages {
+				if err := r.msgStore.Save(ctx, msg); err != nil {
+					return fmt.Errorf("mysql save msgId=%d: %w", msg.MsgId, err)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // SetRateLimit 配置限流。当 rate <= 0 时限流被禁用。
@@ -272,10 +423,32 @@ func (r *Router) Stop() {
 	}
 	r.rateLimitMu.Unlock()
 
-	// 停止持久化 worker:先关闭 persistDone 通知 worker 退出,
-	// 再关闭任务队列(此时不会有新任务入队 —— Stop 在关闭后调用)。
-	close(r.persistDone)
-	r.persistWG.Wait()
+	// 禁止新任务入队并关闭输入；batcher 会排空队列、flush 最后一批。
+	r.persistMu.Lock()
+	if !r.persistClosed {
+		r.persistClosed = true
+		close(r.persistTasks)
+	}
+	r.persistMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		r.persistWG.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(r.persistShutdownWait)
+	defer timer.Stop()
+	select {
+	case <-done:
+		r.persistCancel()
+	case <-timer.C:
+		slog.Warn("persist drain timed out; cancelling pending writes",
+			"timeout", r.persistShutdownWait,
+			"queue_depth", len(r.persistTasks),
+			"batch_backlog", len(r.persistBatches))
+		r.persistCancel()
+		<-done
+	}
 }
 
 // checkRateLimit 如果用户超出限流则返回 true。
@@ -308,9 +481,13 @@ func (r *Router) DedupMarks() int64 {
 	return 0
 }
 
-// persistAsync 将消息异步持久化到 Kafka 或 MySQL。
-// 它是非阻塞的尽力而为操作:把消息副本提交到固定 worker 池的任务队列,
-// 队列满(背压)时丢弃并记录,绝不阻塞热路径,也不随吞吐增长创建 goroutine。
+// PersistQueueStats 返回当前任务队列深度与容量。
+func (r *Router) PersistQueueStats() (depth, capacity int) {
+	return len(r.persistTasks), cap(r.persistTasks)
+}
+
+// persistAsync 将消息副本提交到批量持久化队列。队列满时最多等待配置的
+// enqueue timeout；仍无法入队才丢弃并记录，避免无限阻塞在线投递。
 func (r *Router) persistAsync(ctx context.Context, msg *proto.Message) {
 	if r.kafka == nil && r.msgStore == nil {
 		log.Printf("[router] persistAsync: no persistence backend configured (kafka=%v msgStore=%v)", r.kafka != nil, r.msgStore != nil)
@@ -318,17 +495,30 @@ func (r *Router) persistAsync(ctx context.Context, msg *proto.Message) {
 	}
 	// 消息副本:worker 可能稍后才处理,避免与调用方的消息对象竞争。
 	msgCopy := pbproto.Clone(msg).(*proto.Message)
-	task := persistTask{
-		ctx: context.WithoutCancel(ctx),
-		msg: msgCopy,
+	task := persistTask{msg: msgCopy}
+
+	r.persistMu.RLock()
+	if r.persistClosed {
+		r.persistMu.RUnlock()
+		r.metrics.RecordPersistQueueDrop()
+		return
 	}
+	// 热路径先无分配尝试；只有队列确实已满才创建 timer 等待背压解除。
 	select {
 	case r.persistTasks <- task:
-		// 已入队,由常驻 worker 异步执行。
+		r.persistMu.RUnlock()
+		return
 	default:
-		// 队列已满 —— 丢弃。尽力而为:持久化失败比阻塞在线投递好。
+	}
+	timer := time.NewTimer(r.persistEnqueueWait)
+	defer timer.Stop()
+	select {
+	case r.persistTasks <- task:
+		r.persistMu.RUnlock()
+	case <-timer.C:
+		r.persistMu.RUnlock()
 		r.metrics.RecordPersistQueueDrop()
-		log.Printf("[router] persistAsync: queue full, dropping msgId=%d (persistence best-effort)", msg.MsgId)
+		slog.Warn("persist queue full after enqueue timeout", "msgId", msg.MsgId, "timeout", r.persistEnqueueWait)
 	}
 }
 

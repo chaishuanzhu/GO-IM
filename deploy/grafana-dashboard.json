@@ -131,6 +131,50 @@
         "defaults": { "unit": "short" },
         "overrides": []
       }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "持久化队列使用率",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 18 },
+      "targets": [
+        { "expr": "100 * im_persist_queue_depth / clamp_min(im_persist_queue_capacity, 1)", "legendFormat": "队列使用率", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0, "max": 100 },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "持久化批次大小",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 18 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(im_persist_batch_size_bucket[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(im_persist_batch_size_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "持久化批次耗时",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 18 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(im_persist_batch_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(im_persist_batch_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      }
     }
   ],
   "refresh": "15s",

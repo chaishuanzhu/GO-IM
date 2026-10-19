@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -21,7 +22,7 @@ import (
 // 返回是否因异常(非超时错误/断连)退出。
 func readLoop(ctx context.Context, conn benchConn, timeout time.Duration, fn func(*proto.Message)) bool {
 	for {
-		msg, err := conn.ReadMsg(timeout)
+		msg, err := conn.ReadMsg(readTimeoutFor(ctx, timeout))
 		if err != nil {
 			select {
 			case <-ctx.Done():
@@ -41,8 +42,19 @@ func readLoop(ctx context.Context, conn benchConn, timeout time.Duration, fn fun
 
 // isTimeout 判断读取错误是否为超时(空闲)而非连接异常。
 func isTimeout(err error) bool {
-	ne, ok := err.(net.Error)
-	return ok && ne.Timeout()
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
+// readTimeoutFor 把读超时延长到 ctx 截止之后:gorilla/websocket 的读超时不可恢复
+// (超时后每次读都返回同一错误),空闲期一旦超时连接就废了。
+func readTimeoutFor(ctx context.Context, min time.Duration) time.Duration {
+	if dl, ok := ctx.Deadline(); ok {
+		if t := time.Until(dl) + 3*time.Second; t > min {
+			return t
+		}
+	}
+	return min
 }
 
 // buildResult 将 stats 组装为 Result,并生成服务端采样汇总。
@@ -132,11 +144,11 @@ func runChurn(opts *options, httpBase, wsURL string) (*Result, error) {
 				case <-ticks.C:
 				}
 
-				uid := fmt.Sprintf("churn-%03d-%06d", worker, seq)
+				uid := uidPrefix + fmt.Sprintf("churn-%03d-%06d", worker, seq)
 				seq++
 				st.connects.Add(1)
 
-				token, _, err := kit.LoginDev(httpBase+"/login", uid, uid)
+				token, err := login(httpBase, uid)
 				if err != nil {
 					st.failed.Add(1)
 					continue
@@ -203,7 +215,7 @@ func runChat(opts *options, httpBase, wsURL string) (*Result, error) {
 			defer connWG.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			uid := fmt.Sprintf("user-%06d", i)
+			uid := userUID(i)
 			conn, err := dial(opts.transport, wsURL, opts.tcpAddr, tokens[uid])
 			if err != nil {
 				st.failed.Add(1)
@@ -247,7 +259,7 @@ func runChat(opts *options, httpBase, wsURL string) (*Result, error) {
 	var senderWG sync.WaitGroup
 	for i := 0; i < opts.users; i++ {
 		cc := conns[i]
-		partner := fmt.Sprintf("user-%06d", i^1)
+		partner := userUID(i ^ 1)
 		senderWG.Add(1)
 		go func(i int, cc *chatConn) {
 			defer senderWG.Done()
@@ -325,7 +337,7 @@ func runGroup(opts *options, httpBase, wsURL string) (*Result, error) {
 			defer connWG.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			uid := fmt.Sprintf("user-%06d", i)
+			uid := userUID(i)
 			conn, err := dial(opts.transport, wsURL, opts.tcpAddr, tokens[uid])
 			if err != nil {
 				st.failed.Add(1)
@@ -377,7 +389,7 @@ func runGroup(opts *options, httpBase, wsURL string) (*Result, error) {
 		memberUIDs := make([]string, 0, opts.groupSize-1)
 		for m := ownerIdx + 1; m < ownerIdx+opts.groupSize; m++ {
 			memberIdxs = append(memberIdxs, m)
-			memberUIDs = append(memberUIDs, fmt.Sprintf("user-%06d", m))
+			memberUIDs = append(memberUIDs, userUID(m))
 		}
 		req := map[string]interface{}{
 			"name":    fmt.Sprintf("bench-group-%d", g),
@@ -495,8 +507,8 @@ func runSearch(opts *options, httpBase, wsURL string) (*Result, error) {
 		searchWG.Add(1)
 		go func(w int) {
 			defer searchWG.Done()
-			uid := fmt.Sprintf("user-%06d", w*2) // 指向 chat 场景种子的用户,确保有会话数据可搜
-			token, _, err := kit.LoginDev(httpBase+"/login", uid, uid)
+			uid := userUID(w * 2) // 指向 chat 场景种子的用户,确保有会话数据可搜
+			token, err := login(httpBase, uid)
 			if err != nil {
 				st.failed.Add(1)
 				return
@@ -530,9 +542,9 @@ func runSearch(opts *options, httpBase, wsURL string) (*Result, error) {
 		histWG.Add(1)
 		go func(w int) {
 			defer histWG.Done()
-			uid := fmt.Sprintf("user-%06d", w*2)       // 查自己与配对用户的历史
-			partner := fmt.Sprintf("user-%06d", w*2+1) // 指向 chat 场景种子的用户对
-			token, _, err := kit.LoginDev(httpBase+"/login", uid, uid)
+			uid := userUID(w * 2)       // 查自己与配对用户的历史
+			partner := userUID(w*2 + 1) // 指向 chat 场景种子的用户对
+			token, err := login(httpBase, uid)
 			if err != nil {
 				st.failed.Add(1)
 				return
@@ -620,88 +632,87 @@ func runHeartbeat(opts *options, httpBase, wsURL string) (*Result, error) {
 	defer close(done)
 	stopSampler := startServiceSampler(httpBase+"/health", 10*time.Second, done)
 
-	// 顺序建连,每个连接拨号成功立即可启动 reader。
-	// 实测发现两种写法会导致连接悄然丢失:
-	//   - 并发拨号(信号量):本地回环上瞬间建立上千连接,连接大量被 RST。
-	//   - "全部拨号完成后再启动 reader":连接建立后有一段无读取的空窗,
-	//     同样触发连接被断开。
-	// 边拨号边启动 reader 的写法在 500/2000 连接下全部稳定保持。
-	// 顺序拨号每个连接 ~毫秒级,千级连接在十几秒内完成,对浸泡场景足够。
+	// 有界并发建连,每条连接成功后立即启动 reader。并发度复用 conn-rate:
+	// 既避免公网逐条握手耗尽测试窗口,也避免瞬间建连打满 accept 队列。
+	connWorkers := int(opts.connRate)
+	if connWorkers <= 0 {
+		connWorkers = 50
+	}
+	sem := make(chan struct{}, connWorkers)
+	var connWG sync.WaitGroup
 	var hbWG sync.WaitGroup
 	var readerWG sync.WaitGroup
 	for i := 0; i < opts.conns; i++ {
-		uid := fmt.Sprintf("hb-%05d", i)
-		token, _, err := kit.LoginDev(httpBase+"/login", uid, uid)
-		if err != nil {
-			st.failed.Add(1)
-			continue
-		}
-		conn, err := dial(opts.transport, wsURL, opts.tcpAddr, token)
-		if err != nil {
-			st.failed.Add(1)
-			continue
-		}
 		st.connects.Add(1)
-		st.connectOK.Add(1)
+		connWG.Add(1)
+		go func(i int) {
+			defer connWG.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-		hc := &hbConn{conn: conn}
+			uid := uidPrefix + fmt.Sprintf("hb-%05d", i)
+			token, err := login(httpBase, uid)
+			if err != nil {
+				st.failed.Add(1)
+				return
+			}
+			conn, err := dial(opts.transport, wsURL, opts.tcpAddr, token)
+			if err != nil {
+				st.failed.Add(1)
+				return
+			}
+			st.connectOK.Add(1)
 
-		// 常驻 reader:持续 ReadMessage,处理服务端 WS ping/pong 保持连接
-		// (gorilla 的 pong 应答发生在 ReadMessage 内),并匹配心跳响应。
-		// 读超时必须小于心跳间隔,否则 reader 长时间阻塞在超时等待上,
-		// 心跳响应无法被及时消费,连接会被服务端按 pongWait 误判死亡。
-		readTimeout := 30 * time.Second
-		if opts.interval > 0 && opts.interval < readTimeout {
-			readTimeout = opts.interval / 2
-		}
-		if readTimeout < time.Second {
-			readTimeout = time.Second
-		}
-		readerWG.Add(1)
-		go func(hc *hbConn) {
-			defer readerWG.Done()
-			for {
-				msg, err := hc.conn.ReadMsg(readTimeout)
-				if err != nil {
+			hc := &hbConn{conn: conn}
+
+			// 常驻 reader:持续 ReadMessage,处理服务端 WS ping/pong 保持连接。
+			readerWG.Add(1)
+			go func(hc *hbConn) {
+				defer readerWG.Done()
+				for {
+					msg, err := hc.conn.ReadMsg(readTimeoutFor(ctx, time.Second))
+					if err != nil {
+						select {
+						case <-ctx.Done():
+							return
+						default:
+						}
+						if isTimeout(err) {
+							continue
+						}
+						st.hbFail.Add(1)
+						return
+					}
+					if msg.Cmd == proto.CmdHeartbeat {
+						st.hbOK.Add(1)
+						if t := hc.takeSent(); !t.IsZero() {
+							st.ack.add(float64(time.Since(t).Microseconds()) / 1000.0)
+						}
+					}
+				}
+			}(hc)
+
+			// 心跳 sender:按 interval 周期发送 CmdHeartbeat。
+			hbWG.Add(1)
+			go func(hc *hbConn) {
+				defer hbWG.Done()
+				ticker := time.NewTicker(opts.interval)
+				defer ticker.Stop()
+				for {
 					select {
 					case <-ctx.Done():
 						return
-					default:
+					case <-ticker.C:
 					}
-					if isTimeout(err) {
-						continue
-					}
-					st.hbFail.Add(1)
-					return
-				}
-				if msg.Cmd == proto.CmdHeartbeat {
-					st.hbOK.Add(1)
-					if t := hc.takeSent(); !t.IsZero() {
-						st.ack.add(float64(time.Since(t).Microseconds()) / 1000.0)
+					hc.markSent(time.Now())
+					if err := hc.conn.WriteMsg(&proto.Message{Cmd: proto.CmdHeartbeat}, 10*time.Second); err != nil {
+						st.hbFail.Add(1)
 					}
 				}
-			}
-		}(hc)
-
-		// 心跳 sender:按 interval 周期发送 CmdHeartbeat。
-		hbWG.Add(1)
-		go func(hc *hbConn) {
-			defer hbWG.Done()
-			ticker := time.NewTicker(opts.interval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-				}
-				hc.markSent(time.Now())
-				if err := hc.conn.WriteMsg(&proto.Message{Cmd: proto.CmdHeartbeat}, 10*time.Second); err != nil {
-					st.hbFail.Add(1)
-				}
-			}
-		}(hc)
+			}(hc)
+		}(i)
 	}
+	connWG.Wait()
 	if st.failed.Load() > 0 {
 		log.Printf("[heartbeat] %d connections failed, continuing with %d", st.failed.Load(), st.connectOK.Load())
 	}

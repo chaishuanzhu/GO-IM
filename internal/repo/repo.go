@@ -173,3 +173,9 @@ type MessageStore interface {
 	DeleteMessage(ctx context.Context, msgID int64) error
 	CountMessages(ctx context.Context) (int, error)
 }
+
+// BatchMessageStore 是 MessageStore 的可选批量写扩展。
+// 调用方应先做类型断言；不支持时回退到逐条 Save。
+type BatchMessageStore interface {
+	SaveBatch(ctx context.Context, messages []*proto.Message) error
+}

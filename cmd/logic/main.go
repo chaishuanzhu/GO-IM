@@ -55,7 +55,12 @@ func main() {
 		log.Fatalf("[logic] MySQL must be enabled (set logic.mysql.dsn or gateway.mysql.dsn)")
 	}
 
-	mysqlStore, err := repo.NewMySQLStore(mySQLCfg.DSN)
+	mysqlStore, err := repo.NewMySQLStoreWithPool(mySQLCfg.DSN, repo.MySQLPoolConfig{
+		MaxOpenConns:    mySQLCfg.MaxOpenConns,
+		MaxIdleConns:    mySQLCfg.MaxIdleConns,
+		ConnMaxLifetime: time.Duration(mySQLCfg.ConnMaxLifetime),
+		ConnMaxIdleTime: time.Duration(mySQLCfg.ConnMaxIdleTime),
+	})
 	if err != nil {
 		log.Fatalf("[logic] MySQL init: %v", err)
 	}

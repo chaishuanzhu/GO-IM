@@ -31,10 +31,29 @@ import (
 	"time"
 
 	"github.com/im/bench/kit"
+	"github.com/im/internal/pkg/jwt"
 )
+
+var (
+	uidPrefix   string
+	tokenSigner *jwt.Manager // nil = 通过 dev_mode /login 获取令牌
+)
+
+// login 返回 uid 的令牌：有签名密钥时本地签发，否则走 dev_mode 登录。
+func login(httpBase, uid string) (string, error) {
+	if tokenSigner != nil {
+		return tokenSigner.Generate(uid, uid, "user")
+	}
+	token, _, err := kit.LoginDev(httpBase+"/login", uid, uid)
+	return token, err
+}
+
+// userUID 是 chat / group / search 场景第 i 个用户的 UID。
+func userUID(i int) string { return uidPrefix + fmt.Sprintf("user-%06d", i) }
 
 type options struct {
 	scenario  string
+	scheme    string
 	addr      string
 	tcpAddr   string
 	transport string
@@ -65,7 +84,9 @@ type options struct {
 func main() {
 	var opts options
 	flag.StringVar(&opts.scenario, "scenario", "", "churn|chat|group|search|heartbeat (required)")
+	flag.StringVar(&opts.scheme, "scheme", "http", "http|https (WebSocket uses ws|wss accordingly)")
 	flag.StringVar(&opts.addr, "addr", "localhost:8080", "gateway HTTP/WS base address")
+	flag.StringVar(&uidPrefix, "uid-prefix", "", "prefix for every generated UID (e.g. bench- for easy cleanup)")
 	flag.StringVar(&opts.tcpAddr, "tcp-addr", "localhost:18083", "gateway gnet TCP address")
 	flag.StringVar(&opts.transport, "transport", "ws", "ws|tcp")
 
@@ -107,8 +128,18 @@ func main() {
 	// 重复(只回 ACK 不投递),导致投递量统计失真。
 	opts.seqBase = rand.Int63n(1<<52) << 8 // 每个 sender 最多占用 255 个 seq
 
-	httpBase := "http://" + opts.addr
-	wsURL := "ws://" + opts.addr + "/ws"
+	httpBase := opts.scheme + "://" + opts.addr
+	wsScheme := "ws"
+	if opts.scheme == "https" {
+		wsScheme = "wss"
+	}
+	wsURL := wsScheme + "://" + opts.addr + "/ws"
+
+	// 设置了 GOIM_BENCH_JWT_SECRET 时本地签发令牌，不经 /login（目标环境关闭了 dev_mode）。
+	if secret := os.Getenv("GOIM_BENCH_JWT_SECRET"); secret != "" {
+		tokenSigner = jwt.New(secret, 24*time.Hour)
+		log.Printf("loadtest: signing tokens locally (dev_mode login not needed)")
+	}
 
 	// 检查网关可达。
 	if err := kit.WaitHealthy(httpBase+"/health", 5*time.Second); err != nil {

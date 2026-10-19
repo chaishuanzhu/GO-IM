@@ -228,6 +228,49 @@ func TestMySQLMessageSaveAndQuery(t *testing.T) {
 	}
 }
 
+func TestMySQLMessageSaveBatchAndIdempotency(t *testing.T) {
+	s := newTestMySQLStore(t)
+	defer s.Close()
+	truncateAll(t, s)
+
+	ctx := context.Background()
+	for batchIndex, size := range []int{1, 100, 200, 500} {
+		fromUID := fmt.Sprintf("batch-%d", size)
+		messages := make([]*proto.Message, size)
+		for i := range messages {
+			messages[i] = &proto.Message{
+				MsgId:     int64((batchIndex+1)*10_000 + i),
+				Seq:       int64(i + 1),
+				Cmd:       proto.CmdChat,
+				From:      fromUID,
+				To:        "batch-target",
+				ChatType:  proto.ChatTypeSingle,
+				MsgType:   proto.MsgTypeText,
+				Content:   fmt.Sprintf("batch-%d", i),
+				Timestamp: int64(1_720_000_000_000 + i),
+				NeedAck:   i%2 == 0,
+			}
+		}
+		if err := s.SaveBatch(ctx, messages); err != nil {
+			t.Fatalf("SaveBatch size %d: %v", size, err)
+		}
+		// INSERT IGNORE + msg_id 主键必须允许整批安全重放。
+		if err := s.SaveBatch(ctx, messages); err != nil {
+			t.Fatalf("SaveBatch replay size %d: %v", size, err)
+		}
+
+		var count int
+		if err := s.db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM messages WHERE from_uid = ? AND to_uid = ?",
+			fromUID, "batch-target").Scan(&count); err != nil {
+			t.Fatalf("count batch size %d: %v", size, err)
+		}
+		if count != len(messages) {
+			t.Fatalf("size %d: expected %d rows after replay, got %d", size, len(messages), count)
+		}
+	}
+}
+
 func TestMySQLQueryHistoryPagination(t *testing.T) {
 	s := newTestMySQLStore(t)
 	defer s.Close()

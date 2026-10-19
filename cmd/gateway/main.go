@@ -82,7 +82,12 @@ func NewApp(cfg *configs.Config) (*App, error) {
 	var mysqlStore *repo.MySQLStore
 	if cfg.Gateway.MySQL.Enabled {
 		var err error
-		mysqlStore, err = repo.NewMySQLStore(cfg.Gateway.MySQL.DSN)
+		mysqlStore, err = repo.NewMySQLStoreWithPool(cfg.Gateway.MySQL.DSN, repo.MySQLPoolConfig{
+			MaxOpenConns:    cfg.Gateway.MySQL.MaxOpenConns,
+			MaxIdleConns:    cfg.Gateway.MySQL.MaxIdleConns,
+			ConnMaxLifetime: time.Duration(cfg.Gateway.MySQL.ConnMaxLifetime),
+			ConnMaxIdleTime: time.Duration(cfg.Gateway.MySQL.ConnMaxIdleTime),
+		})
 		if err != nil {
 			log.Printf("[main] MySQL init failed (%v), continuing without persistence", err)
 		} else {
@@ -133,12 +138,19 @@ func NewApp(cfg *configs.Config) (*App, error) {
 
 	// 根据网关配置构建路由配置。
 	routerCfg := gateway.RouterConfig{
-		DedupTTL:            time.Duration(cfg.Gateway.DedupTTL),
-		PersistConcurrency:  cfg.Gateway.PersistConcurrency,
-		RecallWindowMs:      cfg.Gateway.RecallWindowMs,
-		HistoryDefaultLimit: cfg.Gateway.HistoryDefaultLimit,
-		SearchDefaultLimit:  cfg.Gateway.SearchDefaultLimit,
-		RateLimitCleanup:    time.Duration(cfg.Gateway.RateLimit.CleanupInterval),
+		DedupTTL:              time.Duration(cfg.Gateway.DedupTTL),
+		PersistConcurrency:    cfg.Gateway.PersistConcurrency,
+		PersistQueueSize:      cfg.Gateway.PersistQueueSize,
+		PersistBatchSize:      cfg.Gateway.PersistBatchSize,
+		PersistFlushInterval:  time.Duration(cfg.Gateway.PersistFlushInterval),
+		PersistBatchWorkers:   cfg.Gateway.PersistBatchWorkers,
+		PersistEnqueueTimeout: time.Duration(cfg.Gateway.PersistEnqueueTimeout),
+		PersistMaxRetries:     cfg.Gateway.PersistMaxRetries,
+		PersistShutdownWait:   time.Duration(cfg.Stability.ShutdownTimeout),
+		RecallWindowMs:        cfg.Gateway.RecallWindowMs,
+		HistoryDefaultLimit:   cfg.Gateway.HistoryDefaultLimit,
+		SearchDefaultLimit:    cfg.Gateway.SearchDefaultLimit,
+		RateLimitCleanup:      time.Duration(cfg.Gateway.RateLimit.CleanupInterval),
 	}
 	router := gateway.NewRouter(hub, offlineStore, snow, msgStore, routerCfg)
 	if kafkaProducer != nil {
@@ -165,6 +177,7 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		RateLimitStats:    func() (int64, int64) { return router.RateLimitStats() },
 		DedupMarks:        func() int64 { return router.DedupMarks() },
 		GnetPoolDrops:     func() int64 { return gateway.GnetPoolDrops() },
+		PersistQueueStats: func() (int, int) { return router.PersistQueueStats() },
 	})
 	router.SetMetrics(metrics)
 

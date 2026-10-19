@@ -37,8 +37,8 @@ spec:
       labels:
         app: gateway
     spec:
-      # 须大于 preStop 5s + stability.shutdown_timeout 30s
-      terminationGracePeriodSeconds: 45
+      # 须覆盖 preStop 5s + HTTP 排空 30s + 持久化排空 30s，并留出余量。
+      terminationGracePeriodSeconds: 75
       initContainers:
         - name: wait-deps
           image: busybox:1.37

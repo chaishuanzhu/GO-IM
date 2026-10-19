@@ -259,7 +259,7 @@ go run ./bench/loadtest -scenario heartbeat -connections 2000 -duration 10m -int
 **已知边界（诚实标注）**：
 
 - HTTP 全文搜索（ngram FULLTEXT）在 50 并发下 P99≈32s，需专用方案（Elasticsearch / LIKE 前缀索引），不适合高并发在线搜索。
-- 异步持久化（Gateway→Kafka→MySQL 双写，64 worker）在 3k msg/s 下持久化率约 22%——在线消息已全部送达，落库为尽力而为，是容量问题而非丢数据 bug。生产可按需提升并发或改为只写 Kafka。
+- 优化前的异步持久化（64 个逐条 worker）在 3k msg/s 下持久化率约 22%。现已改为有界队列 + size/time 批处理、批量 Kafka/MySQL 写、退避重试与优雅排空；预计单机直写 MySQL 可提升至约 3k–8k msg/s，实际上限待测试环境压测确认，详见[批量写入优化方案](docs/11-persistence-batch-write-optimization.md)。
 
 ## 配置
 
@@ -425,7 +425,10 @@ curl -s localhost:8080/metrics | grep '^im_'   # im_online_connections / im_mess
 | `im_message_delivery_duration_seconds{chat_type}` | 收到 → ACK 的投递延迟（P50 / P99） |
 | `im_delivery_failures_total` | 投递失败转存离线 |
 | `im_rate_limit_allowed_total` / `im_rate_limit_rejected_total` | 限流放行 / 拒绝 |
-| `im_persist_success_total` / `im_persist_fail_total` / `im_persist_queue_drop_total` | 异步持久化成败与背压 |
+| `im_persist_success_total` / `im_persist_fail_total` / `im_persist_queue_drop_total` | 按消息统计的异步持久化成败与队列丢弃 |
+| `im_persist_queue_depth` / `im_persist_queue_capacity` | 持久化队列深度与容量 |
+| `im_persist_batch_success_total` / `im_persist_batch_fail_total` / `im_persist_retry_total` | 批次成败与重试次数 |
+| `im_persist_batch_size` / `im_persist_batch_duration_seconds` | 批次大小和写入耗时分布 |
 | `im_commands_total{cmd}` | 命令分布 |
 | `im_duplicate_dropped_total` / `im_group_fanout_sends_total` / `im_dedup_marks_total` / `im_gnet_pool_drop_total` | 去重 / 群扇出 / 队列丢弃 |
 
@@ -478,6 +481,7 @@ curl -s localhost:8080/metrics | grep '^im_'   # im_online_connections / im_mess
 | [docs/08-architecture-diagrams.md](docs/08-architecture-diagrams.md) | Mermaid 架构图集（10 张） |
 | [docs/09-load-test-report.md](docs/09-load-test-report.md) | 完整栈压测报告 |
 | [docs/10-ci-cd-guide.md](docs/10-ci-cd-guide.md) | CI/CD 入门指南（push 到线上的全流程） |
+| [docs/11-persistence-batch-write-optimization.md](docs/11-persistence-batch-write-optimization.md) | 单机持久化批量写入优化方案与提升预估 |
 | [docs/15-kmp-client-architecture.md](docs/15-kmp-client-architecture.md) | KMP 客户端架构与里程碑 |
 | [kmp/designtoken.md](kmp/designtoken.md) | KMP 客户端设计规范（色彩、字体、间距、圆角、高度、组件令牌） |
 | [CLAUDE.md](CLAUDE.md) | AI 辅助开发指南 |

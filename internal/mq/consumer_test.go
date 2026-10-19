@@ -76,6 +76,26 @@ func (m *mockMessageStore) savedMessages() []*proto.Message {
 
 var _ repo.MessageStore = (*mockMessageStore)(nil)
 
+type batchMockMessageStore struct {
+	*mockMessageStore
+	muBatch    sync.Mutex
+	batchCalls int
+	batchSizes []int
+}
+
+func (m *batchMockMessageStore) SaveBatch(_ context.Context, messages []*proto.Message) error {
+	m.muBatch.Lock()
+	m.batchCalls++
+	m.batchSizes = append(m.batchSizes, len(messages))
+	m.muBatch.Unlock()
+	m.mu.Lock()
+	m.saved = append(m.saved, messages...)
+	m.mu.Unlock()
+	return nil
+}
+
+var _ repo.BatchMessageStore = (*batchMockMessageStore)(nil)
+
 // TestConsumerConfigDefaults 验证默认配置值。
 func TestConsumerConfigDefaults(t *testing.T) {
 	cfg := ConsumerConfig{
@@ -195,8 +215,42 @@ func TestConsumerFlushAllSavesMessages(t *testing.T) {
 	}
 }
 
-// TestConsumerFlushAllPartialFailure 验证单个错误后仍继续保存。
-func TestConsumerFlushAllPartialFailure(t *testing.T) {
+func TestConsumerFlushAllUsesBatchStore(t *testing.T) {
+	store := &batchMockMessageStore{mockMessageStore: &mockMessageStore{}}
+	consumer := NewConsumer(ConsumerConfig{
+		Brokers: []string{"localhost:19999"},
+		Topic:   "test.topic",
+		GroupID: "test-group",
+	}, store)
+	defer consumer.Close()
+
+	consumer.mu.Lock()
+	for i := 0; i < 100; i++ {
+		consumer.buffer = append(consumer.buffer, bufferedMsg{
+			msg: &proto.Message{MsgId: int64(i + 1), Cmd: proto.CmdChat},
+			km:  kafka.Message{},
+		})
+	}
+	consumer.mu.Unlock()
+
+	consumer.flushAll()
+
+	store.muBatch.Lock()
+	defer store.muBatch.Unlock()
+	if store.batchCalls != 1 {
+		t.Fatalf("batch calls=%d, want 1", store.batchCalls)
+	}
+	if len(store.batchSizes) != 1 || store.batchSizes[0] != 100 {
+		t.Fatalf("batch sizes=%v, want [100]", store.batchSizes)
+	}
+	if len(store.savedMessages()) != 100 {
+		t.Fatalf("saved=%d, want 100", len(store.savedMessages()))
+	}
+}
+
+// TestConsumerFlushAllFailureRequeuesWholeBatch 验证任一写入失败时不提交更高
+// offset，并把整批放回缓冲等待重试。
+func TestConsumerFlushAllFailureRequeuesWholeBatch(t *testing.T) {
 	mock := &mockMessageStore{
 		saveFn: func(msg *proto.Message) error {
 			if msg.MsgId == 2 {
@@ -219,18 +273,55 @@ func TestConsumerFlushAllPartialFailure(t *testing.T) {
 	)
 	consumer.mu.Unlock()
 
-	// 不应 panic —— msg 2 失败，但 1 和 3 成功。
 	consumer.flushAll()
 
 	saved := mock.savedMessages()
-	if len(saved) != 2 {
-		t.Fatalf("expected 2 saved messages (msg 2 failed), got %d", len(saved))
+	if len(saved) != 1 || saved[0].MsgId != 1 {
+		t.Fatalf("saved before failure=%v, want only msg 1", saved)
 	}
-	if saved[0].MsgId != 1 {
-		t.Errorf("expected msg 1 first, got %d", saved[0].MsgId)
+	consumer.mu.Lock()
+	defer consumer.mu.Unlock()
+	if len(consumer.buffer) != 3 {
+		t.Fatalf("requeued buffer=%d, want 3", len(consumer.buffer))
 	}
-	if saved[1].MsgId != 3 {
-		t.Errorf("expected msg 3 second, got %d", saved[1].MsgId)
+}
+
+func TestConsumerFlushAllRetryClearsRequeuedBatch(t *testing.T) {
+	attempts := 0
+	mock := &mockMessageStore{
+		saveFn: func(*proto.Message) error {
+			attempts++
+			if attempts == 1 {
+				return context.DeadlineExceeded
+			}
+			return nil
+		},
+	}
+	consumer := NewConsumer(ConsumerConfig{
+		Brokers: []string{"localhost:19999"},
+		Topic:   "test.topic",
+		GroupID: "test-group",
+	}, mock)
+
+	consumer.mu.Lock()
+	consumer.buffer = append(consumer.buffer,
+		bufferedMsg{msg: &proto.Message{MsgId: 1}, km: kafka.Message{}},
+		bufferedMsg{msg: &proto.Message{MsgId: 2}, km: kafka.Message{}},
+	)
+	consumer.mu.Unlock()
+
+	consumer.flushAll()
+	consumer.flushAll()
+
+	consumer.mu.Lock()
+	buffered := len(consumer.buffer)
+	consumer.mu.Unlock()
+	if buffered != 0 {
+		t.Fatalf("buffer after successful retry=%d, want 0", buffered)
+	}
+	saved := mock.savedMessages()
+	if len(saved) != 2 || saved[0].MsgId != 1 || saved[1].MsgId != 2 {
+		t.Fatalf("saved after retry=%v, want messages 1 and 2", saved)
 	}
 }
 
