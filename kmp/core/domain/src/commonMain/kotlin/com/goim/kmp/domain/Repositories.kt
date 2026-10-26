@@ -16,6 +16,7 @@ import com.goim.kmp.model.StickerItem
 import com.goim.kmp.model.StickerPack
 import com.goim.kmp.model.StickerRef
 import com.goim.kmp.model.MessageStatus
+import com.goim.kmp.model.MsgType
 import com.goim.kmp.model.TransportKind
 import com.goim.kmp.model.User
 import com.goim.kmp.model.UserProfile
@@ -98,7 +99,7 @@ interface MessageRepository {
     suspend fun markStatus(clientSeq: Long, status: MessageStatus, serverMsgId: Long?)
 
     /** 文件类消息先落库 `sending`（content 引用本地暂存 ID），上传完成后由 [deliverOutgoingFile] 发出。 */
-    suspend fun enqueueOutgoingFile(to: String, chatType: ChatType, meta: FileMeta, from: User): Message
+    suspend fun enqueueOutgoingFile(to: String, chatType: ChatType, type: MsgType, meta: FileMeta, from: User): Message
 
     /** 用上传后的远端元数据改写 content 并经 CmdFile 发出；链路不可用时落为 `failed` 返回。 */
     suspend fun deliverOutgoingFile(message: Message, meta: FileMeta): Message

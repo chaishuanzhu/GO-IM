@@ -60,12 +60,11 @@ sealed class MsgType(val value: Int) {
             else -> Unsupported(value)
         }
 
-        /** 上传 MIME → 协议 msg_type（docs/07 §10.2）。 */
+        /** 上传 MIME → 协议 msg_type（docs/07 §10.2）。音频文件按普通文件发送，语音只来自录音。 */
         fun fromMime(mime: String): MsgType {
             val m = mime.lowercase()
             return when {
                 m.startsWith("image/") -> Image
-                m.startsWith("audio/") -> Voice
                 m.startsWith("video/") -> Video
                 else -> File
             }

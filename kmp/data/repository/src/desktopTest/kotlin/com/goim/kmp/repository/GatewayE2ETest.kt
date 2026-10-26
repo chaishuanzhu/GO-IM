@@ -254,7 +254,7 @@ class GatewayE2ETest {
         assertEquals(done.path, bob.files.ensureLocal(recvMeta.fileId, recvMeta.name), "已下载不再重复下载")
 
         val voiceBytes = ByteArray(2048) { (it % 251).toByte() }
-        val voice = sendFile(bobUid, ChatType.SINGLE, voiceBytes, "voice.m4a", "audio/mp4", alice.user, null, LocalMediaInfo(duration = 3))
+        val voice = sendFile(bobUid, ChatType.SINGLE, voiceBytes, "voice.m4a", "audio/mp4", alice.user, null, LocalMediaInfo(duration = 3), voice = true)
         awaitSent(alice, voice.id)
         val voiceRecv = withTimeout(10_000) {
             bob.messages.observeMessages(dm, 50).first { list -> list.any { it.msgType == MsgType.Voice } }

@@ -72,8 +72,8 @@ class MessageRepositoryImpl(
         return deliver(message)
     }
 
-    override suspend fun enqueueOutgoingFile(to: String, chatType: ChatType, meta: FileMeta, from: User): Message {
-        val message = outgoing(to, chatType, MsgType.fromMime(meta.mime), meta.toContentJson(), from)
+    override suspend fun enqueueOutgoingFile(to: String, chatType: ChatType, type: MsgType, meta: FileMeta, from: User): Message {
+        val message = outgoing(to, chatType, type, meta.toContentJson(), from)
         upsert(message)
         return message
     }

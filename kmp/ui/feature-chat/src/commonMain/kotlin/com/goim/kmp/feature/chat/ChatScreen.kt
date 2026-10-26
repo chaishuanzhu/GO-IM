@@ -467,13 +467,12 @@ private fun BubbleBody(message: Message, maxBubbleWidth: Dp, bubbles: BubbleEnv)
     }
 }
 
-/** msg_type=文件 但 MIME 是图片 / 音频 / 视频时按对应类型展示（同 iOS 映射兜底）。 */
+/** msg_type=文件 但 MIME 是图片 / 视频时按对应类型展示；音频文件保持文件卡片，语音只认 msg_type=语音。 */
 private fun displayType(type: MsgType, meta: FileMeta): MsgType {
     if (type != MsgType.File) return type
     val mime = meta.mime.lowercase()
     return when {
         mime.startsWith("image/") -> MsgType.Image
-        mime.startsWith("audio/") -> MsgType.Voice
         mime.startsWith("video/") -> MsgType.Video
         else -> MsgType.File
     }

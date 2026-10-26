@@ -93,7 +93,7 @@ class MediaFlowTest {
         val files = files(this)
         val useCase = SendFileMessageUseCase(files, messages, ConversationRepositoryImpl(db))
 
-        val pending = useCase.enqueue("bob", ChatType.SINGLE, byteArrayOf(1, 2, 3, 4), "voice.m4a", "audio/mp4", me, "bob") {
+        val pending = useCase.enqueue("bob", ChatType.SINGLE, byteArrayOf(1, 2, 3, 4), "voice.m4a", "audio/mp4", me, "bob", voice = true) {
             LocalMediaInfo(duration = 3)
         }
         assertEquals(MsgType.Voice, pending.msgType)
@@ -108,6 +108,24 @@ class MediaFlowTest {
         assertEquals(MsgType.Voice, (connection.sent.single() as OutboundEnvelope.File).message.msgType)
         assertEquals("/GOIM/Users/alice/media/77.m4a", files.localPath("77"))
         assertEquals(null, files.localPath(localId), "暂存副本已删除")
+        messages.cancelPendingAcks()
+    }
+
+    @Test
+    fun pickedAudioFileSendsAsFileMessage() = runBlocking {
+        uploadResponse = {
+            HttpStatusCode.OK to """{"file_id":78,"name":"song.mp3","size":4,"mime":"audio/mpeg","width":0,"height":0}"""
+        }
+        val connection = FakeConnection()
+        val messages = MessageRepositoryImpl(db, connection, this)
+        val useCase = SendFileMessageUseCase(files(this), messages, ConversationRepositoryImpl(db))
+
+        val pending = useCase.enqueue("bob", ChatType.SINGLE, byteArrayOf(1, 2, 3, 4), "song.mp3", "audio/mpeg", me, "bob") {
+            LocalMediaInfo(duration = 200)
+        }
+        assertEquals(MsgType.File, pending.msgType)
+        useCase.upload(pending)
+        assertEquals(MsgType.File, (connection.sent.single() as OutboundEnvelope.File).message.msgType)
         messages.cancelPendingAcks()
     }
 

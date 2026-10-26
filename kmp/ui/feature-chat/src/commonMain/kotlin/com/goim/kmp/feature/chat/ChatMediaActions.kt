@@ -136,7 +136,7 @@ class ChatMediaActions internal constructor(
             val seconds = maxOf(1, (audio.durationMillis / 1000.0).roundToInt())
             val bytes = file.readBytes()
             val extension = audio.path.substringAfterLast('.', "m4a")
-            val pending = deps.sendFile.enqueue(to, chatType, bytes, "voice_${nowMillis()}.$extension", audio.mime, self, title) {
+            val pending = deps.sendFile.enqueue(to, chatType, bytes, "voice_${nowMillis()}.$extension", audio.mime, self, title, voice = true) {
                 LocalMediaInfo(duration = seconds)
             }
             uploadLater(pending)

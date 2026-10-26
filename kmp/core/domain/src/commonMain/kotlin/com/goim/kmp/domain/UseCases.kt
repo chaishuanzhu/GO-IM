@@ -7,6 +7,7 @@ import com.goim.kmp.model.FileMeta
 import com.goim.kmp.model.LocalFileId
 import com.goim.kmp.model.MessagePreview
 import com.goim.kmp.model.MessageStatus
+import com.goim.kmp.model.MsgType
 import com.goim.kmp.model.StickerRef
 import com.goim.kmp.model.Message
 import com.goim.kmp.model.TransportKind
@@ -87,11 +88,13 @@ class SendFileMessageUseCase(
         from: User,
         title: String?,
         local: LocalMediaInfo = LocalMediaInfo(),
-    ): Message = upload(enqueue(to, chatType, bytes, fileName, mime, from, title) { local })
+        voice: Boolean = false,
+    ): Message = upload(enqueue(to, chatType, bytes, fileName, mime, from, title, voice) { local })
 
     /**
      * 暂存并落库 sending 气泡（不上传）。多选图片时先按顺序全部入队再并发 [upload]，保证消息顺序。
      * [probe] 拿到暂存文件路径，可读取视频 / 语音时长等本地信息。
+     * [voice] 仅录音为 true；选择的音频文件按普通文件发送。
      */
     suspend fun enqueue(
         to: String,
@@ -101,6 +104,7 @@ class SendFileMessageUseCase(
         mime: String,
         from: User,
         title: String?,
+        voice: Boolean = false,
         probe: (stagedPath: String?) -> LocalMediaInfo = { LocalMediaInfo() },
     ): Message {
         if (bytes.isEmpty()) throw DomainError.InvalidState("文件为空")
@@ -108,7 +112,8 @@ class SendFileMessageUseCase(
         val localId = files.stage(bytes, fileName)
         val local = runCatching { probe(files.localPath(localId)) }.getOrDefault(LocalMediaInfo())
         val placeholder = FileMeta(localId, fileName, bytes.size.toLong(), mime, local.width, local.height, duration = local.duration)
-        val pending = messages.enqueueOutgoingFile(to, chatType, placeholder, from)
+        val type = if (voice) MsgType.Voice else MsgType.fromMime(mime)
+        val pending = messages.enqueueOutgoingFile(to, chatType, type, placeholder, from)
         conversations.upsertConversation(pending, title, incrementUnread = false)
         return pending
     }
@@ -135,7 +140,7 @@ class SendFileMessageUseCase(
 
     /**
      * 服务端 `DetectContentType` 常把 AAC/M4A 识别为 `video/mp4` 或 `application/octet-stream`：保留客户端音频类型，
-     * msg_type 才是语音；docx 等被识别为 zip / octet-stream 时也以客户端类型为准。
+     * 语音才能内置播放；docx 等被识别为 zip / octet-stream 时也以客户端类型为准。
      */
     private fun resolvedMime(local: String, server: String): String {
         val l = local.lowercase()
