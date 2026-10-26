@@ -111,6 +111,7 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() 
     val player = remember { createVoicePlayer(platformContext) }
     val recorder = remember { createVoiceRecorder(platformContext) }
     var preview by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    var filePreview by remember { mutableStateOf<FilePreviewRequest?>(null) }
     var dropHover by remember { mutableStateOf(false) }
     var collapseComposer by remember { mutableIntStateOf(0) }
     val focusManager = LocalFocusManager.current
@@ -131,6 +132,10 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() 
             player,
             selfName = viewModel.selfName,
             onPreview = { model, local -> preview = model to local },
+            onOpenFile = { path, meta ->
+                val kind = if (inAppFilePreview) filePreviewKind(meta) else null
+                if (kind != null) filePreview = FilePreviewRequest(path, meta, kind) else openWithSystem(path, meta.name)
+            },
             onError = viewModel::reportError,
         )
     }
@@ -239,6 +244,7 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() 
         }
     }
     preview?.let { (model, local) -> ImagePreviewDialog(model, local, onDismiss = { preview = null }) }
+    filePreview?.let { FilePreviewDialog(it, onDismiss = { filePreview = null }) }
 }
 
 @Composable
@@ -264,6 +270,7 @@ private class BubbleEnv(
     val player: VoicePlayer,
     val selfName: String,
     val onPreview: (model: String, localPath: String?) -> Unit,
+    val onOpenFile: (path: String, meta: FileMeta) -> Unit,
     val onError: (String) -> Unit,
 )
 
@@ -451,7 +458,7 @@ private fun BubbleBody(message: Message, maxBubbleWidth: Dp, bubbles: BubbleEnv)
             media != null && meta != null && type == MsgType.Voice ->
                 VoiceBubble(message, meta, media.files, bubbles.player, bubbles.onError)
             media != null && meta != null && (type == MsgType.Video || type == MsgType.File) ->
-                FileCardBubble(meta, media.files, isVideo = type == MsgType.Video, maxWidth = maxBubbleWidth, onError = bubbles.onError)
+                FileCardBubble(meta, media.files, isVideo = type == MsgType.Video, maxWidth = maxBubbleWidth, onOpen = bubbles.onOpenFile, onError = bubbles.onError)
             else -> {
                 val isText = message.msgType == MsgType.Text
                 SelectionContainer {

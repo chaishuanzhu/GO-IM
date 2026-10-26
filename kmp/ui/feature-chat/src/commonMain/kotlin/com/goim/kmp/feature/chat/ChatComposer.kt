@@ -197,8 +197,9 @@ internal fun ChatComposer(
             onAppend = onAppend,
             onError = onError,
         )
-    } else Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+    } else Surface(color = MaterialTheme.colorScheme.surface) {
     Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Row(
             Modifier.fillMaxWidth().padding(start = GoImSpacing.s3, end = GoImSpacing.s2, top = GoImSpacing.s2, bottom = if (media == null) GoImSpacing.s2 else 0.dp),
             verticalAlignment = Alignment.Bottom,

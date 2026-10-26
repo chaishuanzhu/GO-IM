@@ -27,6 +27,7 @@ turbine = "1.2.1"
 material-icons = "1.7.3"
 filekit = "0.12.0"
 exifinterface = "1.4.1"
+pdfbox = "3.0.5"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
@@ -60,6 +61,7 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 coil-network-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 coil-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil" }
 filekit-dialogs-compose = { module = "io.github.vinceglb:filekit-dialogs-compose", version.ref = "filekit" }
+pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
 androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exifinterface" }
 multiplatform-settings = { module = "com.russhwolf:multiplatform-settings", version.ref = "settings" }
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "security-crypto" }

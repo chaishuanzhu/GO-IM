@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -54,7 +55,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import coil3.compose.AsyncImage
 import com.goim.kmp.common.userMessage
 import com.goim.kmp.designsystem.GoImFormat
@@ -72,6 +75,7 @@ import com.goim.kmp.model.StickerRef
 import com.goim.kmp.platform.VoicePlayer
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlin.math.ceil
 import kotlin.math.min
 
 /** 图片气泡尺寸（同 iOS）：宽高不超过 220×260，短边不小于 120，缺尺寸时 180×180。 */
@@ -138,10 +142,12 @@ internal fun VoiceBubble(message: Message, meta: FileMeta, files: FileRepository
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(false) }
     val seconds = meta.duration ?: 1
-    val width = (80 + seconds * 5).coerceIn(90, 200).dp
+    // 时长越长气泡越宽，但不能窄于内容本身，否则文字会被挤成竖排
+    val minWidth = (80 + seconds * 5).coerceIn(90, 200).dp
     Row(
         Modifier
-            .width(width)
+            .widthIn(min = minWidth)
+            .heightIn(min = GoImDimens.bubbleMinHeight)
             .clickable(role = Role.Button, onClickLabel = "播放语音") {
                 if (playing) {
                     player.stop()
@@ -160,16 +166,24 @@ internal fun VoiceBubble(message: Message, meta: FileMeta, files: FileRepository
             }
             .padding(horizontal = GoImDimens.bubblePaddingHorizontal, vertical = GoImDimens.bubblePaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2),
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        when {
-            loading -> CircularProgressIndicator(Modifier.size(GoImSize.iconSm), strokeWidth = GoImSize.strokeThin, color = LocalContentColor.current)
-            playing -> Icon(GoImIcons.Stop, contentDescription = "停止", modifier = Modifier.size(GoImSize.iconSm))
-            else -> Icon(Icons.Filled.PlayArrow, contentDescription = "播放", modifier = Modifier.size(GoImSize.iconSm))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2)) {
+            when {
+                loading -> CircularProgressIndicator(Modifier.size(GoImSize.iconSm), strokeWidth = GoImSize.strokeThin, color = LocalContentColor.current)
+                playing -> Icon(GoImIcons.Stop, contentDescription = "停止", modifier = Modifier.size(GoImSize.iconSm))
+                else -> Icon(Icons.Filled.PlayArrow, contentDescription = "播放", modifier = Modifier.size(GoImSize.iconSm))
+            }
+            VoiceWaveform(active = playing, level = if (playing) 1f else 0.6f)
         }
-        VoiceWaveform(active = playing, level = if (playing) 1f else 0.6f)
-        Spacer(Modifier.weight(1f))
-        Text("语音 $seconds\"", style = MaterialTheme.typography.bodyMedium)
+        val remaining = if (playing) ceil(seconds * (1f - playback.progress)).toInt().coerceIn(1, seconds) else seconds
+        Text(
+            "语音 $remaining\"",
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.padding(start = GoImSpacing.s2),
+        )
     }
 }
 
@@ -195,6 +209,7 @@ internal fun FileCardBubble(
     files: FileRepository,
     isVideo: Boolean,
     maxWidth: Dp,
+    onOpen: (path: String, meta: FileMeta) -> Unit,
     onError: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -220,7 +235,7 @@ internal fun FileCardBubble(
                             is FileDownloadEvent.Progress -> download = event.fraction
                             is FileDownloadEvent.Completed -> {
                                 download = null
-                                openWithSystem(event.path, meta.name)
+                                onOpen(event.path, meta)
                             }
                             is FileDownloadEvent.Failed -> {
                                 download = null
@@ -271,7 +286,7 @@ internal fun StickerView(ref: StickerRef, stickers: StickerRepository, size: Dp,
 internal fun ImagePreviewDialog(model: String, localPath: String?, onDismiss: () -> Unit) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onDismiss, properties = fullScreenDialogProperties()) {
         Box(Modifier.fillMaxSize().background(GoImMediaColors.background)) {
             AsyncImage(
                 model = model,
@@ -312,7 +327,7 @@ internal fun ImagePreviewDialog(model: String, localPath: String?, onDismiss: ()
                     }
                     .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
             )
-            Row(Modifier.align(Alignment.TopEnd).padding(GoImSpacing.s3)) {
+            Row(Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.safeDrawing).padding(GoImSpacing.s3)) {
                 if (localPath != null) {
                     IconButton(onClick = { openWithSystem(localPath, "image") }) {
                         Icon(GoImIcons.Download, contentDescription = "用系统打开", tint = GoImMediaColors.content)

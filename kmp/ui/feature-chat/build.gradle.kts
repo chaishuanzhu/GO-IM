@@ -17,6 +17,16 @@ kotlin {
             implementation(libs.coil.gif)
             implementation(libs.androidx.activity.compose)
         }
+        val desktopMain by getting {
+            dependencies {
+                implementation(libs.pdfbox)
+            }
+        }
+        val desktopTest by getting {
+            dependencies {
+                implementation(compose.desktop.currentOs)
+            }
+        }
         commonTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)
         }

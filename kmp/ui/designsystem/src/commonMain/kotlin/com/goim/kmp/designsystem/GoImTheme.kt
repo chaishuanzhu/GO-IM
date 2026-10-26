@@ -35,6 +35,9 @@ object GoImDimens {
     val dialogWidth = 480.dp
     val dialogMaxHeight = 640.dp
 
+    /** 应用内文件预览（宽屏弹窗、PDF 页面）的最大宽度。 */
+    val filePreviewMaxWidth = 960.dp
+
     /** 单字段表单弹窗（加入群聊）的高度。 */
     val compactDialogHeight = 400.dp
 
@@ -53,6 +56,9 @@ object GoImDimens {
     val messageAvatarSize = GoImSize.avatarMd
     val bubblePaddingHorizontal = GoImSpacing.s4
     val bubblePaddingVertical = GoImSpacing.s2
+
+    /** 单行文字气泡的高度（bodyLarge 行高 24 + 上下内边距），语音等单行气泡与之对齐。 */
+    val bubbleMinHeight = 40.dp
 
     /** 消息气泡：radius-lg，靠近发送方一侧的尾角收窄为 radius-xs。 */
     val outgoingBubbleShape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)

@@ -146,18 +146,27 @@ private class AndroidVoicePlayer : VoicePlayer {
             MediaPlayer().apply {
                 setDataSource(path)
                 prepare()
-                setOnCompletionListener { stop() }
+                setOnCompletionListener { if (player === it) stop() }
+                setOnErrorListener { mp, _, _ ->
+                    if (player === mp) stop()
+                    true
+                }
                 start()
             }
         }.getOrNull() ?: return
         player = p
         _state.value = PlaybackState(key, 0f)
         ticker = scope.launch {
+            delay(100)
             while (isActive) {
                 val mp = player ?: break
+                if (!runCatching { mp.isPlaying }.getOrDefault(false)) {
+                    stop()
+                    break
+                }
                 val total = runCatching { mp.duration }.getOrDefault(0)
                 val pos = runCatching { mp.currentPosition }.getOrDefault(0)
-                if (total > 0) _state.value = PlaybackState(key, pos.toFloat() / total)
+                if (total > 0) _state.value = PlaybackState(key, (pos.toFloat() / total).coerceIn(0f, 1f))
                 delay(100)
             }
         }

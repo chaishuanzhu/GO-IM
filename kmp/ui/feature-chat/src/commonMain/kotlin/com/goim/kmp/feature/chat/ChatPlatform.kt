@@ -2,6 +2,7 @@ package com.goim.kmp.feature.chat
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.DialogProperties
 import com.goim.kmp.common.PlatformContext
 import io.github.vinceglb.filekit.PlatformFile
 
@@ -18,6 +19,18 @@ internal expect fun rememberCameraCapture(onResult: (PlatformFile?) -> Unit): ((
 
 /** 用系统能力打开附件：Android 外部应用、iOS Quick Look、桌面默认程序。 */
 internal expect fun openWithSystem(path: String, displayName: String)
+
+/** 全屏弹窗：iOS 铺满安全区之外的区域（内容自行处理 insets），其他平台只取消默认宽度。 */
+internal expect fun fullScreenDialogProperties(): DialogProperties
+
+/** 文本 / PDF 是否在应用内预览；iOS 统一走 Quick Look，为 false。 */
+internal expect val inAppFilePreview: Boolean
+
+/** 读取文件开头至多 [maxBytes] 字节并解码为文本；读取失败返回 null。 */
+internal expect suspend fun readTextPreview(path: String, maxBytes: Int): TextPreviewContent?
+
+/** 打开 PDF；不支持或文件损坏时返回 null。 */
+internal expect suspend fun openPdf(path: String): PdfDocumentHandle?
 
 /** 桌面：接收从系统拖入的文件（[onHover] 用于高亮投放区）；其他平台返回空 Modifier。 */
 @Composable

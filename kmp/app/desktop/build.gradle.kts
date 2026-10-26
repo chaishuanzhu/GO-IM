@@ -35,7 +35,7 @@ compose.desktop {
             // jpackage 要求 MAJOR.MINOR.PATCH 且 MAJOR > 0
             packageVersion = providers.gradleProperty("goim.versionName").getOrElse("1.0.0")
             // 来自 ./gradlew suggestRuntimeModules
-            modules("java.instrument", "java.management", "java.prefs", "jdk.security.auth", "jdk.unsupported")
+            modules("java.instrument", "java.logging", "java.management", "java.prefs", "jdk.security.auth", "jdk.unsupported")
             macOS {
                 bundleID = "com.goim.kmp.desktop"
             }

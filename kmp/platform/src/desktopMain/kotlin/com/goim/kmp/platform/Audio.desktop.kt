@@ -129,6 +129,7 @@ internal class DesktopVoicePlayer : VoicePlayer {
     private var clip: Clip? = null
     private var ticker: Job? = null
 
+    @Synchronized
     override fun play(key: String, path: String) {
         val wasPlaying = _state.value.key == key
         stop()
@@ -139,7 +140,8 @@ internal class DesktopVoicePlayer : VoicePlayer {
                 AudioSystem.getClip().apply {
                     open(stream)
                     addLineListener { event ->
-                        if (event.type == LineEvent.Type.STOP && clip === this && framePosition >= frameLength) {
+                        // 自然播完时 framePosition 常比 frameLength 少几帧，不能用相等判断；手动 stop 时 clip 已置空
+                        if (event.type == LineEvent.Type.STOP) {
                             // 不在 JavaSound 回调线程里关闭 Clip
                             scope.launch { if (clip === this@apply) this@DesktopVoicePlayer.stop() }
                         }
@@ -154,15 +156,24 @@ internal class DesktopVoicePlayer : VoicePlayer {
         }
         clip = started
         _state.value = PlaybackState(key, 0f)
+        val deadline = System.currentTimeMillis() + started.microsecondLength / 1000 + 1000
         ticker = scope.launch {
+            var sawRunning = false
             while (isActive) {
                 val c = clip ?: break
-                if (c.frameLength > 0) _state.value = PlaybackState(key, c.framePosition.toFloat() / c.frameLength)
+                if (c.isRunning) sawRunning = true
+                // STOP 事件偶尔收不到：已开始后不再运行，或超过时长 1 秒仍未结束，都视为播完
+                if ((sawRunning && !c.isRunning) || System.currentTimeMillis() > deadline) {
+                    if (clip === c) stop()
+                    break
+                }
+                if (c.frameLength > 0) _state.value = PlaybackState(key, (c.framePosition.toFloat() / c.frameLength).coerceIn(0f, 1f))
                 delay(100)
             }
         }
     }
 
+    @Synchronized
     override fun stop() {
         ticker?.cancel()
         ticker = null
