@@ -137,6 +137,51 @@ func TestPersistBatchRetriesTransientFailure(t *testing.T) {
 	}
 }
 
+type fakeBatchPublisher struct {
+	mu        sync.Mutex
+	published int
+	failures  int
+}
+
+func (p *fakeBatchPublisher) PublishBatch(_ context.Context, messages []*proto.Message) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.failures > 0 {
+		p.failures--
+		return errors.New("temporary kafka failure")
+	}
+	p.published += len(messages)
+	return nil
+}
+
+func TestPersistWithKafkaSkipsDirectMySQL(t *testing.T) {
+	store := newBatchTestStore()
+	pub := &fakeBatchPublisher{failures: 1}
+	r := newPersistTestRouter(store, func(cfg *RouterConfig) {
+		cfg.PersistMaxRetries = 1
+	})
+	r.kafka = pub
+
+	enqueuePersistMessages(r, 3)
+	r.Stop()
+
+	if pub.published != 3 {
+		t.Fatalf("published=%d, want 3", pub.published)
+	}
+	if _, saved, attempts := store.snapshot(); saved != 0 || attempts != 0 {
+		t.Fatalf("direct MySQL saved=%d attempts=%d, want 0 when Kafka is enabled", saved, attempts)
+	}
+}
+
+func TestSetKafkaProducerNilDisablesKafka(t *testing.T) {
+	r := newPersistTestRouter(newBatchTestStore(), nil)
+	defer r.Stop()
+	r.SetKafkaProducer(nil)
+	if r.kafka != nil {
+		t.Fatal("nil producer must leave kafka disabled")
+	}
+}
+
 func TestPersistStopCancelsDrainAtShutdownTimeout(t *testing.T) {
 	store := &blockingBatchTestStore{
 		testMsgStore: &testMsgStore{},

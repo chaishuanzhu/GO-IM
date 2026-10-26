@@ -29,7 +29,7 @@ type Router struct {
 	rateLimit   *RateLimiter
 	rateLimitMu sync.Mutex        // 在 SetRateLimit 重配置期间保护 rateLimit 字段
 	msgStore    repo.MessageStore // MySQL 禁用时为 nil
-	kafka       *mq.Producer      // Kafka 禁用时为 nil
+	kafka       batchPublisher    // Kafka 禁用时为 nil
 	logicClient *LogicClient      // gRPC Logic 服务禁用时为 nil
 
 	// 多网关水平扩展(nil/空 = 单节点模式)。
@@ -83,9 +83,19 @@ type persistTask struct {
 }
 
 // SetKafkaProducer 注入用于异步消息持久化的 Kafka 生产者。
-// 为 nil(默认值)时不使用 Kafka。
+// 为 nil(默认值)时不使用 Kafka。非 nil 时消息只发 Kafka,由 Logic 消费落库,
+// Gateway 不再直写 MySQL(msgStore 仍用于历史、搜索、撤回等读写)。
 func (r *Router) SetKafkaProducer(p *mq.Producer) {
+	if p == nil {
+		r.kafka = nil
+		return
+	}
 	r.kafka = p
+}
+
+// batchPublisher 是持久化路径用到的 Kafka 生产者能力,便于测试替换。
+type batchPublisher interface {
+	PublishBatch(ctx context.Context, messages []*proto.Message) error
 }
 
 // SetLogicClient 注入指向 Logic 服务的 gRPC 客户端(历史记录、用户查询)。
@@ -348,7 +358,8 @@ func (r *Router) persistBatchWithRetry(batch []persistTask) {
 	}
 }
 
-// doPersistBatch 将一批消息写入所有已配置的持久化后端。
+// doPersistBatch 将一批消息写入持久化后端:配置了 Kafka 时只发 Kafka,
+// 否则直写 MySQL。两端同时写会与 Logic 对同一 msg_id 并发 INSERT 而死锁。
 func (r *Router) doPersistBatch(ctx context.Context, batch []persistTask) error {
 	messages := make([]*proto.Message, 0, len(batch))
 	for _, task := range batch {
@@ -364,6 +375,7 @@ func (r *Router) doPersistBatch(ctx context.Context, batch []persistTask) error 
 		if err := r.kafka.PublishBatch(ctx, messages); err != nil {
 			return fmt.Errorf("publish Kafka batch: %w", err)
 		}
+		return nil
 	}
 	if r.msgStore != nil {
 		if batchStore, ok := r.msgStore.(repo.BatchMessageStore); ok {
