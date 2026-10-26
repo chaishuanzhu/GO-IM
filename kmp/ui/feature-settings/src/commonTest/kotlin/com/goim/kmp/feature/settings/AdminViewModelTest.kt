@@ -3,6 +3,7 @@ package com.goim.kmp.feature.settings
 import com.goim.kmp.common.DomainError
 import com.goim.kmp.model.AdminChatPage
 import com.goim.kmp.model.AdminConversation
+import com.goim.kmp.model.AdminCreatedUser
 import com.goim.kmp.model.AdminMessage
 import com.goim.kmp.model.AdminSender
 import com.goim.kmp.model.AdminStats
@@ -43,9 +44,9 @@ class AdminViewModelTest {
         val userOffsets = mutableListOf<Int>()
         val messageCursors = mutableListOf<Long?>()
         val deletedUsers = mutableListOf<String>()
-        val deletedMessages = mutableListOf<Long>()
         val disabled = mutableListOf<Pair<String, Boolean>>()
         var failDisable = false
+        val created = mutableListOf<String>()
     }
 
     private fun vm(
@@ -61,6 +62,16 @@ class AdminViewModelTest {
                 calls.userOffsets += offset
                 AdminUserPage(allUsers.drop(offset).take(limit), allUsers.size)
             },
+            createUser = { email ->
+                when (email) {
+                    "taken@x.com" -> throw DomainError.Server(409, "email already registered")
+                    else -> {
+                        calls.created += email
+                        val password = if (email.startsWith("down")) "Pw23" else null
+                        AdminCreatedUser(AdminUser("new", "n", email, false, false, 0), password)
+                    }
+                }
+            },
             deleteUser = { calls.deletedUsers += it },
             setUserDisabled = { uid, disabled ->
                 if (calls.failDisable) throw DomainError.Server(500, "internal error")
@@ -70,7 +81,6 @@ class AdminViewModelTest {
                 calls.messageCursors += before
                 allMessages.filter { before == null || it.timestampMs < before }.take(limit)
             },
-            deleteMessage = { calls.deletedMessages += it },
         ),
     )
 
@@ -110,26 +120,47 @@ class AdminViewModelTest {
     }
 
     @Test
-    fun deleteRemovesRowsAndAdjustsCounts() = runTest(dispatcher) {
+    fun deleteUserRemovesRowAndAdjustsCount() = runTest(dispatcher) {
         val calls = Calls()
         val vm = vm(calls)
         vm.ensureUsers()
-        vm.ensureMessages()
 
         vm.deleteUser(user(1))
         assertTrue(calls.deletedUsers.isEmpty())
 
         vm.deleteUser(user(2))
-        vm.deleteMessage(message(200))
         val s = vm.state.value
         assertEquals(listOf("u2"), calls.deletedUsers)
-        assertEquals(listOf(200L), calls.deletedMessages)
         assertTrue(s.users.items.none { it.uid == "u2" })
         assertEquals(59, s.usersTotal)
         assertEquals(2, s.stats?.totalUsers)
-        assertEquals(119, s.stats?.totalMessages)
-        assertTrue(s.messages.items.none { it.msgId == 200L })
         assertNotNull(s.notice)
+    }
+
+    @Test
+    fun createUserPrependsRowAndHandlesMailFailure() = runTest(dispatcher) {
+        val calls = Calls()
+        val vm = vm(calls)
+        vm.ensureUsers()
+
+        vm.createUser("ok@x.com")
+        var s = vm.state.value
+        assertEquals("new", s.users.items.first().uid)
+        assertEquals(61, s.usersTotal)
+        assertEquals(4, s.stats?.totalUsers)
+        assertNull(s.unsentPassword)
+        assertEquals("已添加 ok@x.com，初始密码已发送到该邮箱", s.notice)
+        assertFalse(s.creatingUser)
+
+        vm.createUser("down@x.com")
+        s = vm.state.value
+        assertEquals("Pw23", s.unsentPassword?.initialPassword)
+        vm.dismissUnsentPassword()
+        assertNull(vm.state.value.unsentPassword)
+
+        vm.createUser("taken@x.com")
+        assertEquals("添加失败：该邮箱已被注册", vm.state.value.notice)
+        assertEquals(listOf("ok@x.com", "down@x.com"), calls.created)
     }
 
     @Test
@@ -230,10 +261,10 @@ class AdminViewModelTest {
                 selfUid = "u1",
                 stats = { stats },
                 users = { _, _ -> throw DomainError.Server(503, "user store not available") },
+                createUser = { error("unused") },
                 deleteUser = {},
                 setUserDisabled = { _, _ -> },
                 messages = { _, _ -> emptyList() },
-                deleteMessage = {},
             ),
         )
         vm.ensureUsers()

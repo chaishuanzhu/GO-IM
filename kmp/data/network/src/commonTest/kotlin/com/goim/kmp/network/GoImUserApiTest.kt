@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GoImUserApiTest {
@@ -166,9 +167,23 @@ class GoImUserApiTest {
                     HttpStatusCode.OK,
                     jsonHeaders,
                 )
+                "/admin/users/create" -> respond(
+                    if ("email=ok%40x.com" in req.form()) {
+                        """{"status":"ok","mailed":true,"user":{"uid":"100009","nickname":"ok","email":"ok@x.com","role":"user"}}"""
+                    } else {
+                        """{"status":"ok","mailed":false,"initial_password":"Pw23","user":{"uid":"100010","email":"down@x.com","role":"user"}}"""
+                    },
+                    HttpStatusCode.OK,
+                    jsonHeaders,
+                )
                 else -> respond("""{"status":"ok"}""", HttpStatusCode.OK, jsonHeaders)
             }
         }
+
+        val created = api.adminCreateUser("ok@x.com")
+        assertEquals("100009", created.user.uid)
+        assertNull(created.initialPassword)
+        assertEquals("Pw23", api.adminCreateUser("down@x.com").initialPassword)
 
         val stats = api.adminStats()
         assertEquals(false, stats.healthy)

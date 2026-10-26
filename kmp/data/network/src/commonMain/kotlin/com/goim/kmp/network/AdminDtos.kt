@@ -51,6 +51,13 @@ internal data class AdminUserDto(
 }
 
 @Serializable
+internal data class AdminCreateUserDto(
+    val user: AdminUserDto,
+    val mailed: Boolean = true,
+    @SerialName("initial_password") val initialPassword: String? = null,
+)
+
+@Serializable
 internal data class AdminUsersDto(
     val users: List<AdminUserDto>? = null,
     val total: Int = 0,

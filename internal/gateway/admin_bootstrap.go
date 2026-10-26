@@ -44,25 +44,8 @@ func BootstrapAdmin(ctx context.Context, users repo.UserStore, mailer Mailer, ra
 		return nil
 	}
 
-	password, err := randomPassword(bootstrapPasswordLen)
+	u, password, err := createWithRandomPassword(ctx, users, email, "admin")
 	if err != nil {
-		return fmt.Errorf("generate password: %w", err)
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("hash password: %w", err)
-	}
-	now := time.Now().UnixMilli()
-	u := &repo.User{
-		Nickname:           defaultNickname(email),
-		Email:              email,
-		PasswordHash:       string(hash),
-		Role:               "admin",
-		MustChangePassword: true,
-		CreatedAt:          now,
-		UpdatedAt:          now,
-	}
-	if err := users.CreateWithAutoUID(ctx, u); err != nil {
 		if errors.Is(err, repo.ErrEmailTaken) {
 			return nil
 		}
@@ -71,10 +54,7 @@ func BootstrapAdmin(ctx context.Context, users repo.UserStore, mailer Mailer, ra
 	log.Printf("[admin] created admin account uid=%s email=%s", u.UID, maskEmail(email))
 
 	if mailer != nil {
-		subject, text, body := adminAccountMail(u.UID, email, password)
-		sendCtx, cancel := context.WithTimeout(ctx, mailSendTimeout)
-		err = mailer.Send(sendCtx, email, subject, text, body)
-		cancel()
+		err := sendInitialPassword(ctx, mailer, u, password)
 		if err == nil {
 			log.Printf("[admin] initial password sent to %s", maskEmail(email))
 			return nil
@@ -84,6 +64,40 @@ func BootstrapAdmin(ctx context.Context, users repo.UserStore, mailer Mailer, ra
 	log.Printf("[admin] WARNING: initial password for %s (uid=%s) could not be emailed: %s — log in and change it now",
 		email, u.UID, password)
 	return nil
+}
+
+// createWithRandomPassword 以随机初始密码创建账号（跳过邮箱验证码，首次登录须改密码），返回明文密码供发信。
+// 邮箱已占用返回 repo.ErrEmailTaken。
+func createWithRandomPassword(ctx context.Context, users repo.UserStore, email, role string) (*repo.User, string, error) {
+	password, err := randomPassword(bootstrapPasswordLen)
+	if err != nil {
+		return nil, "", fmt.Errorf("generate password: %w", err)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, "", fmt.Errorf("hash password: %w", err)
+	}
+	now := time.Now().UnixMilli()
+	u := &repo.User{
+		Nickname:           defaultNickname(email),
+		Email:              email,
+		PasswordHash:       string(hash),
+		Role:               role,
+		MustChangePassword: true,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if err := users.CreateWithAutoUID(ctx, u); err != nil {
+		return nil, "", err
+	}
+	return u, password, nil
+}
+
+func sendInitialPassword(ctx context.Context, mailer Mailer, u *repo.User, password string) error {
+	subject, text, body := initialPasswordMail(u.UID, u.Email, password, u.Role == "admin")
+	sendCtx, cancel := context.WithTimeout(ctx, mailSendTimeout)
+	defer cancel()
+	return mailer.Send(sendCtx, u.Email, subject, text, body)
 }
 
 func randomPassword(n int) (string, error) {
@@ -99,15 +113,19 @@ func randomPassword(n int) (string, error) {
 	return string(out), nil
 }
 
-func adminAccountMail(uid, email, password string) (subject, text, body string) {
-	subject = "GO-IM 管理员账号已创建"
-	text = "GO-IM 已为你创建管理员账号。\n\n" +
+func initialPasswordMail(uid, email, password string, admin bool) (subject, text, body string) {
+	kind := "账号"
+	if admin {
+		kind = "管理员账号"
+	}
+	subject = "GO-IM " + kind + "已创建"
+	text = "GO-IM 已为你创建" + kind + "。\n\n" +
 		"登录账号：" + email + "（或用户 ID " + uid + "）\n" +
 		"初始密码：" + password + "\n\n" +
 		"首次登录后需要先设置新密码。请妥善保管本邮件，改密后可删除。\n"
 	body = `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1f2329">` +
 		`<h2 style="margin:0 0 16px;font-size:18px">GO-IM</h2>` +
-		`<p style="margin:0 0 12px">已为你创建管理员账号。</p>` +
+		`<p style="margin:0 0 12px">已为你创建` + kind + `。</p>` +
 		`<p style="margin:0 0 4px">登录账号：` + html.EscapeString(email) + `（或用户 ID ` + html.EscapeString(uid) + `）</p>` +
 		`<p style="margin:0 0 4px">初始密码：</p>` +
 		`<p style="margin:0 0 16px;font-size:22px;font-weight:600;font-family:Menlo,Consolas,monospace;letter-spacing:2px">` + html.EscapeString(password) + `</p>` +

@@ -566,6 +566,7 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/admin/stats", app.Server.HandleAdminStats)
 	mux.HandleFunc("/admin/users", app.Server.HandleAdminUsers)
 	mux.HandleFunc("/admin/users/delete", app.Server.HandleAdminUserDelete)
+	mux.HandleFunc("/admin/users/create", app.Server.HandleAdminUserCreate)
 	mux.HandleFunc("/admin/users/disable", app.Server.HandleAdminUserDisable)
 	mux.HandleFunc("/admin/messages", app.Server.HandleAdminMessages)
 	mux.HandleFunc("/admin/messages/delete", app.Server.HandleAdminMessageDelete)

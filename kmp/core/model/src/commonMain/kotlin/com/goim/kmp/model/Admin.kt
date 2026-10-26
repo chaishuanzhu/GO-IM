@@ -48,6 +48,9 @@ data class AdminUser(
 
 data class AdminUserPage(val users: List<AdminUser>, val total: Int)
 
+/** `POST /admin/users/create` 的结果；初始密码邮件发送失败时 [initialPassword] 非空，需管理员转交。 */
+data class AdminCreatedUser(val user: AdminUser, val initialPassword: String?)
+
 /** 全站消息浏览的一条；[recalled] 时服务端已把内容替换掉。 */
 data class AdminMessage(
     val msgId: Long,

@@ -11,14 +11,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -33,6 +34,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,10 +46,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.goim.kmp.designsystem.ConfirmDialog
 import com.goim.kmp.designsystem.EmptyState
 import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.GoImIcons
@@ -55,7 +60,9 @@ import com.goim.kmp.designsystem.GoImSize
 import com.goim.kmp.designsystem.GoImSpacing
 import com.goim.kmp.designsystem.SettingsRow
 import com.goim.kmp.designsystem.SettingsSection
+import com.goim.kmp.designsystem.TextInputDialog
 import com.goim.kmp.designsystem.UserAvatar
+import com.goim.kmp.model.AdminCreatedUser
 import com.goim.kmp.model.AdminMessage
 import com.goim.kmp.model.AdminStats
 import com.goim.kmp.model.AdminUser
@@ -63,7 +70,7 @@ import com.goim.kmp.model.ChatType
 
 private enum class AdminTab(val title: String) { OVERVIEW("概览"), USERS("用户"), MESSAGES("消息") }
 
-/** 管理后台：系统概览、用户管理（点用户进入详情）、全站消息浏览（点消息跳到所在会话；仅管理员可进入，权限由网关校验）。 */
+/** 管理后台：系统概览、用户管理（添加用户；点用户进入详情）、全站消息浏览（点消息跳到所在会话；仅管理员可进入，权限由网关校验）。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminScreen(
@@ -74,7 +81,7 @@ fun AdminScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(AdminTab.OVERVIEW) }
-    var deletingMessage by remember { mutableStateOf<AdminMessage?>(null) }
+    var addingUser by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(state.notice) {
@@ -99,6 +106,11 @@ fun AdminScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
                 },
                 actions = {
+                    if (tab == AdminTab.USERS) {
+                        IconButton(onClick = { addingUser = true }, enabled = !state.creatingUser) {
+                            Icon(GoImIcons.PersonAdd, contentDescription = "添加用户")
+                        }
+                    }
                     IconButton(onClick = {
                         when (tab) {
                             AdminTab.OVERVIEW -> viewModel.refreshStats()
@@ -134,26 +146,52 @@ fun AdminScreen(
                     key = { it.msgId },
                     onLoadMore = viewModel::loadMoreMessages,
                 ) { message ->
-                    MessageRow(message, onOpen = { onOpenMessage(message) }, onDelete = { deletingMessage = message })
+                    MessageRow(message, onOpen = { onOpenMessage(message) })
                 }
             }
         }
     }
 
-    deletingMessage?.let { message ->
-        ConfirmDialog(
-            title = "删除消息？",
-            text = "将从服务器删除这条消息，已收到的客户端本地记录不受影响。",
-            confirmLabel = "删除",
-            destructive = true,
-            icon = Icons.Filled.Delete,
+    if (addingUser) {
+        TextInputDialog(
+            title = "添加用户",
+            message = "将随机生成初始密码并发送到该邮箱，用户首次登录须修改密码。",
+            placeholder = "邮箱",
+            confirmLabel = "添加",
+            keyboardType = KeyboardType.Email,
+            validate = { if (EMAIL_PATTERN.matches(it)) null else "邮箱格式不正确" },
             onConfirm = {
-                viewModel.deleteMessage(message)
-                deletingMessage = null
+                viewModel.createUser(it)
+                addingUser = false
             },
-            onDismiss = { deletingMessage = null },
+            onDismiss = { addingUser = false },
         )
     }
+    state.unsentPassword?.let { UnsentPasswordDialog(it, onDismiss = viewModel::dismissUnsentPassword) }
+}
+
+private val EMAIL_PATTERN = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
+
+/** 账号已创建但初始密码邮件发送失败：只展示这一次，由管理员转交。 */
+@Composable
+private fun UnsentPasswordDialog(created: AdminCreatedUser, onDismiss: () -> Unit) {
+    val password = created.initialPassword.orEmpty()
+    val clipboard = LocalClipboardManager.current
+    AlertDialog(
+        onDismissRequest = {},
+        icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
+        title = { Text("邮件未发出") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(GoImSpacing.s3)) {
+                Text("已添加 ${created.user.email}（ID ${created.user.uid}），但初始密码邮件发送失败。请把下面的密码转交给该用户，关闭后无法再次查看。")
+                SelectionContainer {
+                    Text(password, style = MaterialTheme.typography.titleLarge, fontFamily = FontFamily.Monospace)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
+        dismissButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(password)) }) { Text("复制密码") } },
+    )
 }
 
 @Composable
@@ -259,7 +297,7 @@ private fun UserRow(user: AdminUser, isSelf: Boolean, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun MessageRow(message: AdminMessage, onOpen: () -> Unit, onDelete: () -> Unit) {
+private fun MessageRow(message: AdminMessage, onOpen: () -> Unit) {
     val target = if (message.chatType == ChatType.GROUP) "群 ${message.toUid}" else message.toUid
     ListItem(
         modifier = Modifier.clickable(role = Role.Button, onClickLabel = "在会话中查看", onClick = onOpen),
@@ -273,11 +311,7 @@ private fun MessageRow(message: AdminMessage, onOpen: () -> Unit, onDelete: () -
             )
         },
         supportingContent = { Text("ID ${message.msgId}", style = MaterialTheme.typography.labelSmall) },
-        trailingContent = {
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "删除消息", tint = MaterialTheme.colorScheme.error)
-            }
-        },
+        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
     )
 }
 

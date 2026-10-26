@@ -3,6 +3,7 @@ package com.goim.kmp.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.goim.kmp.common.userMessage
+import com.goim.kmp.model.AdminCreatedUser
 import com.goim.kmp.model.AdminMessage
 import com.goim.kmp.model.AdminStats
 import com.goim.kmp.model.AdminUser
@@ -19,11 +20,11 @@ class AdminDeps(
     val selfUid: String,
     val stats: suspend () -> AdminStats,
     val users: suspend (offset: Int, limit: Int) -> AdminUserPage,
+    val createUser: suspend (email: String) -> AdminCreatedUser,
     val deleteUser: suspend (uid: String) -> Unit,
     val setUserDisabled: suspend (uid: String, disabled: Boolean) -> Unit,
     /** [before] 为 null 时从最新一条开始，按时间倒序。 */
     val messages: suspend (before: Long?, limit: Int) -> List<AdminMessage>,
-    val deleteMessage: suspend (msgId: Long) -> Unit,
 )
 
 /** 分页列表的通用状态；[error] 只在首屏加载失败时用于空状态，翻页失败走 notice。 */
@@ -42,6 +43,9 @@ data class AdminUiState(
     val users: AdminPage<AdminUser> = AdminPage(),
     val usersTotal: Int = 0,
     val messages: AdminPage<AdminMessage> = AdminPage(),
+    val creatingUser: Boolean = false,
+    /** 刚添加但初始密码邮件没发出去的用户及其密码，弹窗展示给管理员转交。 */
+    val unsentPassword: AdminCreatedUser? = null,
     /** 正在提交禁用 / 启用的用户 UID。 */
     val updatingUser: String? = null,
     val notice: String? = null,
@@ -137,6 +141,31 @@ class AdminViewModel(private val deps: AdminDeps) : ViewModel() {
         }
     }
 
+    fun createUser(email: String) {
+        if (_state.value.creatingUser) return
+        _state.update { it.copy(creatingUser = true) }
+        viewModelScope.launch {
+            val result = attempt { deps.createUser(email) }
+            _state.update { s ->
+                result.fold(
+                    onSuccess = { created ->
+                        s.copy(
+                            users = s.users.copy(items = listOf(created.user) + s.users.items.filterNot { it.uid == created.user.uid }),
+                            usersTotal = s.usersTotal + 1,
+                            stats = s.stats?.let { it.copy(totalUsers = it.totalUsers + 1) },
+                            creatingUser = false,
+                            unsentPassword = created.takeIf { it.initialPassword != null },
+                            notice = if (created.initialPassword == null) "已添加 ${created.user.email}，初始密码已发送到该邮箱" else null,
+                        )
+                    },
+                    onFailure = { e -> s.copy(creatingUser = false, notice = "添加失败：${e.userMessage()}") },
+                )
+            }
+        }
+    }
+
+    fun dismissUnsentPassword() = _state.update { it.copy(unsentPassword = null) }
+
     fun deleteUser(user: AdminUser) {
         if (user.uid == deps.selfUid) return
         viewModelScope.launch {
@@ -176,22 +205,6 @@ class AdminViewModel(private val deps: AdminDeps) : ViewModel() {
         }
     }
 
-    fun deleteMessage(message: AdminMessage) {
-        viewModelScope.launch {
-            attempt { deps.deleteMessage(message.msgId) }.fold(
-                onSuccess = {
-                    _state.update { s ->
-                        s.copy(
-                            messages = s.messages.copy(items = s.messages.items.filterNot { it.msgId == message.msgId }),
-                            stats = s.stats?.let { it.copy(totalMessages = (it.totalMessages - 1).coerceAtLeast(0)) },
-                            notice = "消息已删除",
-                        )
-                    }
-                },
-                onFailure = { e -> _state.update { it.copy(notice = "删除失败：${e.userMessage()}") } },
-            )
-        }
-    }
 
     private inline fun <T> AdminUiState.failed(
         page: AdminPage<T>,

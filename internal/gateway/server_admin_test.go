@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/im/internal/pkg/jwt"
 	"github.com/im/internal/pkg/snowflake"
 	"github.com/im/internal/repo"
+	"golang.org/x/crypto/bcrypt"
 	pb "google.golang.org/protobuf/proto"
 )
 
@@ -152,6 +154,74 @@ func TestAdminConversationMessages(t *testing.T) {
 	rec := e.do(t, srv.HandleAdminConversationMessages, http.MethodGet, adminQuery(t, mgr, "admin", url.Values{"target_uid": {"100001"}}))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("missing peer: %d", rec.Code)
+	}
+}
+
+func TestAdminUserCreate(t *testing.T) {
+	srv, users, mgr := newAdminServer(t, &testMsgStore{})
+	ctx := context.Background()
+	e := &accountEnv{}
+	create := func(role, email string) *httptest.ResponseRecorder {
+		return e.do(t, srv.HandleAdminUserCreate, http.MethodPost, adminQuery(t, mgr, role, url.Values{"email": {email}}))
+	}
+
+	if got := create("admin", "bob@example.com").Code; got != http.StatusServiceUnavailable {
+		t.Fatalf("without mailer: %d", got)
+	}
+	mail := &captureMailer{}
+	srv.SetAccountServices(mail, NewMemoryCodeStore())
+	for _, c := range []struct {
+		role, email string
+		want        int
+	}{
+		{"user", "bob@example.com", http.StatusForbidden},
+		{"admin", "not-an-email", http.StatusBadRequest},
+	} {
+		if got := create(c.role, c.email).Code; got != c.want {
+			t.Fatalf("%+v: got %d", c, got)
+		}
+	}
+
+	rec := create("admin", " Bob@Example.com ")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	var resp struct {
+		User            repo.User `json:"user"`
+		Mailed          bool      `json:"mailed"`
+		InitialPassword string    `json:"initial_password"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Mailed || resp.InitialPassword != "" || resp.User.Email != "bob@example.com" || resp.User.Role != "user" {
+		t.Fatalf("resp = %+v", resp)
+	}
+	u, _ := users.GetByUID(ctx, resp.User.UID)
+	if u == nil || !u.MustChangePassword || u.Nickname != "bob" {
+		t.Fatalf("stored user = %+v", u)
+	}
+	password := regexp.MustCompile(`初始密码：(\S+)`).FindStringSubmatch(mail.text)
+	if mail.to != "bob@example.com" || password == nil {
+		t.Fatalf("mail to %q: %q", mail.to, mail.text)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password[1])) != nil {
+		t.Fatal("mailed password does not match")
+	}
+
+	if got := create("admin", "bob@example.com").Code; got != http.StatusConflict {
+		t.Fatalf("duplicate: %d", got)
+	}
+
+	mail.fail = true
+	rec = create("admin", "carol@example.com")
+	resp.InitialPassword = ""
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("create with mail down: %d %v", rec.Code, err)
+	}
+	carol, _ := users.GetByUID(ctx, resp.User.UID)
+	if resp.Mailed || carol == nil || bcrypt.CompareHashAndPassword([]byte(carol.PasswordHash), []byte(resp.InitialPassword)) != nil {
+		t.Fatalf("mail down: resp = %+v", resp)
 	}
 }
 

@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -1391,6 +1392,56 @@ func (s *Server) HandleAdminUserDisable(w http.ResponseWriter, r *http.Request) 
 	}
 
 	data, _ := json.Marshal(map[string]interface{}{"status": "ok", "disabled": disabled})
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data)
+}
+
+// HandleAdminUserCreate 由管理员按邮箱创建普通用户:随机初始密码、跳过验证码、首次登录须改密码,密码发到该邮箱。
+// POST /admin/users/create 表单字段:uid(管理员)、token、email
+// 邮件发送失败时账号仍已创建,响应带 initial_password 供管理员转交。
+func (s *Server) HandleAdminUserCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	claims := s.adminAuth(w, r)
+	if claims == nil {
+		return
+	}
+	if s.userStore == nil {
+		http.Error(w, "user store not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.mailer == nil {
+		http.Error(w, "mail not available", http.StatusServiceUnavailable)
+		return
+	}
+	email, ok := normalizeEmail(r.FormValue("email"))
+	if !ok {
+		http.Error(w, "invalid email", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	u, password, err := createWithRandomPassword(ctx, s.userStore, email, "user")
+	if err != nil {
+		if errors.Is(err, repo.ErrEmailTaken) {
+			http.Error(w, "email already registered", http.StatusConflict)
+			return
+		}
+		log.Printf("[server] admin create user %s: %v", maskEmail(email), err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("[server] admin %s created uid=%s email=%s", claims.UID, u.UID, maskEmail(email))
+
+	resp := map[string]interface{}{"status": "ok", "user": u, "mailed": true}
+	if err := sendInitialPassword(ctx, s.mailer, u, password); err != nil {
+		log.Printf("[server] WARNING: sending initial password to %s failed: %v", maskEmail(email), err)
+		resp["mailed"] = false
+		resp["initial_password"] = password
+	}
+	data, _ := json.Marshal(resp)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data)
 }

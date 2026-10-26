@@ -3,6 +3,7 @@ package com.goim.kmp.network
 import com.goim.kmp.common.DomainError
 import com.goim.kmp.model.AdminChatPage
 import com.goim.kmp.model.AdminConversation
+import com.goim.kmp.model.AdminCreatedUser
 import com.goim.kmp.model.AdminMessage
 import com.goim.kmp.model.AdminSender
 import com.goim.kmp.model.AdminStats
@@ -222,6 +223,12 @@ class GoImUserApi(
     suspend fun adminUsers(offset: Int, limit: Int): AdminUserPage {
         val dto = get("admin/users", "offset" to offset.toString(), "limit" to limit.toString()).decode<AdminUsersDto>()
         return AdminUserPage(dto.users.orEmpty().map { it.toDomain() }, dto.total)
+    }
+
+    /** 免验证码建号：服务端随机初始密码并发到该邮箱，首次登录须改密码。 */
+    suspend fun adminCreateUser(email: String): AdminCreatedUser {
+        val dto = post("admin/users/create", "email" to email).decode<AdminCreateUserDto>()
+        return AdminCreatedUser(dto.user.toDomain(), dto.initialPassword?.takeIf { !dto.mailed && it.isNotEmpty() })
     }
 
     suspend fun adminDeleteUser(targetUid: String) {

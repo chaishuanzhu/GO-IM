@@ -51,6 +51,7 @@ private val serverTexts = listOf(
     "group not found" to "群不存在",
     "user not found" to "用户不存在",
     "not a member" to "不在该群中",
+    "mail not available" to "服务端未配置邮件，无法发送初始密码",
     "not available" to "服务端未启用该功能",
     "no pending" to "该请求已处理",
     "admin access required" to "需要管理员权限（角色变更后请重新登录）",

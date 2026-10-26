@@ -1076,6 +1076,53 @@ paths:
         "403": { $ref: "#/components/responses/AdminRequired" }
         "503": { $ref: "#/components/responses/Unavailable" }
 
+  /admin/users/create:
+    post:
+      tags: [管理]
+      summary: 添加用户
+      description: |
+        按邮箱创建普通用户：跳过邮箱验证码，随机生成初始密码并发到该邮箱，首次登录须先改密码
+        （登录响应 `must_change_password: true`）。昵称默认取邮箱 @ 前部分。
+        邮件发送失败时账号仍已创建，响应 `mailed: false` 并带 `initial_password`，由管理员转交。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          description: 已创建
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  user:
+                    type: object
+                    properties:
+                      uid: { type: string }
+                      nickname: { type: string }
+                      email: { type: string }
+                      role: { type: string, example: user }
+                      is_disabled: { type: boolean }
+                      created_at: { type: integer, format: int64 }
+                  mailed: { type: boolean, description: 初始密码邮件是否发送成功 }
+                  initial_password: { type: string, description: 仅 `mailed` 为 false 时返回 }
+        "400":
+          description: "`invalid email`"
+          content: { text/plain: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminRequired" }
+        "409":
+          description: "`email already registered`"
+          content: { text/plain: { schema: { type: string } } }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
   /admin/users/disable:
     post:
       tags: [管理]
