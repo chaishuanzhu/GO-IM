@@ -651,19 +651,12 @@ func (r *Router) handleRecall(ctx context.Context, sender *Client, msg *proto.Me
 	// Content 有意留空 —— CmdRecall 本身就是信号。
 	msg.Content = fmt.Sprintf(`{"recalled":true,"msg_id":%d}`, msg.Seq)
 
-	// 先尝试本地投递。
-	target := r.clients.Get(ctx, msg.To)
-	if target != nil {
-		if err := target.Send(msg); err != nil {
-			r.metrics.RecordDeliveryFailure()
-			slog.Error("recall send failed, storing offline", "to", msg.To, "error", err)
-			r.offline.StoreOffline(ctx, msg.To, msg)
-		}
-		return
+	// 投递给对端所有设备(不在本地则转发或存离线),并同步给自己的其他设备。
+	if _, failed := r.deliverToUser(ctx, msg.To, msg); failed {
+		r.metrics.RecordDeliveryFailure()
+		slog.Error("recall send failed on some device, stored offline", "to", msg.To)
 	}
-
-	// 目标不在本地 —— 转发到对端 Gateway 或存储离线。
-	r.routeOrStoreOffline(ctx, msg.To, msg)
+	r.syncToOwnDevices(ctx, sender, msg)
 }
 
 // sendRecallError 为失败的撤回请求发送错误响应。
@@ -685,7 +678,7 @@ func (r *Router) handleChat(ctx context.Context, sender *Client, msg *proto.Mess
 
 	// --- 去重检查 ---
 	if msg.Seq > 0 {
-		if isDup, existingMsgID := r.dedup.IsDuplicate(sender.UID, msg.Seq); isDup {
+		if isDup, existingMsgID := r.dedup.IsDuplicate(dedupKey(sender), msg.Seq); isDup {
 			// 用先前分配的 MsgID 重新发送 ACK
 			if msg.NeedAck {
 				ack := &proto.Message{
@@ -728,32 +721,29 @@ func (r *Router) handleChat(ctx context.Context, sender *Client, msg *proto.Mess
 	// 如果发送缓冲区已满而我们先做了标记,客户端的重试会被静默丢弃
 	// (消息丢失)。投递后再标记可确保在线目标的至少一次语义。
 	if msg.ChatType == proto.ChatTypeGroup && r.groupStore != nil {
-		r.fanoutGroup(ctx, sender, msg)
+		r.fanoutGroup(ctx, sender, msg, true)
 		// 群扇出:所有成员处理完后再标记。
 		if msg.Seq > 0 {
-			r.dedup.Mark(sender.UID, msg.Seq, msg.MsgId)
+			r.dedup.Mark(dedupKey(sender), msg.Seq, msg.MsgId)
 		}
 	} else {
-		target := r.clients.Get(ctx, msg.To)
-		if target != nil {
-			if err := target.Send(msg); err != nil {
-				// 发送失败(缓冲区满)—— 转存离线,但暂不标记,
-				// 以便客户端重试在线投递。
-				r.metrics.RecordDeliveryFailure()
-				slog.Error("chat send failed, storing offline", "to", msg.To, "error", err, "msgId", msg.MsgId)
-				r.offline.StoreOffline(ctx, msg.To, msg)
-			} else {
-				r.metrics.RecordMessageDelivered(chatType)
-				// 在线投递成功 —— 可以安全标记(Seq 为 0 时不标记)。
-				if msg.Seq > 0 {
-					r.dedup.Mark(sender.UID, msg.Seq, msg.MsgId)
-				}
-			}
-		} else {
-			// 目标不在本地在线 —— 路由或转存离线。
-			r.routeOrStoreOffline(ctx, msg.To, msg)
+		// 发给自己(文件传输助手)时 deliverToUser 已覆盖自己的所有设备,含发送设备本身。
+		found, failed := r.deliverToUser(ctx, msg.To, msg)
+		if msg.To != sender.UID {
+			r.syncToOwnDevices(ctx, sender, msg)
+		}
+		switch {
+		case failed:
+			// 有设备发送失败(缓冲区满)—— 已转存离线,但暂不标记,以便客户端重试在线投递。
+			r.metrics.RecordDeliveryFailure()
+			slog.Error("chat send failed, storing offline", "to", msg.To, "msgId", msg.MsgId)
+		case found:
+			r.metrics.RecordMessageDelivered(chatType)
+			fallthrough
+		default:
+			// 在线投递成功,或已路由 / 转存离线 —— 可以安全标记(Seq 为 0 时不标记)。
 			if msg.Seq > 0 {
-				r.dedup.Mark(sender.UID, msg.Seq, msg.MsgId)
+				r.dedup.Mark(dedupKey(sender), msg.Seq, msg.MsgId)
 			}
 		}
 	}
@@ -838,72 +828,47 @@ func (r *Router) routeOrStoreOffline(ctx context.Context, targetUID string, msg 
 	}
 }
 
-// fanoutGroup 将群聊消息投递给除发送方外的所有成员。
+// fanoutGroup 将群聊消息投递给除发送方外的所有成员的所有设备。
 // 每个成员独立投递:在线成员实时推送;离线成员转存;
-// 一个成员失败不影响其他成员。
-func (r *Router) fanoutGroup(ctx context.Context, sender *Client, msg *proto.Message) {
+// 一个成员失败不影响其他成员。syncSelf 为 true 时同时同步给发送方的其他设备。
+func (r *Router) fanoutGroup(ctx context.Context, sender *Client, msg *proto.Message, syncSelf bool) {
 	members, err := r.groupStore.GetMembers(ctx, msg.To)
 	if err != nil {
 		log.Printf("[router] group chat: get members for group %s failed: %v", msg.To, err)
 		return
 	}
-
-	delivered := 0
-	for _, memberUID := range members {
-		if memberUID == sender.UID {
-			continue // 不投递给自己
-		}
-
-		target := r.clients.Get(ctx, memberUID)
-		if target != nil {
-			r.metrics.RecordGroupFanoutSend()
-			if err := target.Send(msg); err != nil {
-				r.metrics.RecordDeliveryFailure()
-				slog.Error("group chat send failed, storing offline", "to", memberUID, "error", err)
-				r.offline.StoreOffline(ctx, memberUID, msg)
-			} else {
-				r.metrics.RecordMessageDelivered("group")
-				delivered++
-			}
-		} else {
-			// 成员未在本地连接 —— 转发或转存离线。
-			r.routeOrStoreOffline(ctx, memberUID, msg)
-		}
-	}
-
-	log.Printf("[router] group chat: fanout for group %s — %d/%d members delivered online",
-		msg.To, delivered, len(members)-1)
+	r.fanoutGroupWithMembers(ctx, sender, msg, members, syncSelf)
 }
 
 // fanoutGroupWithMembers 将消息投递给显式给定的群成员列表。
 // 与 fanoutGroup 不同,它不查询本地 GroupStore —— 由调用方直接
 // 提供成员 UID。当群成员关系由外部管理时(例如通过 gRPC Logic 服务)
 // 使用此方法,以避免双重写入。
-func (r *Router) fanoutGroupWithMembers(ctx context.Context, sender *Client, msg *proto.Message, members []string) {
+func (r *Router) fanoutGroupWithMembers(ctx context.Context, sender *Client, msg *proto.Message, members []string, syncSelf bool) {
 	delivered := 0
 	for _, memberUID := range members {
 		if memberUID == sender.UID {
-			continue // 不投递给自己
+			if syncSelf {
+				r.syncToOwnDevices(ctx, sender, msg)
+			}
+			continue
 		}
 
-		target := r.clients.Get(ctx, memberUID)
-		if target != nil {
+		found, failed := r.deliverToUser(ctx, memberUID, msg)
+		if found {
 			r.metrics.RecordGroupFanoutSend()
-			if err := target.Send(msg); err != nil {
-				r.metrics.RecordDeliveryFailure()
-				slog.Error("group chat send failed, storing offline", "to", memberUID, "error", err)
-				r.offline.StoreOffline(ctx, memberUID, msg)
-			} else {
-				r.metrics.RecordMessageDelivered("group")
-				delivered++
-			}
-		} else {
-			// 成员未在本地连接 —— 转发或转存离线。
-			r.routeOrStoreOffline(ctx, memberUID, msg)
+		}
+		switch {
+		case failed:
+			r.metrics.RecordDeliveryFailure()
+			slog.Error("group chat send failed, storing offline", "to", memberUID)
+		case found:
+			r.metrics.RecordMessageDelivered("group")
+			delivered++
 		}
 	}
 
-	log.Printf("[router] group chat: fanout (explicit members) for group %s — %d/%d members delivered online",
+	log.Printf("[router] group chat: fanout for group %s — %d/%d members delivered online",
 		msg.To, delivered, len(members)-1)
 }
 
@@ -1050,19 +1015,22 @@ func (r *Router) handleReadReceipt(ctx context.Context, sender *Client, msg *pro
 		From:      sender.UID, // 谁阅读了消息
 		To:        peerUID,    // 应被通知的人
 		Seq:       msg.MsgId,  // 携带最后一条已读消息的 ID
+		ChatType:  msg.ChatType,
 		Timestamp: time.Now().UnixMilli(),
 	}
 
-	// 3. 先尝试本地投递。
-	target := r.clients.Get(ctx, peerUID)
-	if target != nil {
-		if err := target.Send(receipt); err != nil {
-			log.Printf("[router] read receipt send to %s failed: %v", peerUID, err)
+	// 3. 同步给阅读者自己的其他设备(From 为自己),让它们清掉该会话的未读。
+	r.syncToOwnDevices(ctx, sender, receipt)
+
+	// 4. 先尝试本地投递给对方所有设备。
+	if found, failed := r.sendLocal(ctx, peerUID, receipt, nil); found {
+		if failed {
+			log.Printf("[router] read receipt send to %s failed on some device", peerUID)
 		}
 		return
 	}
 
-	// 4. 尝试通过哈希环跨网关转发。
+	// 5. 尝试通过哈希环跨网关转发。
 	if r.hashRing != nil && r.thisNodeID != "" {
 		ownerNode := r.hashRing.Get(peerUID)
 		if ownerNode != "" && ownerNode != r.thisNodeID && r.forwarder != nil {
@@ -1073,7 +1041,7 @@ func (r *Router) handleReadReceipt(ctx context.Context, sender *Client, msg *pro
 		}
 	}
 
-	// 5. 对方离线或不可达 —— 丢弃回执。
+	// 6. 对方离线或不可达 —— 丢弃回执。
 	log.Printf("[router] read receipt from %s for %s dropped (peer offline)",
 		sender.UID, peerUID)
 }
@@ -1232,14 +1200,11 @@ func (r *Router) sendGroupNotificationWithMembers(ctx context.Context, fromUID, 
 		Content:   string(content),
 		Timestamp: time.Now().UnixMilli(),
 	}
-	sender := r.clients.Get(ctx, fromUID)
-	if sender == nil {
-		sender = &Client{UID: fromUID} // 最小客户端,用于扇出时跳过自己
-	}
+	sender := &Client{UID: fromUID} // 最小客户端,用于扇出时跳过自己
 	if members != nil {
-		r.fanoutGroupWithMembers(ctx, sender, notif, members)
+		r.fanoutGroupWithMembers(ctx, sender, notif, members, false)
 	} else {
-		r.fanoutGroup(ctx, sender, notif)
+		r.fanoutGroup(ctx, sender, notif, false)
 	}
 	r.persistAsync(ctx, notif)
 }
@@ -1908,16 +1873,46 @@ func (r *Router) NotifyFriendResponse(ctx context.Context, fromUID, toUID, actio
 	})
 }
 
-// deliverToUser 优先投递给本地在线连接，否则交给 routeOrStoreOffline（跨网关转发或离线存储）。
-func (r *Router) deliverToUser(ctx context.Context, uid string, msg *proto.Message) {
-	if target := r.clients.Get(ctx, uid); target != nil {
-		if err := target.Send(msg); err == nil {
-			return
+// sendLocal 把消息发给 uid 在本节点的所有设备连接(跳过 exclude)。
+// found 表示至少有一个可投递的连接;failed 表示至少一个连接发送失败(缓冲区满或已关闭)。
+func (r *Router) sendLocal(ctx context.Context, uid string, msg *proto.Message, exclude *Client) (found, failed bool) {
+	for _, c := range r.clients.GetAll(ctx, uid) {
+		if c == exclude {
+			continue
 		}
-		r.offline.StoreOffline(ctx, uid, msg)
-		return
+		found = true
+		if err := c.Send(msg); err != nil {
+			failed = true
+		}
 	}
-	r.routeOrStoreOffline(ctx, uid, msg)
+	return found, failed
+}
+
+// deliverToUser 投递给 uid 的所有设备:本节点没有连接时交给 routeOrStoreOffline(跨网关转发或离线存储);
+// 有设备发送失败时转存离线,重连后补发(客户端按 msg_id 去重,已收到的设备不会重复显示)。
+func (r *Router) deliverToUser(ctx context.Context, uid string, msg *proto.Message) (found, failed bool) {
+	found, failed = r.sendLocal(ctx, uid, msg, nil)
+	switch {
+	case !found:
+		r.routeOrStoreOffline(ctx, uid, msg)
+	case failed:
+		r.offline.StoreOffline(ctx, uid, msg)
+	}
+	return found, failed
+}
+
+// syncToOwnDevices 把发送方产生的消息同步给其在本节点在线的其他设备。
+// 离线设备不补发:离线队列取出即清空,只能交给一台设备。
+func (r *Router) syncToOwnDevices(ctx context.Context, sender *Client, msg *proto.Message) {
+	r.sendLocal(ctx, sender.UID, msg, sender)
+}
+
+// dedupKey 区分同一用户的不同设备:各设备的 Seq 独立生成,可能相同。
+func dedupKey(c *Client) string {
+	if c.DeviceID == "" {
+		return c.UID
+	}
+	return c.UID + "/" + c.DeviceID
 }
 
 // handleTyping 将正在输入的状态转发给目标用户或群成员。
@@ -1932,10 +1927,7 @@ func (r *Router) handleTyping(ctx context.Context, sender *Client, msg *proto.Me
 
 	// 单聊:转发给目标。
 	if msg.ChatType != proto.ChatTypeGroup || r.groupStore == nil {
-		target := r.clients.Get(ctx, msg.To)
-		if target != nil {
-			target.Send(msg)
-		}
+		r.sendLocal(ctx, msg.To, msg, nil)
 		return
 	}
 
@@ -1948,10 +1940,7 @@ func (r *Router) handleTyping(ctx context.Context, sender *Client, msg *proto.Me
 		if memberUID == sender.UID {
 			continue
 		}
-		target := r.clients.Get(ctx, memberUID)
-		if target != nil {
-			target.Send(msg)
-		}
+		r.sendLocal(ctx, memberUID, msg, nil)
 	}
 }
 
@@ -1985,17 +1974,12 @@ func (r *Router) handleForward(ctx context.Context, sender *Client, msg *proto.M
 
 	// 投递给目标 —— 与 handleChat 相同的处理流程。
 	if msg.ChatType == proto.ChatTypeGroup && r.groupStore != nil {
-		r.fanoutGroup(ctx, sender, msg)
+		r.fanoutGroup(ctx, sender, msg, true)
 	} else {
-		target := r.clients.Get(ctx, msg.To)
-		if target != nil {
-			if err := target.Send(msg); err != nil {
-				log.Printf("[router] forward send to %s failed, storing offline: %v", msg.To, err)
-				r.offline.StoreOffline(ctx, msg.To, msg)
-			}
-		} else {
-			r.routeOrStoreOffline(ctx, msg.To, msg)
+		if _, failed := r.deliverToUser(ctx, msg.To, msg); failed {
+			log.Printf("[router] forward send to %s failed on some device, stored offline", msg.To)
 		}
+		r.syncToOwnDevices(ctx, sender, msg)
 	}
 
 	// 增加目标的未读计数。
@@ -2080,17 +2064,12 @@ func (r *Router) handleEdit(ctx context.Context, sender *Client, msg *proto.Mess
 
 	// 尝试本地投递编辑通知。
 	if msg.ChatType == proto.ChatTypeGroup && r.groupStore != nil {
-		r.fanoutGroup(ctx, sender, msg)
+		r.fanoutGroup(ctx, sender, msg, true)
 	} else {
-		target := r.clients.Get(ctx, msg.To)
-		if target != nil {
-			if err := target.Send(msg); err != nil {
-				log.Printf("[router] edit send to %s failed, storing offline: %v", msg.To, err)
-				r.offline.StoreOffline(ctx, msg.To, msg)
-			}
-		} else {
-			r.routeOrStoreOffline(ctx, msg.To, msg)
+		if _, failed := r.deliverToUser(ctx, msg.To, msg); failed {
+			log.Printf("[router] edit send to %s failed on some device, stored offline", msg.To)
 		}
+		r.syncToOwnDevices(ctx, sender, msg)
 	}
 
 	// 持久化编辑:可用时更新 MySQL 中的内容。

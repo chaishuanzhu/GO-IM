@@ -2,6 +2,7 @@ package com.goim.kmp.repository
 
 import co.touchlab.kermit.Logger
 import com.goim.kmp.common.PlatformContext
+import com.goim.kmp.common.devicePlatform
 import com.goim.kmp.database.AppDatabase
 import com.goim.kmp.database.buildDatabase
 import com.goim.kmp.database.databaseBuilder
@@ -191,6 +192,7 @@ class SessionManager(
             scope = scope,
             transportFactory = ::createTransport,
             validateToken = { api.validateToken(it.uid, it.token) },
+            platform = devicePlatform,
         )
         val messages = MessageRepositoryImpl(database, connection, scope)
         val conversations = ConversationRepositoryImpl(database)

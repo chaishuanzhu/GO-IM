@@ -8,25 +8,66 @@ import (
 	"github.com/im/api/proto"
 )
 
+// DevicePolicy 决定同一用户的新连接会踢掉哪些已有连接。
+type DevicePolicy string
+
+const (
+	// DevicePolicySingle 每个用户只保留一个连接(默认,与多端改造前一致)。
+	DevicePolicySingle DevicePolicy = "single"
+	// DevicePolicyPerPlatform 每类平台(手机 / 电脑 / 网页)各保留一个连接。
+	DevicePolicyPerPlatform DevicePolicy = "per_platform"
+	// DevicePolicyUnlimited 不限设备数,只替换同一设备的旧连接。
+	DevicePolicyUnlimited DevicePolicy = "unlimited"
+)
+
+// ParseDevicePolicy 解析配置值;空值或未知值按 single 处理。
+func ParseDevicePolicy(s string) DevicePolicy {
+	switch DevicePolicy(s) {
+	case DevicePolicyPerPlatform, DevicePolicyUnlimited:
+		return DevicePolicy(s)
+	default:
+		return DevicePolicySingle
+	}
+}
+
+// platformClass 把平台归到互斥的类别:同类的新设备登录会踢掉旧设备。
+// 未上报平台的老客户端单独成一类,彼此互踢(保持旧行为)。
+func platformClass(platform string) string {
+	switch platform {
+	case "ios", "android", "ipados", "harmony":
+		return "mobile"
+	case "desktop", "macos", "windows", "linux":
+		return "desktop"
+	case "web":
+		return "web"
+	case "":
+		return "legacy"
+	default:
+		return platform
+	}
+}
+
 // Hub 管理所有已连接客户端并在它们之间路由消息。
 type Hub struct {
 	mu      sync.RWMutex
-	clients map[string]*Client // UID -> Client
+	clients map[string][]*Client // UID -> 该用户的所有连接(按注册先后)
 
 	// offline 为离线用户存储消息:UID -> 消息队列
 	offline        map[string][]*proto.Message
 	offlineMu      sync.Mutex
 	offlineMaxSize int // 每个用户的最大排队消息数
 
-	maxConnections int // 0 = 无限制
+	maxConnections int // 0 = 无限制(按在线用户数计)
+	policy         DevicePolicy
 }
 
 // NewHub 创建一个新的 Hub。
 func NewHub(offlineMaxSize int) *Hub {
 	return &Hub{
-		clients:        make(map[string]*Client),
+		clients:        make(map[string][]*Client),
 		offline:        make(map[string][]*proto.Message),
 		offlineMaxSize: offlineMaxSize,
+		policy:         DevicePolicySingle,
 	}
 }
 
@@ -37,18 +78,40 @@ func (h *Hub) SetMaxConnections(max int) {
 	h.mu.Unlock()
 }
 
+// SetDevicePolicy 设置多端登录策略。
+func (h *Hub) SetDevicePolicy(p DevicePolicy) {
+	h.mu.Lock()
+	h.policy = p
+	h.mu.Unlock()
+}
+
 // 服务器容量已满时,ErrServerFull 会以踢出消息的形式被返回。
 const errServerFull = "server at capacity, please try later"
 
+// kickedByOtherDevice 是被同类设备挤下线时 CmdKick 的内容。
+const kickedByOtherDevice = "logged in from another device"
+
+// conflicts 判断新连接 c 是否要踢掉同用户的已有连接 old。
+func (h *Hub) conflicts(old, c *Client) bool {
+	switch h.policy {
+	case DevicePolicyUnlimited:
+		return false
+	case DevicePolicyPerPlatform:
+		return platformClass(old.Platform) == platformClass(c.Platform)
+	default:
+		return true
+	}
+}
+
 // Register 将客户端添加到 hub。
-// 如果该 UID 已存在连接,旧连接在关闭前会收到踢出通知。
-// 当服务器容量已满且这是新 UID(非替换现有连接)时,返回错误。
+// 同一设备的旧连接(断线重连)被静默替换;按策略冲突的其他设备会先收到踢出通知再关闭。
+// 当服务器容量已满且这是新 UID 时,拒绝连接。
 func (h *Hub) Register(ctx context.Context, c *Client) {
 	h.mu.Lock()
-	old, exists := h.clients[c.UID]
+	existing := h.clients[c.UID]
 
 	// 强制连接数上限 —— 仅针对新 UID。
-	if !exists && h.maxConnections > 0 && len(h.clients) >= h.maxConnections {
+	if len(existing) == 0 && h.maxConnections > 0 && len(h.clients) >= h.maxConnections {
 		h.mu.Unlock()
 		// 拒绝:发送踢出消息并关闭连接(尽力而为)。
 		c.Send(&proto.Message{
@@ -60,45 +123,85 @@ func (h *Hub) Register(ctx context.Context, c *Client) {
 		return
 	}
 
-	// 在释放锁之前替换映射条目,以防竞态:
-	// 否则另一个 goroutine 可能在 old.Close() 与写入映射之间注册不同客户端。
-	h.clients[c.UID] = c
+	var replaced, kicked []*Client
+	kept := make([]*Client, 0, len(existing)+1)
+	for _, old := range existing {
+		switch {
+		case c.DeviceID != "" && old.DeviceID == c.DeviceID:
+			replaced = append(replaced, old)
+		case h.conflicts(old, c):
+			kicked = append(kicked, old)
+		default:
+			kept = append(kept, old)
+		}
+	}
+	// 在释放锁之前写入映射,以防另一个 goroutine 在关闭旧连接与写入映射之间注册。
+	h.clients[c.UID] = append(kept, c)
 	h.mu.Unlock()
 
-	// 现在可以在锁外安全地通知并关闭旧连接。
-	// 这能防止网络 I/O 阻塞其他 Register/Unregister 调用。
-	if exists {
+	// 在锁外通知并关闭旧连接,避免网络 I/O 阻塞其他 Register/Unregister。
+	for _, old := range replaced {
+		old.Close()
+	}
+	for _, old := range kicked {
 		old.Send(&proto.Message{
 			Cmd:     proto.CmdKick,
-			Content: "logged in from another device",
+			Content: kickedByOtherDevice,
 		})
 		old.Close()
 	}
+	if len(kept) > 0 {
+		log.Printf("[hub] uid=%s device=%s platform=%s online on %d devices", c.UID, c.DeviceID, c.Platform, len(kept)+1)
+	}
 }
 
-// Unregister 将客户端从 hub 中移除,但仅当映射条目是同一个 *Client 时。
-// 这能防止过期连接的清理误删同一 UID 的新连接。
+// Unregister 将该连接从 hub 中移除;只移除同一个 *Client,
+// 防止过期连接的清理误删同一用户的新连接。
 func (h *Hub) Unregister(ctx context.Context, c *Client) {
 	h.mu.Lock()
-	if existing, ok := h.clients[c.UID]; ok && existing == c {
+	conns := h.clients[c.UID]
+	for i, existing := range conns {
+		if existing == c {
+			conns = append(conns[:i:i], conns[i+1:]...)
+			break
+		}
+	}
+	if len(conns) == 0 {
 		delete(h.clients, c.UID)
+	} else {
+		h.clients[c.UID] = conns
 	}
 	h.mu.Unlock()
 }
 
-// Get 返回指定 UID 的客户端,不存在时返回 nil。
+// Get 返回指定 UID 最近注册的连接,不存在时返回 nil。
+// 需要投递到用户所有设备时用 GetAll。
 func (h *Hub) Get(ctx context.Context, uid string) *Client {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.clients[uid]
+	conns := h.clients[uid]
+	if len(conns) == 0 {
+		return nil
+	}
+	return conns[len(conns)-1]
 }
 
-// IsOnline 如果用户在线则返回 true。
+// GetAll 返回指定 UID 在本节点的所有连接(副本),不存在时返回 nil。
+func (h *Hub) GetAll(ctx context.Context, uid string) []*Client {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	conns := h.clients[uid]
+	if len(conns) == 0 {
+		return nil
+	}
+	return append([]*Client(nil), conns...)
+}
+
+// IsOnline 如果用户至少有一个连接则返回 true。
 func (h *Hub) IsOnline(ctx context.Context, uid string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	_, ok := h.clients[uid]
-	return ok
+	return len(h.clients[uid]) > 0
 }
 
 // StoreOffline 为离线用户排队存储一条消息。
@@ -134,7 +237,7 @@ func (h *Hub) OnlineUsers(ctx context.Context) []string {
 	return uids
 }
 
-// Count 返回已连接客户端的数量。
+// Count 返回在线用户数(一个用户的多台设备只算一次)。
 func (h *Hub) Count(ctx context.Context) int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

@@ -34,7 +34,7 @@ import im.Message as WireMessage
 class ConnectionRepositoryImplTest {
     private val user = User("alice", "alice", "jwt")
 
-    private class FakeSettings(kind: TransportKind) : ServerSettingsRepository {
+    private class FakeSettings(kind: TransportKind, override val deviceId: String = "") : ServerSettingsRepository {
         override val apiBaseUrl: StateFlow<String> = MutableStateFlow("http://localhost:8080")
         override val preferredTransport = MutableStateFlow(kind)
         override val appearance = MutableStateFlow(com.goim.kmp.model.Appearance.SYSTEM)
@@ -93,16 +93,46 @@ class ConnectionRepositoryImplTest {
         scope: TestScope,
         kind: TransportKind,
         validate: Boolean? = null,
+        deviceId: String = "",
+        platform: String = "",
         val makeTransport: (TransportKind) -> FakeTransport = { FakeTransport(it) },
     ) {
         val transports = mutableListOf<FakeTransport>()
+        val endpoints = mutableListOf<IMEndpoint>()
         val repo = ConnectionRepositoryImpl(
-            settings = FakeSettings(kind),
+            settings = FakeSettings(kind, deviceId),
             scope = CoroutineScope(scope.backgroundScope.coroutineContext),
-            transportFactory = { k, _: IMEndpoint -> makeTransport(k).also { transports += it } },
+            transportFactory = { k, e: IMEndpoint ->
+                endpoints += e
+                makeTransport(k).also { transports += it }
+            },
             validateToken = { validate },
+            platform = platform,
             serial = StandardTestDispatcher(scope.testScheduler),
         )
+    }
+
+    @Test
+    fun tcpLoginCarriesDeviceIdentity() = runTest {
+        val h = Harness(this, TransportKind.TCP, deviceId = "dev-1", platform = "ios")
+        h.repo.connect(user, TransportKind.TCP)
+        val login = h.transports.single().sent.first()
+        assertEquals(Cmd.LOGIN, login.cmd)
+        assertEquals("""{"token":"jwt","device_id":"dev-1","platform":"ios"}""", login.content)
+        assertEquals("dev-1", h.endpoints.single().deviceId)
+        assertEquals("ios", h.endpoints.single().platform)
+    }
+
+    @Test
+    fun kickStopsReconnect() = runTest {
+        val h = Harness(this, TransportKind.WEB_SOCKET)
+        h.repo.connect(user, TransportKind.WEB_SOCKET)
+        h.transports[0].push(WireMessage(cmd = Cmd.KICK))
+        h.transports[0].drop()
+        runCurrent()
+        assertEquals(InboundEvent.Kick, h.repo.inboundEvents.first())
+        advanceTimeBy(60_000)
+        assertEquals(1, h.transports.size)
     }
 
     @Test

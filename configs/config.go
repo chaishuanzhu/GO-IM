@@ -107,6 +107,9 @@ type MySQLConfig struct {
 // AuthConfig 保存认证设置。
 type AuthConfig struct {
 	DevMode bool `json:"dev_mode"` // true = 跳过密码校验（开发环境）
+	// MultiDevice 多端登录策略："single"（默认，新登录踢掉旧连接）、
+	// "per_platform"（手机 / 电脑 / 网页各一台同时在线）、"unlimited"（不限设备数）。
+	MultiDevice string `json:"multi_device"`
 }
 
 // MailConfig 保存发送邮箱验证码用的 SMTP 设置。

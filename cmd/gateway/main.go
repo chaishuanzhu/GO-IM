@@ -165,7 +165,9 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		router.SetRateLimit(cfg.Gateway.RateLimit.Rate, cfg.Gateway.RateLimit.Burst)
 	}
 
-	// 在 hub 上设置最大连接数限制。
+	// 多端登录策略与最大连接数限制。
+	hub.SetDevicePolicy(gateway.ParseDevicePolicy(cfg.Gateway.Auth.MultiDevice))
+	log.Printf("[main] multi-device policy: %s", gateway.ParseDevicePolicy(cfg.Gateway.Auth.MultiDevice))
 	if cfg.Stability.MaxConnections > 0 {
 		hub.SetMaxConnections(cfg.Stability.MaxConnections)
 	}
@@ -275,8 +277,13 @@ func NewApp(cfg *configs.Config) (*App, error) {
 	}
 
 	// --- 已读/未读回执跟踪 ---
-	unreadTracker := gateway.NewInMemoryUnreadTracker()
-	router.SetUnreadTracker(unreadTracker)
+	// 有 Redis 时放 Redis:多网关、多设备共享同一份计数。
+	if rdb != nil {
+		router.SetUnreadTracker(gateway.NewRedisUnreadTracker(rdb))
+		log.Printf("[main] unread tracker: redis")
+	} else {
+		router.SetUnreadTracker(gateway.NewInMemoryUnreadTracker())
+	}
 
 	// --- 文件/图片消息的对象存储 ---
 	var objectStore gateway.ObjectStore

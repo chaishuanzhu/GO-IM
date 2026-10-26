@@ -106,8 +106,8 @@ routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.
 |-----------|------|------|
 | `App` | `cmd/gateway/main.go` | Wires everything together; owns `ClientRegistry`, `Server`, `Config`. Supports dual-transport (WebSocket + gnet TCP) startup via `transport` config. |
 | `Server` | `internal/gateway/server.go`, `server_account.go` | HTTP handlers: `/login` (JWT issue), `/register` (email code), `/auth/email-code`, `/password/reset`, `/user/*` profile + search, `/avatar/`, `/online`, `/health`, group CRUD, upload/download, search, unread. Depends on `ClientRegistry` (not concrete `*Hub`). Also owns `StartGNet()` for gnet TCP server. |
-| `Hub` | `internal/gateway/hub.go` | Implements `ClientRegistry` + `OfflineStore`. Connection registry (`map[UID]*Client`) + offline message queue (in-memory, max 1000/user). All methods accept `context.Context`. |
-| `ClientRegistry` | `internal/gateway/interfaces.go` | Interface for connection management: `Register`, `Unregister`, `Get`, `IsOnline`, `OnlineUsers`, `Count`. Implemented by `*Hub`; Redis impl planned. |
+| `Hub` | `internal/gateway/hub.go` | Implements `ClientRegistry` + `OfflineStore`. Connection registry (`map[UID][]*Client`, one entry per device) + offline message queue (in-memory, max 1000/user). `DevicePolicy` (`single` / `per_platform` / `unlimited`) decides which existing connections a new one kicks (`CmdKick`); the same `device_id` reconnecting is replaced silently. `Count()` counts users, not connections. All methods accept `context.Context`. |
+| `ClientRegistry` | `internal/gateway/interfaces.go` | Interface for connection management: `Register`, `Unregister`, `Get` (latest connection), `GetAll` (every device), `IsOnline`, `OnlineUsers`, `Count`. Implemented by `*Hub`; Redis impl planned. |
 | `OfflineStore` | `internal/gateway/interfaces.go` | Interface for offline message queues: `StoreOffline`, `DrainOffline`. Implemented by `*Hub` (in-memory) and `*RedisOfflineStore` (Redis-backed, with in-memory fallback). |
 | `RedisOfflineStore` | `internal/gateway/redis_store.go` | Redis-backed `OfflineStore` using Redis Lists + Lua scripts for atomic push/trim and drain. Falls back to an in-memory `OfflineStore` on Redis failure. |
 | `DedupCache` | `internal/gateway/dedup.go` | Message deduplication by `fromUID:seq` key. Prevents duplicate delivery on client retry. |
@@ -132,7 +132,7 @@ routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.
 | `RateLimiter` | `internal/gateway/rate_limiter.go` | Per-UID token-bucket rate limiting with background stale-bucket cleanup. |
 | `GroupStore` | `internal/gateway/group_store.go` | Interface: Create, AddMember, RemoveMember, GetMembers, IsMember, GetUserGroups, Get. `InMemoryGroupStore` is the default impl with snowflake group IDs; MySQL-backed impl planned for Phase 5. |
 | `Group` | `internal/gateway/group_store.go` | Data model: ID (`g_123456`), Name, OwnerUID, Members map, CreatedAt. Empty groups are auto-deleted on last member removal. |
-| `UnreadTracker` | `internal/gateway/unread_tracker.go` | Interface: Increment, MarkRead, GetCounts, GetCount. `InMemoryUnreadTracker` uses uid→{peerUID→count} two-level map. Self-messages are silently ignored. |
+| `UnreadTracker` | `internal/gateway/unread_tracker.go` | Interface: Increment, MarkRead, GetCounts, GetCount. `InMemoryUnreadTracker` uses uid→{peerUID→count} two-level map; `RedisUnreadTracker` (`unread_redis.go`, hash `im:unread:{uid}`, 30-day TTL, in-memory fallback) is used whenever Redis is configured so all gateways and devices share counts. Self-messages are silently ignored. |
 | `ObjectStore` | `internal/gateway/object_store.go` | Interface: Put, Get, Delete. `InMemoryObjectStore` for dev/test; `MinioStore` for S3-compatible MinIO with auto-bucket creation and Ping health check. |
 | `Thumbnail` | `internal/gateway/thumbnail.go` | Image thumbnail generation: CatmullRom scaling, 200px max dimension, JPEG 80% output. Supports JPEG/PNG/GIF/WebP. Decompression bomb defense (max 4096px source). `ImageDimensions()` and `IsImageMIME()` helpers. |
 | `HashRing` | `internal/gateway/hashring.go` | Consistent hashing with CRC32 + 150 virtual nodes per physical node. Thread-safe Add/Remove/Get. Used for UID→Gateway node routing in multi-node clusters. |
@@ -146,6 +146,7 @@ routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.
 
 - **`msg.From` is server-set**: The client's claimed sender is ignored; `readPump` overwrites it with the authenticated UID. This is a security feature, not a bug.
 - **Online push, offline pull**: Online users receive messages in real-time via WebSocket; offline users get messages delivered when they reconnect and send `CmdOffline`.
+- **Multi-device** (`docs/12-multi-device.md`): clients report `device_id` + `platform` (WS query, or JSON `CmdLogin` content on TCP). Router delivers to every device of the recipient (`deliverToUser`) and mirrors the sender's own chat / recall / edit / forward / read receipt to the sender's other local devices (`syncToOwnDevices`); ACK goes only to the sending connection. Dedup is keyed per device. Phase-1 limit: offline or other-gateway own devices don't get the mirror (planned sync timeline).
 - **Snowflake IDs**: 10-bit worker + 12-bit sequence, epoch 2024-01-01. With Redis, each instance leases its worker ID (`snowflake.NewLeased`, keys `im:snowflake:worker:<id>`; gateway 16–511, logic 512–1023) so rolling-update pods never share one; without Redis the configured `snowflake.worker_id` (gateway 1) / `logic.worker_id` (2) is used.
 - **Rolling updates**: k8s gateway/logic use `RollingUpdate` (maxSurge 1, maxUnavailable 0). Old and new versions run side by side briefly, so schema changes must be backward compatible (add first, drop in a later release).
 - **No persistence by default**: Everything is in-memory — restart loses all state. MySQL persistence is available via `mysql.enabled: true` in config (see `internal/repo/`). Message history query (CmdHistory) requires MySQL.
@@ -222,18 +223,21 @@ Phase 4 refinements:
 ### Current test coverage
 
 ```
-226 passed, 0 failed, 0 skipped
+296 passed, 0 failed, 14 skipped (MySQL / Kafka not running)
 ```
 
 | Package | Tests | Notes |
 |---------|-------|-------|
-| `internal/gateway` | 187 | hub(9) + router(24) + gnet_handler(27) + redis_store(7) + grpc_client(2) + grpc_gateway(5) + hashring(9) + group_store(12) + unread_tracker(9) + object_store(6) + thumbnail(9) + router_read_receipt(11) + router_group(19) + server(3) + cluster(22) + router_recall(11) |
-| `internal/logic` | 9 | gRPC server(3) + consumer(6) |
-| `internal/mq` | 11 | producer(3) + consumer(8) |
+| `internal/gateway` | 241 | hub + router + gnet_handler + redis_store + grpc_client + grpc_gateway + hashring + group_store + unread_tracker + object_store + thumbnail + router_read_receipt + router_group + server + cluster + router_recall + multi_device(14) |
+| `internal/logic` | 4 | gRPC server + consumer (1 skipped without MySQL) |
+| `internal/mq` | 15 | producer + consumer (2 skipped without Kafka) |
+| `internal/observability` | 7 | metrics |
 | `internal/pkg/jwt` | 8 | sign/validate, expiry, tampering, malformed, claims window, multi-user |
-| `internal/pkg/snowflake` | 7 | uniqueness, monotonic, worker ID, timestamp extraction, overflow |
-| `internal/repo` | 7 | MySQL CRUD + history + pagination (skipped when MySQL not running) |
-| `cmd/gateway` | 5 | 2 WebSocket + 3 gnet TCP integration tests |
+| `internal/pkg/snowflake` | 13 | uniqueness, monotonic, worker ID, leasing, timestamp extraction, overflow |
+| `internal/repo` | 12 | MySQL CRUD + history + pagination (11 skipped when MySQL not running) |
+| `configs` | 2 | config loading |
+| `api/openapi` | 2 | spec parses; every gateway route documented |
+| `cmd/gateway` | 6 | WebSocket + gnet TCP integration tests |
 
 ## Configuration
 
@@ -255,7 +259,7 @@ Default config values:
 - Logic gRPC: `addr: ""` (empty = Gateway uses local MessageStore), `listen_addr: ""` (empty = Logic binds `:50051`)
 - gRPC server: `addr: ""` (empty = disabled, set `:50050` with node_id + peer_addrs for multi-gateway)
 - gRPC discovery: `mode: ""` (empty or "static" = use peer_addrs; "redis" = Redis service discovery with TTL heartbeat)
-- Auth: `dev_mode: true` (no password required; set false for production with MySQL)
+- Auth: `dev_mode: true` (no password required; set false for production with MySQL); `multi_device: "single"` (one connection per user; `per_platform` = one phone + one desktop + one web, `unlimited` = no limit)
 - Mail: `enabled: false`; SMTP host/port/username/from in config, password only via env `GOIM_MAIL_PASSWORD` (k8s Secret `goim-infra` key `MAIL_PASSWORD`). Port 465 = implicit TLS, others STARTTLS. Without mail, codes are logged in dev_mode and the code endpoints return 503 otherwise
 - Object storage: `enabled: false` (in-memory fallback), endpoint `localhost:9000`, bucket `im-files`, max_upload 10MB
 - Stability: `max_connections: 0` (unlimited), HTTP timeouts (read 10s, write 10s, idle 120s), `shutdown_timeout: 30s`, `pprof_enabled: false`, `swagger_enabled: true` (Swagger UI at `/swagger/`, spec embedded from `api/openapi/openapi.yaml`; off in the deploy configs). Every route added in `cmd/gateway/main.go` must also be added to the spec — `go test ./api/openapi/` fails otherwise

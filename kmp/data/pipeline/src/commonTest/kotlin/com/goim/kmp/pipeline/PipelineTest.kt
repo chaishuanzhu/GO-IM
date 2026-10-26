@@ -114,6 +114,41 @@ class PipelineTest {
     }
 
     @Test
+    fun ownReadReceiptBecomesReadSyncAndKickStopsFirst() = runTest {
+        val events = mutableListOf<InboundEvent>()
+        val order = mutableListOf<String>()
+        val pipeline = IMPipeline {}
+            .addLast(ProtobufDecodeHandler())
+            .addLast(
+                CmdDispatchHandler(
+                    "alice",
+                    onEvent = { events += it; order += "event" },
+                    onKick = { order += "kick" },
+                ),
+            )
+
+        listOf(
+            WireMessage(cmd = Cmd.READ_RECEIPT, from = "alice", to = "bob", chat_type = 1),
+            WireMessage(cmd = Cmd.READ_RECEIPT, from = "alice", to = "g_9", chat_type = 2),
+            WireMessage(cmd = Cmd.READ_RECEIPT, from = "alice", to = "g_7"),
+            WireMessage(cmd = Cmd.READ_RECEIPT, from = "bob", to = "alice", chat_type = 1),
+        ).forEach { pipeline.fireChannelRead(MessageCodec.encode(it)) }
+
+        assertEquals<List<InboundEvent>>(
+            listOf(
+                InboundEvent.ReadSynced("dm:alice_bob"),
+                InboundEvent.ReadSynced("group:g_9"),
+                InboundEvent.ReadSynced("group:g_7"),
+            ),
+            events,
+        )
+
+        order.clear()
+        pipeline.fireChannelRead(MessageCodec.encode(WireMessage(cmd = Cmd.KICK)))
+        assertEquals(listOf("kick", "event"), order)
+    }
+
+    @Test
     fun friendResponseActionsMapToEvent() = runTest {
         val events = mutableListOf<InboundEvent>()
         val pipeline = IMPipeline {}

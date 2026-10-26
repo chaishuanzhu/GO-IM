@@ -303,8 +303,9 @@ func TestWorkerPoolMultipleTasks(t *testing.T) {
 		wp.Submit(func() {
 			mu.Lock()
 			results = append(results, n)
+			full := len(results) == 10
 			mu.Unlock()
-			if len(results) == 10 {
+			if full {
 				close(done)
 			}
 		})

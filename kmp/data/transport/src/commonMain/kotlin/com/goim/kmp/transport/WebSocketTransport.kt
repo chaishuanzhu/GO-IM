@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** `ws(s)://{host}/ws?token={jwt}`，binary 帧。[client] 需安装 `WebSockets` 插件。 */
+/** `ws(s)://{host}/ws?token={jwt}&device_id=&platform=`，binary 帧。[client] 需安装 `WebSockets` 插件。 */
 class WebSocketTransport(
     private val endpoint: IMEndpoint,
     private val client: HttpClient,
@@ -31,6 +31,8 @@ class WebSocketTransport(
                 port = endpoint.httpPort
                 path("ws")
                 parameters.append("token", endpoint.token)
+                if (endpoint.deviceId.isNotEmpty()) parameters.append("device_id", endpoint.deviceId)
+                if (endpoint.platform.isNotEmpty()) parameters.append("platform", endpoint.platform)
             }
         }
     }

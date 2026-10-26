@@ -32,11 +32,13 @@ data class IMEndpoint(
     val tcpPort: Int,
     val useTls: Boolean,
     val token: String,
+    val deviceId: String = "",
+    val platform: String = "",
 ) {
     companion object {
         const val DEFAULT_TCP_PORT = 8081
 
-        fun from(apiBaseUrl: String, token: String): IMEndpoint {
+        fun from(apiBaseUrl: String, token: String, deviceId: String = "", platform: String = ""): IMEndpoint {
             val url = Url(apiBaseUrl)
             val tls = url.protocol == URLProtocol.HTTPS
             return IMEndpoint(
@@ -45,6 +47,8 @@ data class IMEndpoint(
                 tcpPort = DEFAULT_TCP_PORT,
                 useTls = tls,
                 token = token,
+                deviceId = deviceId,
+                platform = platform,
             )
         }
     }

@@ -83,6 +83,26 @@ class MessageDaoTest {
     }
 
     @Test
+    fun syncedOutgoingWithCollidingSeqDoesNotOverwriteAckedRow() = runTest {
+        dao.upsertMerged(msg("local", sid = 10, seq = 77, outgoing = true, status = 1, content = "mine"))
+        // 另一台设备发出的消息，client_seq 恰好相同
+        dao.upsertMerged(msg("other", sid = 20, seq = 77, outgoing = true, status = 1, content = "other device"))
+        assertEquals(2, dao.count("dm:a_b"))
+        assertEquals("mine", dao.byId("local")!!.content)
+        assertEquals("other device", dao.byServerMsgId(20)!!.content)
+    }
+
+    @Test
+    fun ackTargetsPendingRowWhenSeqCollides() = runTest {
+        dao.upsertMerged(msg("other", sid = 20, seq = 88, outgoing = true, status = 1))
+        dao.upsertMerged(msg("local", seq = 88, outgoing = true, status = 0))
+        dao.markStatusMerged(clientSeq = 88, status = 1, serverMsgId = 30)
+        assertEquals(30L, dao.byId("local")!!.serverMsgId)
+        assertEquals(1, dao.byId("local")!!.status)
+        assertEquals(20L, dao.byId("other")!!.serverMsgId)
+    }
+
+    @Test
     fun latestWindowAndPaging() = runTest {
         (1..10).forEach { dao.upsertMerged(msg("m$it", sid = it.toLong(), ts = it.toLong())) }
         assertEquals(listOf("m10", "m9", "m8"), dao.observeLatest("dm:a_b", 3).first().map { it.id })

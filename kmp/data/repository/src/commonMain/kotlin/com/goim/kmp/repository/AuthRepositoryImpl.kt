@@ -13,6 +13,8 @@ import com.goim.kmp.storage.SessionStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 class AuthRepositoryImpl(
     private val api: GoImApi,
@@ -59,6 +61,10 @@ class ServerSettingsRepositoryImpl(private val device: DevicePreferencesStore) :
         appearanceState.value = appearance
         device.update { it.copy(appearance = appearance.raw) }
     }
+
+    @OptIn(ExperimentalUuidApi::class)
+    override val deviceId: String = device.load().deviceId?.takeIf { it.isNotBlank() }
+        ?: Uuid.random().toString().also { id -> device.update { it.copy(deviceId = id) } }
 
     init {
         if (device.load().apiBaseURL.isNullOrBlank()) device.update { it.copy(apiBaseURL = baseUrl.value) }

@@ -6,3 +6,6 @@ actual abstract class PlatformContext private constructor() {
 
 actual val platformDescription: String
     get() = platform.UIKit.UIDevice.currentDevice.let { "${it.systemName} ${it.systemVersion} · ${it.model}" }
+
+actual val devicePlatform: String
+    get() = if (platform.UIKit.UIDevice.currentDevice.userInterfaceIdiom == platform.UIKit.UIUserInterfaceIdiomPad) "ipados" else "ios"

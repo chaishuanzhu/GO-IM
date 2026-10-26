@@ -66,6 +66,9 @@ interface ServerSettingsRepository {
 
     val appearance: StateFlow<Appearance>
 
+    /** 本机安装的稳定标识，建连时上报；同一设备重连会顶掉自己的旧连接而不是互踢。 */
+    val deviceId: String get() = ""
+
     fun setApiBaseUrl(url: String)
 
     fun setPreferredTransport(kind: TransportKind)

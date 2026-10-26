@@ -13,7 +13,10 @@ import (
 type ClientRegistry interface {
 	Register(ctx context.Context, c *Client)
 	Unregister(ctx context.Context, c *Client)
+	// Get 返回该用户最近注册的连接;投递消息应使用 GetAll。
 	Get(ctx context.Context, uid string) *Client
+	// GetAll 返回该用户在本节点的所有设备连接。
+	GetAll(ctx context.Context, uid string) []*Client
 	IsOnline(ctx context.Context, uid string) bool
 	OnlineUsers(ctx context.Context) []string
 	Count(ctx context.Context) int

@@ -11,7 +11,7 @@ import okio.Path
 
 /**
  * `GOIM/Shared/device.json`，前三个键名与 iOS `DevicePreferences` 相同。
- * [accounts]（最近使用在前）与 [appearance]（`system` / `light` / `dark`）为 KMP 扩展。
+ * [accounts]（最近使用在前）、[appearance]（`system` / `light` / `dark`）与 [deviceId]（多端登录的设备标识）为 KMP 扩展。
  */
 @Serializable
 data class DevicePreferences(
@@ -20,6 +20,7 @@ data class DevicePreferences(
     val preferredTransport: String? = null,
     val accounts: List<String>? = null,
     val appearance: String? = null,
+    val deviceId: String? = null,
 )
 
 /** 内存缓存为准，修改后整份写回（tmp + atomicMove）。 */

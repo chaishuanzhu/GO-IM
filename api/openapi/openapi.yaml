@@ -956,12 +956,23 @@ paths:
       description: |
         升级为 WebSocket，帧为二进制 Protobuf `Message`，Swagger UI 无法直接调用。连接成功后服务端先发 `CmdLoginResp`（cmd=4）。
         仅在 `gateway.transport` 为 `websocket` 或 `both` 时提供。
+        多端登录：同一 `device_id` 重连会静默替换旧连接；与 `gateway.auth.multi_device` 策略冲突的其他连接先收到 `CmdKick`（cmd=7）再被关闭。
       security: []
       parameters:
         - name: token
           in: query
           required: true
           schema: { type: string }
+        - name: device_id
+          in: query
+          required: false
+          description: 本机安装的稳定标识（字母数字与 `-_.`，最长 64）；缺省视为旧客户端。
+          schema: { type: string, maxLength: 64 }
+        - name: platform
+          in: query
+          required: false
+          description: 端类型，决定 `per_platform` 策略下的互踢分组：ios / ipados / android / harmony 为移动端，desktop / macos / windows / linux 为桌面端，web 单独一组。
+          schema: { type: string, maxLength: 16 }
       responses:
         "101":
           description: 协议升级成功

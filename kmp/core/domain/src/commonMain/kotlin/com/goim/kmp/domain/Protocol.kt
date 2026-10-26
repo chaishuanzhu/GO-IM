@@ -11,6 +11,9 @@ sealed interface InboundEvent {
 
     data object Kick : InboundEvent
 
+    /** 自己在其他设备上读完了该会话：本机清零未读。 */
+    data class ReadSynced(val conversationId: String) : InboundEvent
+
     /** 服务端返回的未读数：key 为对端 UID 或群 ID。 */
     data class Unread(val counts: Map<String, Int>) : InboundEvent
 

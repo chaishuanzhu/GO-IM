@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/im/api/proto"
 	pb "google.golang.org/protobuf/proto"
@@ -21,6 +23,10 @@ var (
 type Client struct {
 	UID      string
 	Nickname string
+
+	// DeviceID / Platform 由客户端在建立连接时上报;老客户端为空。
+	DeviceID string
+	Platform string
 
 	transport Transport
 	clients   ClientRegistry
@@ -46,6 +52,26 @@ func NewClient(uid, nickname string, transport Transport, clients ClientRegistry
 		closed:        make(chan struct{}),
 		lastHeartbeat: time.Now(),
 	}
+}
+
+// SetDevice 记录连接所属设备;需在 Register 之前调用。
+func (c *Client) SetDevice(deviceID, platform string) {
+	c.DeviceID = sanitizeDeviceField(deviceID, 64)
+	c.Platform = strings.ToLower(sanitizeDeviceField(platform, 16))
+}
+
+// sanitizeDeviceField 截断并只保留字母、数字、'-'、'_' 、'.',防止日志注入与超长键。
+func sanitizeDeviceField(s string, max int) string {
+	var b strings.Builder
+	for _, r := range s {
+		if b.Len() >= max {
+			break
+		}
+		if r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == '.') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // Heartbeat 返回最后一次应用层心跳的时间。

@@ -40,6 +40,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import im.Message as WireMessage
 
 /**
@@ -55,6 +57,8 @@ class ConnectionRepositoryImpl(
     private val transportFactory: (TransportKind, IMEndpoint) -> IMTransport,
     /** 握手失败时探测 token：false = 被拒，null = 无法判断。 */
     private val validateToken: suspend (User) -> Boolean? = { null },
+    /** 端类型（见 `devicePlatform`）；空 = 不上报，网关按旧客户端处理。 */
+    private val platform: String = "",
     private val heartbeatIntervalMillis: Long = 25_000,
     private val openTimeoutMillis: Long = 10_000,
     private val loginTimeoutMillis: Long = 5_000,
@@ -151,7 +155,7 @@ class ConnectionRepositoryImpl(
 
         val gen = ++generation
         val loginGate = CompletableDeferred<Unit>()
-        val endpoint = IMEndpoint.from(settings.apiBaseUrl.value, user.token)
+        val endpoint = IMEndpoint.from(settings.apiBaseUrl.value, user.token, settings.deviceId, platform)
         val t = transportFactory(kind, endpoint)
         transport = t
         val p = buildPipeline(user, kind, t, loginGate)
@@ -162,7 +166,7 @@ class ConnectionRepositoryImpl(
             readJob = scope.launch(serial) { readLoop(gen, t, p, loginGate) }
 
             if (kind == TransportKind.TCP) {
-                p.write(WireMessage(cmd = Cmd.LOGIN, content = user.token))
+                p.write(WireMessage(cmd = Cmd.LOGIN, content = loginContent(endpoint)))
                 try {
                     withTimeout(loginTimeoutMillis) { loginGate.await() }
                 } catch (_: TimeoutCancellationException) {
@@ -213,6 +217,11 @@ class ConnectionRepositoryImpl(
                 onEvent = { events.trySend(it) },
                 onLoginResp = { loginGate.complete(Unit) },
                 onHeartbeat = { pongReceived = true },
+                onKick = {
+                    intentionalDisconnect = true
+                    reconnectJob?.cancel()
+                    reconnectJob = null
+                },
             ),
         )
         if (kind == TransportKind.TCP) p.addLast(LengthFrameOutboundHandler())
@@ -367,6 +376,16 @@ class ConnectionRepositoryImpl(
     }
 
     private fun nextSeq(): Long = ++seq
+
+    /** TCP CmdLogin：带设备信息时发 JSON，否则发裸 JWT（网关两种都认）。 */
+    private fun loginContent(endpoint: IMEndpoint): String {
+        if (endpoint.deviceId.isEmpty() && endpoint.platform.isEmpty()) return endpoint.token
+        return buildJsonObject {
+            put("token", endpoint.token)
+            put("device_id", endpoint.deviceId)
+            put("platform", endpoint.platform)
+        }.toString()
+    }
 
     private fun map(envelope: OutboundEnvelope, user: User): WireMessage {
         val now = nowMillis()

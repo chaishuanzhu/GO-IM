@@ -3,10 +3,12 @@ package gateway
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -244,8 +246,25 @@ func (h *GnetHandler) processFrame(frame []byte, c gnet.Conn) {
 	})
 }
 
+// loginContent 是 CmdLogin 的 Content:新客户端发 JSON,老客户端直接发 JWT 字符串。
+type loginContent struct {
+	Token    string `json:"token"`
+	DeviceID string `json:"device_id"`
+	Platform string `json:"platform"`
+}
+
+func parseLoginContent(content string) loginContent {
+	if strings.HasPrefix(strings.TrimSpace(content), "{") {
+		var lc loginContent
+		if err := json.Unmarshal([]byte(content), &lc); err == nil {
+			return lc
+		}
+	}
+	return loginContent{Token: content}
+}
+
 // handleLogin 处理 gnet 客户端的第一条消息。
-// 第一条消息必须是 CmdLogin,且 JWT 令牌位于 Content 字段中。
+// 第一条消息必须是 CmdLogin,Content 为 JWT 或 {"token","device_id","platform"}。
 func (h *GnetHandler) handleLogin(frame []byte, c gnet.Conn) (*Client, error) {
 	msg := &proto.Message{}
 	if err := pb.Unmarshal(frame, msg); err != nil {
@@ -255,14 +274,15 @@ func (h *GnetHandler) handleLogin(frame []byte, c gnet.Conn) (*Client, error) {
 		return nil, fmt.Errorf("expected CmdLogin (%d), got cmd=%d", proto.CmdLogin, msg.Cmd)
 	}
 
-	// JWT 令牌位于 Content 字段中。
-	claims, err := h.jwtMgr.Validate(msg.Content)
+	login := parseLoginContent(msg.Content)
+	claims, err := h.jwtMgr.Validate(login.Token)
 	if err != nil {
 		return nil, fmt.Errorf("jwt: %w", err)
 	}
 
 	transport := newGnetTransport(c)
 	client := NewClient(claims.UID, claims.Nickname, transport, h.clients, h.sendBufSize)
+	client.SetDevice(login.DeviceID, login.Platform)
 	client.SetHeartbeat(time.Now())
 
 	// 注册到 Hub(可能踢掉旧连接)。

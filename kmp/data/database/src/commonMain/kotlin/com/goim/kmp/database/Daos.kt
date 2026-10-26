@@ -31,7 +31,11 @@ abstract class MessageDao {
     @Query("SELECT * FROM messages WHERE server_msg_id = :serverMsgId LIMIT 1")
     abstract suspend fun byServerMsgId(serverMsgId: Long): MessageEntity?
 
-    @Query("SELECT * FROM messages WHERE client_seq = :clientSeq AND is_outgoing = 1 LIMIT 1")
+    /** client_seq 只在单设备内唯一：多端同步来的外发行可能撞号，优先取还没拿到 server_msg_id 的本地行。 */
+    @Query(
+        "SELECT * FROM messages WHERE client_seq = :clientSeq AND is_outgoing = 1 " +
+            "ORDER BY server_msg_id IS NOT NULL LIMIT 1",
+    )
     abstract suspend fun outgoingByClientSeq(clientSeq: Long): MessageEntity?
 
     @Query("SELECT * FROM messages WHERE status = :status AND is_outgoing = 1 ORDER BY timestamp_ms")
@@ -45,7 +49,8 @@ abstract class MessageDao {
 
     @Query(
         "UPDATE messages SET status = :status, server_msg_id = COALESCE(:serverMsgId, server_msg_id) " +
-            "WHERE client_seq = :clientSeq AND is_outgoing = 1",
+            "WHERE client_seq = :clientSeq AND is_outgoing = 1 " +
+            "AND (:serverMsgId IS NULL OR server_msg_id IS NULL OR server_msg_id = :serverMsgId)",
     )
     protected abstract suspend fun updateOutgoingStatus(clientSeq: Long, status: Int, serverMsgId: Long?)
 
@@ -65,8 +70,10 @@ abstract class MessageDao {
     /**
      * 幂等写入（与 iOS `LocalStore.upsertMessage` 同规则）：
      * 1. 有 server_msg_id 且已存在 → 覆盖该行（保留外发标记与 client_seq）；
-     * 2. 外发且同 client_seq 的本地行存在 → 覆盖该行；
+     * 2. 外发且同会话、同 client_seq 的本地行存在，且它是同一行或尚无（或同一个）server_msg_id → 覆盖该行；
      * 3. 否则按主键 upsert。
+     *
+     * 规则 2 的额外条件防止其他设备同步来的消息因 client_seq 撞号覆盖本机的另一条消息。
      */
     @Transaction
     open suspend fun upsertMerged(entity: MessageEntity) {
@@ -88,7 +95,10 @@ abstract class MessageDao {
         }
         if (entity.isOutgoing && entity.clientSeq != 0L) {
             val existing = outgoingByClientSeq(entity.clientSeq)
-            if (existing != null) {
+            if (existing != null &&
+                existing.conversationId == entity.conversationId &&
+                (existing.id == entity.id || existing.serverMsgId == null || existing.serverMsgId == sid)
+            ) {
                 upsertRow(record.copy(id = existing.id, serverMsgId = record.serverMsgId ?: existing.serverMsgId))
                 return
             }
@@ -102,7 +112,9 @@ abstract class MessageDao {
         if (serverMsgId != null) {
             val byServer = byServerMsgId(serverMsgId)
             val bySeq = outgoingByClientSeq(clientSeq)
-            if (byServer != null && bySeq != null && byServer.id != bySeq.id) {
+            if (byServer != null && bySeq != null && byServer.id != bySeq.id &&
+                (bySeq.serverMsgId == null || bySeq.serverMsgId == serverMsgId)
+            ) {
                 deleteById(byServer.id)
             }
         }

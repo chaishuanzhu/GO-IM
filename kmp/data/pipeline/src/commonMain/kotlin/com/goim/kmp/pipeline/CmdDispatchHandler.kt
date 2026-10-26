@@ -20,6 +20,8 @@ class CmdDispatchHandler(
     private val onEvent: (InboundEvent) -> Unit,
     private val onLoginResp: () -> Unit = {},
     private val onHeartbeat: () -> Unit = {},
+    /** 先于 [InboundEvent.Kick] 同步调用，用来立即停止重连（否则会把新设备踢回去）。 */
+    private val onKick: () -> Unit = {},
 ) : InboundHandler {
     override val name = "cmd-dispatch"
 
@@ -27,7 +29,15 @@ class CmdDispatchHandler(
         if (msg !is WireMessage) return ctx.fireChannelRead(msg)
         when (msg.cmd) {
             Cmd.ACK -> onEvent(InboundEvent.Ack(seq = msg.seq, msgId = msg.msg_id))
-            Cmd.KICK -> onEvent(InboundEvent.Kick)
+            Cmd.KICK -> {
+                onKick()
+                onEvent(InboundEvent.Kick)
+            }
+            Cmd.READ_RECEIPT -> if (msg.from == selfUid && msg.to.isNotEmpty()) {
+                onEvent(InboundEvent.ReadSynced(conversationId(msg)))
+            } else {
+                ctx.fireChannelRead(msg)
+            }
             Cmd.CHAT, Cmd.FILE -> onEvent(InboundEvent.MessageReceived(mapMessage(msg)))
             // 仅完成帧；历史条目以 CmdChat / CmdFile 下发。
             Cmd.HISTORY -> onEvent(InboundEvent.HistoryFinished(delivered = msg.seq.toInt()))
@@ -61,7 +71,9 @@ class CmdDispatchHandler(
     )
 
     private fun conversationId(w: WireMessage): String {
-        if (w.chat_type == ChatType.GROUP.value) return ConversationId.group(w.to)
+        if (w.chat_type == ChatType.GROUP.value || (w.from == selfUid && w.to.startsWith(GROUP_ID_PREFIX))) {
+            return ConversationId.group(w.to)
+        }
         val peer = if (w.from == selfUid) w.to else w.from
         return ConversationId.dm(selfUid, peer)
     }
@@ -84,6 +96,9 @@ class CmdDispatchHandler(
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
+
+        /** 网关群 ID 形如 `g_123`；老网关的已读回执不带 chat_type 时靠它区分。 */
+        private const val GROUP_ID_PREFIX = "g_"
 
         /** `{"action":"accept"|"reject"}`；兼容 iOS 旧判定（含 accept / "1" / true）。 */
         fun parseFriendAction(content: String): Boolean {

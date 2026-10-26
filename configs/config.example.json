@@ -55,7 +55,8 @@
         },
 
         "auth": {
-            "dev_mode": true
+            "dev_mode": true,
+            "multi_device": "single"
         },
 
         "kafka": {

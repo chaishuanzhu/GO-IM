@@ -76,6 +76,7 @@ class SessionCoordinator(
             is InboundEvent.Ack -> messages.markStatus(event.seq, MessageStatus.SENT, event.msgId.takeIf { it != 0L })
             is InboundEvent.HistoryFinished -> messages.completeHistory(event.delivered)
             InboundEvent.Kick -> onEnded(SessionEndReason.KICKED)
+            is InboundEvent.ReadSynced -> conversations.setUnread(event.conversationId, 0)
             is InboundEvent.Unread -> event.counts.forEach { (key, count) ->
                 conversations.setUnread(conversationIdForUnreadKey(key), count)
             }

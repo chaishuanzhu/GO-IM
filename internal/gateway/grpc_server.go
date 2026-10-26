@@ -43,14 +43,19 @@ func (s *GrpcGatewayServer) ForwardMessage(ctx context.Context, req *proto.Forwa
 
 	// 路由时信任转发网关提供的 req.Uid,但保留
 	// 原始 message.To 用于显示。
-	target := s.clients.Get(ctx, req.Uid)
-	if target != nil {
-		if err := target.Send(req.Message); err != nil {
-			// 本地目标在线但发送缓冲区已满 —— 转存离线。
+	if targets := s.clients.GetAll(ctx, req.Uid); len(targets) > 0 {
+		var sendErr error
+		for _, target := range targets {
+			if err := target.Send(req.Message); err != nil {
+				sendErr = err
+			}
+		}
+		if sendErr != nil {
+			// 有设备在线但发送缓冲区已满 —— 转存离线(客户端按 msg_id 去重)。
 			s.offline.StoreOffline(ctx, req.Uid, req.Message)
 			log.Printf("[grpc-server] node=%s: target %s online but send failed, stored offline: %v",
-				s.nodeID, req.Uid, err)
-			return &proto.ForwardResponse{Delivered: false, Error: err.Error()}, nil
+				s.nodeID, req.Uid, sendErr)
+			return &proto.ForwardResponse{Delivered: false, Error: sendErr.Error()}, nil
 		}
 		return &proto.ForwardResponse{Delivered: true}, nil
 	}

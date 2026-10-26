@@ -39,9 +39,11 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 	transport := newWsTransport(conn)
 	client := NewClient(claims.UID, claims.Nickname, transport, s.clients, s.connCfg.SendBufSize)
+	client.SetDevice(r.URL.Query().Get("device_id"), r.URL.Query().Get("platform"))
 	s.clients.Register(connCtx, client)
 
-	log.Printf("[server] client connected uid=%s nickname=%s", claims.UID, claims.Nickname)
+	log.Printf("[server] client connected uid=%s nickname=%s device=%s platform=%s",
+		claims.UID, claims.Nickname, client.DeviceID, client.Platform)
 
 	// 发送登录成功响应
 	client.Send(&proto.Message{
