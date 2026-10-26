@@ -20,6 +20,7 @@ class AdminDeps(
     val stats: suspend () -> AdminStats,
     val users: suspend (offset: Int, limit: Int) -> AdminUserPage,
     val deleteUser: suspend (uid: String) -> Unit,
+    val setUserDisabled: suspend (uid: String, disabled: Boolean) -> Unit,
     /** [before] 为 null 时从最新一条开始，按时间倒序。 */
     val messages: suspend (before: Long?, limit: Int) -> List<AdminMessage>,
     val deleteMessage: suspend (msgId: Long) -> Unit,
@@ -41,6 +42,8 @@ data class AdminUiState(
     val users: AdminPage<AdminUser> = AdminPage(),
     val usersTotal: Int = 0,
     val messages: AdminPage<AdminMessage> = AdminPage(),
+    /** 正在提交禁用 / 启用的用户 UID。 */
+    val updatingUser: String? = null,
     val notice: String? = null,
 )
 
@@ -150,6 +153,26 @@ class AdminViewModel(private val deps: AdminDeps) : ViewModel() {
                 },
                 onFailure = { e -> _state.update { it.copy(notice = "删除失败：${e.userMessage()}") } },
             )
+        }
+    }
+
+    fun setUserDisabled(user: AdminUser, disabled: Boolean) {
+        if (user.uid == deps.selfUid || _state.value.updatingUser != null) return
+        _state.update { it.copy(updatingUser = user.uid) }
+        viewModelScope.launch {
+            val result = attempt { deps.setUserDisabled(user.uid, disabled) }
+            _state.update { s ->
+                result.fold(
+                    onSuccess = {
+                        s.copy(
+                            users = s.users.copy(items = s.users.items.map { if (it.uid == user.uid) it.copy(isDisabled = disabled) else it }),
+                            updatingUser = null,
+                            notice = if (disabled) "已禁用 ${user.displayName}" else "已启用 ${user.displayName}",
+                        )
+                    },
+                    onFailure = { e -> s.copy(updatingUser = null, notice = "操作失败：${e.userMessage()}") },
+                )
+            }
         }
     }
 

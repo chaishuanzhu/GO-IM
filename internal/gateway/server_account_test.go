@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"net/http"
@@ -164,8 +165,17 @@ func (f *fakeUserStore) UpdateUserRole(_ context.Context, uid, role string) erro
 	}
 	return nil
 }
-func (f *fakeUserStore) UpdateUserDisabled(context.Context, string, bool) error { return nil }
-func (f *fakeUserStore) CountUsers(context.Context) (int, error)                { return len(f.users), nil }
+func (f *fakeUserStore) UpdateUserDisabled(_ context.Context, uid string, disabled bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, ok := f.users[uid]
+	if !ok {
+		return fmt.Errorf("user %s not found", uid)
+	}
+	u.IsDisabled = disabled
+	return nil
+}
+func (f *fakeUserStore) CountUsers(context.Context) (int, error) { return len(f.users), nil }
 
 // captureMailer 记录最后一封邮件，可配置为发送失败。
 type captureMailer struct {

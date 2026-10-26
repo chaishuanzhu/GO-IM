@@ -75,7 +75,7 @@ class PipelineTest {
             WireMessage(cmd = Cmd.HEARTBEAT),
             WireMessage(cmd = Cmd.HISTORY, seq = 3),
             WireMessage(cmd = Cmd.UNREAD_COUNT, content = """{"uid":"alice","counts":{"bob":2,"g_1":5}}"""),
-            WireMessage(cmd = Cmd.KICK),
+            WireMessage(cmd = Cmd.KICK, content = "account disabled"),
         ).fold(ByteArray(0)) { acc, m -> acc + LengthFrame.encode(MessageCodec.encode(m)) }
 
         // 任意切分喂入
@@ -93,7 +93,7 @@ class PipelineTest {
         assertEquals(InboundEvent.Ack(5, 77), events[1])
         assertEquals(InboundEvent.HistoryFinished(3), events[2])
         assertEquals(InboundEvent.Unread(mapOf("bob" to 2, "g_1" to 5)), events[3])
-        assertEquals(InboundEvent.Kick, events[4])
+        assertEquals(InboundEvent.Kick("account disabled"), events[4])
     }
 
     @Test

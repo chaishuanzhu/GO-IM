@@ -52,6 +52,7 @@ HTTP /login → account = uid or email ('@') → bcrypt → JWT; response carrie
 Startup with admin_email → BootstrapAdmin: email not registered → create admin (random password, skip code, must_change_password=1) → mail password (log it if mail unavailable); registered → promote only
 HTTP /change-password (old + new) → UpdatePassword clears must_change_password (as does /password/reset); KMP login holds the session unsaved until the forced change succeeds
 HTTP /password/reset, /user/email → CodeStore.Verify(reset_password | bind_email) → update password / bind email
+HTTP /admin/users/disable | /admin/users/delete → update user → kick local connections (CmdKick "account disabled" / "account deleted"); WS / TCP connect re-checks the account (Server.accountBlocked) so unexpired tokens can't reconnect
 HTTP /user/profile (GET own or ?target, POST nickname / avatar_file_id), /user/profiles?uids=, /user/search?q=
 HTTP /avatar/{file_id}[?thumb=1] → public, only files marked is_avatar, immutable cache
 

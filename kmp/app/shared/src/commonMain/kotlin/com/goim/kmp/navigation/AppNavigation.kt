@@ -119,7 +119,9 @@ import com.goim.kmp.feature.settings.AdminConversationsScreen
 import com.goim.kmp.feature.settings.AdminConversationsViewModel
 import com.goim.kmp.feature.settings.AdminDeps
 import com.goim.kmp.feature.settings.AdminScreen
+import com.goim.kmp.feature.settings.AdminUserDetailScreen
 import com.goim.kmp.feature.settings.AdminViewModel
+import com.goim.kmp.network.GoImUserApi
 import com.goim.kmp.feature.settings.DeveloperDeps
 import com.goim.kmp.feature.settings.DeveloperScreen
 import com.goim.kmp.feature.settings.DeveloperViewModel
@@ -460,22 +462,27 @@ private fun MainNavContent(session: UserSession) {
                 if (api == null) {
                     LaunchedEffect(Unit) { nav.popBackStack() }
                 } else {
-                    val vm = viewModel {
-                        AdminViewModel(
-                            AdminDeps(
-                                selfUid = session.user.uid,
-                                stats = api::adminStats,
-                                users = api::adminUsers,
-                                deleteUser = api::adminDeleteUser,
-                                messages = api::adminMessages,
-                                deleteMessage = api::adminDeleteMessage,
-                            ),
-                        )
-                    }
+                    val vm = viewModel { AdminViewModel(adminDeps(session.user.uid, api)) }
                     AdminScreen(
                         vm,
                         onBack = { nav.popBackStack() },
-                        onOpenUser = { user -> nav.navigate(AdminUserConversationsRoute(user.uid, user.displayName)) },
+                        onOpenUser = { user -> nav.navigate(AdminUserRoute(user.uid)) },
+                    )
+                }
+            }
+            composable<AdminUserRoute> { entry ->
+                val route = entry.toRoute<AdminUserRoute>()
+                val api = session.adminApi
+                if (api == null) {
+                    LaunchedEffect(Unit) { nav.popBackStack() }
+                } else {
+                    val console = remember(entry) { nav.getBackStackEntry<AdminRoute>() }
+                    val vm = viewModel(console) { AdminViewModel(adminDeps(session.user.uid, api)) }
+                    AdminUserDetailScreen(
+                        vm,
+                        uid = route.uid,
+                        onBack = { nav.popBackStack() },
+                        onOpenConversations = { user -> nav.navigate(AdminUserConversationsRoute(user.uid, user.displayName)) },
                     )
                 }
             }
@@ -977,6 +984,16 @@ private fun TabIcon(tab: HomeTab, badge: Int) {
         Icon(icon, contentDescription = null)
     }
 }
+
+private fun adminDeps(selfUid: String, api: GoImUserApi) = AdminDeps(
+    selfUid = selfUid,
+    stats = api::adminStats,
+    users = api::adminUsers,
+    deleteUser = api::adminDeleteUser,
+    setUserDisabled = api::adminSetUserDisabled,
+    messages = api::adminMessages,
+    deleteMessage = api::adminDeleteMessage,
+)
 
 /** 管理后台的服务端消息转成聊天气泡使用的模型；[outgoing] 即是否为被查看用户发出。 */
 private fun AdminMessage.toChatMessage(outgoing: Boolean) = Message(

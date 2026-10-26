@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -98,7 +99,13 @@ type GnetHandler struct {
 	engine    gnet.Engine // 由 OnBoot 设置,用于优雅关闭
 	engineSet bool
 	connMap   sync.Map // fd(int) → *Client 连接映射
+
+	// accountBlocked 非空时登录前检查账号状态，返回值非空即拒绝（作为 CmdKick 内容）。
+	accountBlocked func(ctx context.Context, uid string) string
 }
+
+// errLoginRejected 表示已向连接写出 CmdKick，由写回调负责关闭连接。
+var errLoginRejected = errors.New("login rejected")
 
 // NewGnetHandler 创建一个 GnetHandler。
 func NewGnetHandler(
@@ -209,7 +216,9 @@ func (h *GnetHandler) processFrame(frame []byte, c gnet.Conn) {
 		client, err := h.handleLogin(frame, c)
 		if err != nil {
 			log.Printf("[gnet] login failed fd=%d: %v", c.Fd(), err)
-			c.Close()
+			if !errors.Is(err, errLoginRejected) {
+				c.Close()
+			}
 			return
 		}
 		c.SetContext(client)
@@ -278,6 +287,19 @@ func (h *GnetHandler) handleLogin(frame []byte, c gnet.Conn) (*Client, error) {
 	claims, err := h.jwtMgr.Validate(login.Token)
 	if err != nil {
 		return nil, fmt.Errorf("jwt: %w", err)
+	}
+	if h.accountBlocked != nil {
+		if reason := h.accountBlocked(h.ctx, claims.UID); reason != "" {
+			data, err := pb.Marshal(&proto.Message{Cmd: proto.CmdKick, Content: reason})
+			if err != nil {
+				return nil, fmt.Errorf("marshal kick: %w", err)
+			}
+			frame := make([]byte, 4+len(data))
+			binary.BigEndian.PutUint32(frame, uint32(len(data)))
+			copy(frame[4:], data)
+			c.AsyncWrite(frame, func(c gnet.Conn, _ error) error { return c.Close() })
+			return nil, fmt.Errorf("uid %s: %s: %w", claims.UID, reason, errLoginRejected)
+		}
 	}
 
 	transport := newGnetTransport(c)

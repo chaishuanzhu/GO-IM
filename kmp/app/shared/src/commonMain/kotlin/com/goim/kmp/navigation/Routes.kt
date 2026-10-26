@@ -27,6 +27,10 @@ data object DeveloperRoute
 @Serializable
 data object AdminRoute
 
+/** 管理后台：用户详情，数据来自 [AdminRoute] 的 AdminViewModel。 */
+@Serializable
+data class AdminUserRoute(val uid: String)
+
 /** 管理后台：[uid] 的会话列表。 */
 @Serializable
 data class AdminUserConversationsRoute(val uid: String, val name: String)

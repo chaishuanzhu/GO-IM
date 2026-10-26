@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -549,6 +550,36 @@ func TestHandleLoginInvalidJWT(t *testing.T) {
 	}
 	if client != nil {
 		t.Error("expected nil client on JWT error")
+	}
+}
+
+func TestHandleLoginBlockedAccount(t *testing.T) {
+	handler, hub, jwtMgr := newTestGnetHandler(t)
+	handler.accountBlocked = func(_ context.Context, uid string) string {
+		if uid == "bob" {
+			return kickAccountDisabled
+		}
+		return ""
+	}
+	c := newMockGnetConn(1)
+
+	client, err := handler.handleLogin(loginFrame(t, jwtMgr, "bob", "Bob"), c)
+	if !errors.Is(err, errLoginRejected) || client != nil {
+		t.Fatalf("expected rejection, got client=%v err=%v", client, err)
+	}
+	kick := &proto.Message{}
+	if err := pb.Unmarshal(c.lastAsyncWritePayload(), kick); err != nil || kick.Cmd != proto.CmdKick || kick.Content != kickAccountDisabled {
+		t.Fatalf("kick = %+v (%v)", kick, err)
+	}
+	if c.closed {
+		t.Fatal("connection must close after the kick is written, not before")
+	}
+	c.asyncCbs[0](c, nil)
+	if !c.closed {
+		t.Fatal("write callback should close the connection")
+	}
+	if hub.IsOnline(context.Background(), "bob") {
+		t.Fatal("blocked user must not be registered")
 	}
 }
 

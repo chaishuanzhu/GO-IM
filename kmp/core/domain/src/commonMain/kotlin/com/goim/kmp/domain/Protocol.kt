@@ -9,7 +9,13 @@ sealed interface InboundEvent {
 
     data class Ack(val seq: Long, val msgId: Long) : InboundEvent
 
-    data object Kick : InboundEvent
+    /** 被服务端下线；[reason] 为 CmdKick 的内容，如 [KICK_ACCOUNT_DISABLED]。 */
+    data class Kick(val reason: String = "") : InboundEvent {
+        companion object {
+            const val KICK_ACCOUNT_DISABLED = "account disabled"
+            const val KICK_ACCOUNT_DELETED = "account deleted"
+        }
+    }
 
     /** 自己在其他设备上读完了该会话：本机清零未读。 */
     data class ReadSynced(val conversationId: String) : InboundEvent

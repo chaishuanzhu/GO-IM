@@ -228,6 +228,11 @@ class GoImUserApi(
         post("admin/users/delete", "target_uid" to targetUid)
     }
 
+    /** 禁用后该用户立即下线且无法再登录。 */
+    suspend fun adminSetUserDisabled(targetUid: String, disabled: Boolean) {
+        post("admin/users/disable", "target_uid" to targetUid, "disabled" to disabled.toString())
+    }
+
     /** 按时间倒序；[before] 为 null 时从最新开始。 */
     suspend fun adminMessages(before: Long?, limit: Int): List<AdminMessage> =
         get("admin/messages", "limit" to limit.toString(), *listOfNotNull(before?.let { "before" to it.toString() }).toTypedArray())

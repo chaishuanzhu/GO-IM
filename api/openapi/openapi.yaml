@@ -1053,6 +1053,7 @@ paths:
     post:
       tags: [管理]
       summary: 删除用户
+      description: 删除后该用户在本网关的连接立即下线（CmdKick 内容 `account deleted`）。
       requestBody:
         required: true
         content:
@@ -1073,6 +1074,43 @@ paths:
           content: { text/plain: { schema: { type: string } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/AdminRequired" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /admin/users/disable:
+    post:
+      tags: [管理]
+      summary: 禁用 / 启用用户
+      description: |
+        禁用后该用户无法登录，在本网关的连接立即下线（CmdKick 内容 `account disabled`）；
+        未过期的 token 再建立 WebSocket / TCP 长连接时同样收到该 CmdKick 后被关闭。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [target_uid, disabled]
+              properties:
+                target_uid: { type: string }
+                disabled: { type: boolean }
+      responses:
+        "200":
+          description: 已更新
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  disabled: { type: boolean }
+        "400":
+          description: "`target_uid required`、`disabled must be true or false` 或 `cannot disable yourself`"
+          content: { text/plain: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminRequired" }
+        "404":
+          description: 用户不存在
+          content: { text/plain: { schema: { type: string } } }
         "503": { $ref: "#/components/responses/Unavailable" }
 
   /admin/messages:

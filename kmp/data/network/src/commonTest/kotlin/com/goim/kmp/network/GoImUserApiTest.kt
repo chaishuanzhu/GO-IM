@@ -194,6 +194,11 @@ class GoImUserApiTest {
         val del = requests.last()
         assertEquals("/admin/users/delete", del.url.encodedPath)
         assertTrue("target_uid=100001" in del.form() && "token=jwt" in del.form())
+
+        api.adminSetUserDisabled("100001", true)
+        val disable = requests.last()
+        assertEquals("/admin/users/disable", disable.url.encodedPath)
+        assertTrue("target_uid=100001" in disable.form() && "disabled=true" in disable.form())
     }
 
     @Test

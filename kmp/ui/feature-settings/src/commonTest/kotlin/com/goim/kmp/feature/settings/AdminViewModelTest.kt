@@ -20,6 +20,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -43,6 +44,8 @@ class AdminViewModelTest {
         val messageCursors = mutableListOf<Long?>()
         val deletedUsers = mutableListOf<String>()
         val deletedMessages = mutableListOf<Long>()
+        val disabled = mutableListOf<Pair<String, Boolean>>()
+        var failDisable = false
     }
 
     private fun vm(
@@ -59,6 +62,10 @@ class AdminViewModelTest {
                 AdminUserPage(allUsers.drop(offset).take(limit), allUsers.size)
             },
             deleteUser = { calls.deletedUsers += it },
+            setUserDisabled = { uid, disabled ->
+                if (calls.failDisable) throw DomainError.Server(500, "internal error")
+                calls.disabled += uid to disabled
+            },
             messages = { before, limit ->
                 calls.messageCursors += before
                 allMessages.filter { before == null || it.timestampMs < before }.take(limit)
@@ -126,6 +133,31 @@ class AdminViewModelTest {
     }
 
     @Test
+    fun disableUpdatesRowAndSkipsSelf() = runTest(dispatcher) {
+        val calls = Calls()
+        val vm = vm(calls)
+        vm.ensureUsers()
+
+        vm.setUserDisabled(user(1), true)
+        assertTrue(calls.disabled.isEmpty())
+
+        vm.setUserDisabled(user(2), true)
+        assertEquals(listOf("u2" to true), calls.disabled)
+        assertTrue(vm.state.value.users.items.first { it.uid == "u2" }.isDisabled)
+        assertNull(vm.state.value.updatingUser)
+
+        vm.setUserDisabled(user(2), false)
+        assertFalse(vm.state.value.users.items.first { it.uid == "u2" }.isDisabled)
+
+        calls.failDisable = true
+        vm.consumeNotice()
+        vm.setUserDisabled(user(3), true)
+        assertFalse(vm.state.value.users.items.first { it.uid == "u3" }.isDisabled)
+        assertTrue(vm.state.value.notice!!.startsWith("操作失败"))
+        assertNull(vm.state.value.updatingUser)
+    }
+
+    @Test
     fun chatPagesOlderAndDeletes() = runTest(dispatcher) {
         val all = (200L downTo 141L).map(::message)
         val cursors = mutableListOf<Long?>()
@@ -167,6 +199,7 @@ class AdminViewModelTest {
                 stats = { stats },
                 users = { _, _ -> throw DomainError.Server(503, "user store not available") },
                 deleteUser = {},
+                setUserDisabled = { _, _ -> },
                 messages = { _, _ -> emptyList() },
                 deleteMessage = {},
             ),

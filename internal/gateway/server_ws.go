@@ -27,9 +27,21 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	blocked := s.accountBlocked(r.Context(), claims.UID)
+
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[server] upgrade error: %v", err)
+		return
+	}
+	if blocked != "" {
+		// 先升级再踢：客户端收到 CmdKick 才会停止重连，HTTP 错误只会让它反复重试。
+		if data, err := pb.Marshal(&proto.Message{Cmd: proto.CmdKick, Content: blocked}); err == nil {
+			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			conn.WriteMessage(websocket.BinaryMessage, data)
+		}
+		conn.Close()
+		log.Printf("[server] rejected connection uid=%s: %s", claims.UID, blocked)
 		return
 	}
 

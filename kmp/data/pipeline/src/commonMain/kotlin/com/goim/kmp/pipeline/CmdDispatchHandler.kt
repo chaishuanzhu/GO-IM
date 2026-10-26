@@ -31,7 +31,7 @@ class CmdDispatchHandler(
             Cmd.ACK -> onEvent(InboundEvent.Ack(seq = msg.seq, msgId = msg.msg_id))
             Cmd.KICK -> {
                 onKick()
-                onEvent(InboundEvent.Kick)
+                onEvent(InboundEvent.Kick(msg.content))
             }
             Cmd.READ_RECEIPT -> if (msg.from == selfUid && msg.to.isNotEmpty()) {
                 onEvent(InboundEvent.ReadSynced(conversationId(msg)))

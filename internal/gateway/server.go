@@ -1338,8 +1338,59 @@ func (s *Server) HandleAdminUserDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.kickUser(r.Context(), targetUID, kickAccountDeleted)
 
 	data, _ := json.Marshal(map[string]string{"status": "ok"})
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data)
+}
+
+// HandleAdminUserDisable 禁用或启用用户。禁用后该用户无法登录，已有连接立即下线，
+// 未过期的 token 也无法再建立长连接。
+// POST /admin/users/disable 表单字段:uid(管理员)、token、target_uid、disabled(true / false)
+func (s *Server) HandleAdminUserDisable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	claims := s.adminAuth(w, r)
+	if claims == nil {
+		return
+	}
+	if s.userStore == nil {
+		http.Error(w, "user store not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	targetUID := r.FormValue("target_uid")
+	if targetUID == "" {
+		http.Error(w, "target_uid required", http.StatusBadRequest)
+		return
+	}
+	disabled, err := strconv.ParseBool(r.FormValue("disabled"))
+	if err != nil {
+		http.Error(w, "disabled must be true or false", http.StatusBadRequest)
+		return
+	}
+	if disabled && targetUID == claims.UID {
+		http.Error(w, "cannot disable yourself", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.userStore.UpdateUserDisabled(r.Context(), targetUID, disabled); err != nil {
+		log.Printf("[server] admin disable user %s error: %v", targetUID, err)
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if disabled {
+		s.kickUser(r.Context(), targetUID, kickAccountDisabled)
+	}
+
+	data, _ := json.Marshal(map[string]interface{}{"status": "ok", "disabled": disabled})
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data)
 }
@@ -1546,6 +1597,7 @@ func (s *Server) StartGNet(cfg *configs.Config) error {
 		time.Duration(cfg.Gateway.Heartbeat)*time.Duration(cfg.Gateway.HeartbeatFail),
 		workerPoolSize,
 	)
+	s.gnetHandler.accountBlocked = s.accountBlocked
 
 	log.Printf("[server] gnet TCP server starting on %s (event-loops=%d)", cfg.Gateway.TCPAddr, numLoops)
 	return gnet.Run(s.gnetHandler, fmt.Sprintf("tcp://%s", cfg.Gateway.TCPAddr),

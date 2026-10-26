@@ -114,6 +114,8 @@ fun App(titleBarHeight: Dp = 0.dp, titleBar: @Composable () -> Unit = {}) {
                 val text = when (reason) {
                     SessionEndReason.KICKED -> "账号已在其他设备登录"
                     SessionEndReason.AUTH_EXPIRED -> "登录已失效，请重新登录"
+                    SessionEndReason.ACCOUNT_DISABLED -> "账号已被禁用"
+                    SessionEndReason.ACCOUNT_DELETED -> "账号已被删除"
                     SessionEndReason.LOGOUT -> return@collect
                 }
                 snackbar.showSnackbar(text)

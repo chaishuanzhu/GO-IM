@@ -130,7 +130,7 @@ class ConnectionRepositoryImplTest {
         h.transports[0].push(WireMessage(cmd = Cmd.KICK))
         h.transports[0].drop()
         runCurrent()
-        assertEquals(InboundEvent.Kick, h.repo.inboundEvents.first())
+        assertEquals(InboundEvent.Kick(), h.repo.inboundEvents.first())
         advanceTimeBy(60_000)
         assertEquals(1, h.transports.size)
     }

@@ -4,15 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/im/api/proto"
 	"github.com/im/configs"
 	"github.com/im/internal/pkg/jwt"
 	"github.com/im/internal/pkg/snowflake"
 	"github.com/im/internal/repo"
+	pb "google.golang.org/protobuf/proto"
 )
 
 // adminConvStore 给 testMsgStore 加上 AdminConversationStore。
@@ -112,7 +116,7 @@ func TestAdminConversationMessages(t *testing.T) {
 			t.Fatalf("messages: %d %s", rec.Code, rec.Body.String())
 		}
 		var body struct {
-			Messages []*proto.Message            `json:"messages"`
+			Messages []*proto.Message             `json:"messages"`
 			Users    map[string]map[string]string `json:"users"`
 		}
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -142,6 +146,113 @@ func TestAdminConversationMessages(t *testing.T) {
 	rec := e.do(t, srv.HandleAdminConversationMessages, http.MethodGet, adminQuery(t, mgr, "admin", url.Values{"target_uid": {"100001"}}))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("missing peer: %d", rec.Code)
+	}
+}
+
+func TestAdminUserDisable(t *testing.T) {
+	srv, users, mgr := newAdminServer(t, &testMsgStore{})
+	ctx := context.Background()
+	users.Create(ctx, &repo.User{UID: "100001", Nickname: "alice"})
+	alice, tr := newDeviceClient(t, "100001", "d1", "ios")
+	srv.clients.Register(ctx, alice)
+	e := &accountEnv{}
+	disable := func(role, target, value string) int {
+		return e.do(t, srv.HandleAdminUserDisable, http.MethodPost,
+			adminQuery(t, mgr, role, url.Values{"target_uid": {target}, "disabled": {value}})).Code
+	}
+
+	for _, c := range []struct {
+		role, target, value string
+		want                int
+	}{
+		{"user", "100001", "true", http.StatusForbidden},
+		{"admin", "", "true", http.StatusBadRequest},
+		{"admin", "100001", "maybe", http.StatusBadRequest},
+		{"admin", "root", "true", http.StatusBadRequest},
+		{"admin", "999999", "true", http.StatusNotFound},
+	} {
+		if got := disable(c.role, c.target, c.value); got != c.want {
+			t.Fatalf("%+v: got %d", c, got)
+		}
+	}
+	if isClosed(alice) {
+		t.Fatal("rejected requests must not kick")
+	}
+
+	if got := disable("admin", "100001", "true"); got != http.StatusOK {
+		t.Fatalf("disable: %d", got)
+	}
+	if u, _ := users.GetByUID(ctx, "100001"); !u.IsDisabled {
+		t.Fatal("user not disabled")
+	}
+	if !isClosed(alice) || !tr.closed.Load() {
+		t.Fatal("disabled user's connection should be closed")
+	}
+	if kick := readMessageFromChan(t, alice.send); kick.Cmd != proto.CmdKick || kick.Content != kickAccountDisabled {
+		t.Fatalf("kick = %+v", kick)
+	}
+
+	if got := disable("admin", "100001", "false"); got != http.StatusOK {
+		t.Fatalf("enable: %d", got)
+	}
+	if u, _ := users.GetByUID(ctx, "100001"); u.IsDisabled {
+		t.Fatal("user still disabled")
+	}
+}
+
+func TestAccountBlocked(t *testing.T) {
+	srv, users, _ := newAdminServer(t, &testMsgStore{})
+	ctx := context.Background()
+	users.Create(ctx, &repo.User{UID: "100001"})
+	users.Create(ctx, &repo.User{UID: "100002", IsDisabled: true})
+
+	for uid, want := range map[string]string{"100001": "", "100002": kickAccountDisabled, "100003": kickAccountDeleted} {
+		if got := srv.accountBlocked(ctx, uid); got != want {
+			t.Errorf("%s: got %q want %q", uid, got, want)
+		}
+	}
+	srv.authCfg.DevMode = true
+	if got := srv.accountBlocked(ctx, "100003"); got != "" {
+		t.Errorf("dev_mode unknown user: got %q", got)
+	}
+	srv.userStore = nil
+	if got := srv.accountBlocked(ctx, "100002"); got != "" {
+		t.Errorf("no user store: got %q", got)
+	}
+}
+
+func TestWSRejectsDisabledAccount(t *testing.T) {
+	srv, users, mgr := newAdminServer(t, &testMsgStore{})
+	users.Create(context.Background(), &repo.User{UID: "100002", IsDisabled: true})
+	ts := httptest.NewServer(http.HandlerFunc(srv.HandleWS))
+	defer ts.Close()
+
+	token, err := mgr.Generate("100002", "bob", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/?token="+token, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_, data, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	msg := &proto.Message{}
+	if err := pb.Unmarshal(data, msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg.Cmd != proto.CmdKick || msg.Content != kickAccountDisabled {
+		t.Fatalf("first message = %+v", msg)
+	}
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("connection should be closed after kick")
+	}
+	if srv.clients.IsOnline(context.Background(), "100002") {
+		t.Fatal("disabled user must not be registered")
 	}
 }
 

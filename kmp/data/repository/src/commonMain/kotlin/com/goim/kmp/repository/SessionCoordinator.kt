@@ -22,7 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
-enum class SessionEndReason { LOGOUT, KICKED, AUTH_EXPIRED }
+enum class SessionEndReason { LOGOUT, KICKED, AUTH_EXPIRED, ACCOUNT_DISABLED, ACCOUNT_DELETED }
 
 /** 会话级事件泵（对齐 iOS `CompositionRoot.pumpInboundEvents / pumpConnectionState`）。 */
 class SessionCoordinator(
@@ -75,7 +75,13 @@ class SessionCoordinator(
             }
             is InboundEvent.Ack -> messages.markStatus(event.seq, MessageStatus.SENT, event.msgId.takeIf { it != 0L })
             is InboundEvent.HistoryFinished -> messages.completeHistory(event.delivered)
-            InboundEvent.Kick -> onEnded(SessionEndReason.KICKED)
+            is InboundEvent.Kick -> onEnded(
+                when (event.reason) {
+                    InboundEvent.Kick.KICK_ACCOUNT_DISABLED -> SessionEndReason.ACCOUNT_DISABLED
+                    InboundEvent.Kick.KICK_ACCOUNT_DELETED -> SessionEndReason.ACCOUNT_DELETED
+                    else -> SessionEndReason.KICKED
+                },
+            )
             is InboundEvent.ReadSynced -> conversations.setUnread(event.conversationId, 0)
             is InboundEvent.Unread -> event.counts.forEach { (key, count) ->
                 conversations.setUnread(conversationIdForUnreadKey(key), count)
