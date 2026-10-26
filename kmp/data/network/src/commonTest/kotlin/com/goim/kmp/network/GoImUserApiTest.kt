@@ -142,4 +142,64 @@ class GoImUserApiTest {
         assertEquals(403, error.code)
         assertEquals("only the group owner can invite members", error.body)
     }
+
+    @Test
+    fun adminEndpointsParseGatewayJson() = runTest {
+        val api = api { req ->
+            when (req.url.encodedPath) {
+                "/admin/stats" -> respond(
+                    """{"status":"degraded","online_users":3,"total_users":10,"total_messages":99,""" +
+                        """"dependencies":{"redis":"ok","mysql":"unhealthy: down"},"memory":{"alloc_mb":12,"goroutines":40}}""",
+                    HttpStatusCode.OK,
+                    jsonHeaders,
+                )
+                "/admin/users" -> respond(
+                    """{"users":[{"uid":"100001","nickname":"Bob","email":"b@x.com","role":"admin","is_disabled":true,""" +
+                        """"created_at":5,"updated_at":0}],"total":7,"offset":0,"limit":50}""",
+                    HttpStatusCode.OK,
+                    jsonHeaders,
+                )
+                "/admin/messages" -> respond(
+                    """{"messages":[{"msg_id":373022222882705408,"seq":1,"cmd":1,"from":"a","to":"g_1","chat_type":2,""" +
+                        """"msg_type":1,"content":"{\"recalled\":true}","timestamp":42},{"msg_id":2,"from":"a","to":"b",""" +
+                        """"content":"hi","timestamp":41}],"limit":50}""",
+                    HttpStatusCode.OK,
+                    jsonHeaders,
+                )
+                else -> respond("""{"status":"ok"}""", HttpStatusCode.OK, jsonHeaders)
+            }
+        }
+
+        val stats = api.adminStats()
+        assertEquals(false, stats.healthy)
+        assertEquals(listOf("mysql", "redis"), stats.dependencies.keys.toList())
+        assertEquals(12, stats.allocMb)
+
+        val page = api.adminUsers(0, 50)
+        assertEquals(7, page.total)
+        val user = page.users.single()
+        assertTrue(user.isAdmin && user.isDisabled)
+        assertEquals("b@x.com", user.email)
+
+        val messages = api.adminMessages(before = 100, limit = 50)
+        assertEquals(373022222882705408L, messages[0].msgId)
+        assertEquals(ChatType.GROUP, messages[0].chatType)
+        assertTrue(messages[0].recalled)
+        assertEquals(ChatType.SINGLE, messages[1].chatType)
+        assertEquals("100", requests.last().url.parameters["before"])
+
+        api.adminDeleteMessage(373022222882705408L)
+        api.adminDeleteUser("100001")
+        assertTrue("msg_id=373022222882705408" in requests[requests.size - 2].form())
+        val del = requests.last()
+        assertEquals("/admin/users/delete", del.url.encodedPath)
+        assertTrue("target_uid=100001" in del.form() && "token=jwt" in del.form())
+    }
+
+    @Test
+    fun adminMessagesWithoutCursorOmitsBefore() = runTest {
+        val api = api { respond("""{"messages":[],"limit":50}""", HttpStatusCode.OK, jsonHeaders) }
+        assertTrue(api.adminMessages(before = null, limit = 50).isEmpty())
+        assertEquals(null, requests.single().url.parameters["before"])
+    }
 }

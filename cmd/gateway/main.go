@@ -353,6 +353,13 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		} else {
 			log.Printf("[main] mail disabled: email registration, password reset and email binding are unavailable")
 		}
+		if cfg.AdminEmail != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := gateway.BootstrapAdmin(ctx, userStore, mailer, cfg.AdminEmail); err != nil {
+				log.Printf("[main] WARNING: admin bootstrap failed: %v", err)
+			}
+			cancel()
+		}
 	}
 
 	// 为 /health 端点注册依赖健康检查。

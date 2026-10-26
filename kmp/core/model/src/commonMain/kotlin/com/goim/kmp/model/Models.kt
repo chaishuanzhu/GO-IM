@@ -102,6 +102,8 @@ data class User(
     val email: String = "",
     /** 绝对地址；未设置头像时为空。 */
     val avatarUrl: String = "",
+    /** 登录响应带回：自动创建的管理员账号首次登录须先改密码，改完前不保存会话。 */
+    val mustChangePassword: Boolean = false,
 ) {
     val displayName: String get() = nickname.ifBlank { uid }
 }

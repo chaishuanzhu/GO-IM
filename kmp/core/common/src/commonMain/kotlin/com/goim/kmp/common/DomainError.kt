@@ -35,6 +35,7 @@ private val serverTexts = listOf(
     "invalid email" to "邮箱格式不正确",
     "password must be at least" to "密码至少 6 位",
     "password too long" to "密码过长",
+    "invalid current password" to "当前密码错误",
     "nickname required" to "昵称不能为空",
     "nickname too long" to "昵称最多 32 个字",
     "nickname contains invalid" to "昵称包含不支持的字符",
@@ -52,6 +53,9 @@ private val serverTexts = listOf(
     "not a member" to "不在该群中",
     "not available" to "服务端未启用该功能",
     "no pending" to "该请求已处理",
+    "admin access required" to "需要管理员权限（角色变更后请重新登录）",
+    "cannot delete yourself" to "不能删除自己",
+    "not found" to "不存在或已删除",
 )
 
 private fun serverMessage(code: Int, body: String): String {

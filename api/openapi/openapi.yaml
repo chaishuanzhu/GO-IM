@@ -201,6 +201,7 @@ paths:
     post:
       tags: [账号]
       summary: 修改密码
+      description: 同时清除登录响应中的 `must_change_password` 标记。
       requestBody:
         required: true
         content:
@@ -1211,6 +1212,7 @@ components:
         avatar_url: { type: string, description: 相对网关的路径，未设置头像时为空串, example: /avatar/337501598508912642 }
         role: { type: string, enum: [user, admin] }
         token: { type: string, description: JWT，默认 7 天有效 }
+        must_change_password: { type: boolean, description: 为 true 时（按 admin_email 自动创建的账号）客户端须先调用 /change-password 再进入应用；改密或重置密码后清除 }
 
     PublicProfile:
       type: object

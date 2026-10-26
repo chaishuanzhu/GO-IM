@@ -111,6 +111,9 @@ import com.goim.kmp.feature.conversations.ConversationListViewModel
 import com.goim.kmp.feature.search.SearchScreen
 import com.goim.kmp.feature.search.SearchViewModel
 import com.goim.kmp.feature.settings.AccountActions
+import com.goim.kmp.feature.settings.AdminDeps
+import com.goim.kmp.feature.settings.AdminScreen
+import com.goim.kmp.feature.settings.AdminViewModel
 import com.goim.kmp.feature.settings.DeveloperDeps
 import com.goim.kmp.feature.settings.DeveloperScreen
 import com.goim.kmp.feature.settings.DeveloperViewModel
@@ -360,6 +363,11 @@ private fun MainNavContent(session: UserSession) {
                     onOpenGroups = { openContact(ContactDetail.Groups) },
                     onOpenDeveloper = { nav.navigate(DeveloperRoute) },
                     onOpenProfile = { nav.navigate(ProfileRoute) },
+                    onOpenAdmin = if (session.adminApi != null) {
+                        { nav.navigate(AdminRoute) }
+                    } else {
+                        null
+                    },
                     onEscape = {
                         when {
                             tab == HomeTab.CONTACTS && contactDetail != null -> contactDetail = null
@@ -437,6 +445,26 @@ private fun MainNavContent(session: UserSession) {
             }
             composable<DeveloperRoute> {
                 DeveloperDestination(session, onBack = { nav.popBackStack() })
+            }
+            composable<AdminRoute> {
+                val api = session.adminApi
+                if (api == null) {
+                    LaunchedEffect(Unit) { nav.popBackStack() }
+                } else {
+                    val vm = viewModel {
+                        AdminViewModel(
+                            AdminDeps(
+                                selfUid = session.user.uid,
+                                stats = api::adminStats,
+                                users = api::adminUsers,
+                                deleteUser = api::adminDeleteUser,
+                                messages = api::adminMessages,
+                                deleteMessage = api::adminDeleteMessage,
+                            ),
+                        )
+                    }
+                    AdminScreen(vm, onBack = { nav.popBackStack() })
+                }
             }
         }
 
@@ -692,6 +720,7 @@ private fun HomeScreen(
     onOpenGroups: () -> Unit,
     onOpenDeveloper: () -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenAdmin: (() -> Unit)?,
     onEscape: () -> Boolean,
     detailPane: @Composable () -> Unit,
 ) {
@@ -749,7 +778,13 @@ private fun HomeScreen(
                 selection = contactsSelection.takeIf { twoPane },
             )
             HomeTab.SEARCH -> SearchScreen(searchVm) { hit, title -> onOpenChat(ChatRoute.of(hit, title)) }
-            HomeTab.SETTINGS -> SettingsScreen(settingsVm, onOpenDeveloper = onOpenDeveloper, profile = me, onOpenProfile = onOpenProfile)
+            HomeTab.SETTINGS -> SettingsScreen(
+                settingsVm,
+                onOpenDeveloper = onOpenDeveloper,
+                profile = me,
+                onOpenProfile = onOpenProfile,
+                onOpenAdmin = onOpenAdmin,
+            )
         }
     }
 

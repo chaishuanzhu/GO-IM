@@ -15,7 +15,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class AuthMode { LOGIN, REGISTER, RESET }
+/** [CHANGE_PASSWORD]：登录成功但服务端要求先改密码（自动创建的管理员账号首次登录）。 */
+enum class AuthMode { LOGIN, REGISTER, RESET, CHANGE_PASSWORD }
 
 data class LoginUiState(
     val mode: AuthMode = AuthMode.LOGIN,
@@ -25,6 +26,8 @@ data class LoginUiState(
     val email: String = "",
     val code: String = "",
     val password: String = "",
+    /** 强制改密：再次输入新密码。 */
+    val confirmPassword: String = "",
     val isLoading: Boolean = false,
     val isSendingCode: Boolean = false,
     /** 重新发送验证码前的剩余秒数。 */
@@ -38,6 +41,7 @@ data class LoginUiState(
         get() = !isLoading && when (mode) {
             AuthMode.LOGIN -> account.isNotBlank()
             AuthMode.REGISTER, AuthMode.RESET -> isValidEmail(email) && code.length == CODE_LENGTH && password.length >= MIN_PASSWORD
+            AuthMode.CHANGE_PASSWORD -> password.length >= MIN_PASSWORD && password == confirmPassword
         }
 
     companion object {
@@ -62,10 +66,20 @@ class LoginViewModel(
     val state: StateFlow<LoginUiState> = _state.asStateFlow()
     private var countdown: Job? = null
 
-    fun onModeChange(mode: AuthMode) = _state.update {
-        // 登录页填的是邮箱时带到注册 / 找回密码
-        val email = it.email.ifBlank { it.account.takeIf { a -> '@' in a }.orEmpty() }
-        it.copy(mode = mode, email = email, code = "", password = "", error = null, info = null)
+    /** 强制改密期间的用户（会话未保存）与登录时输入的初始密码，只留在内存里。 */
+    private var pendingUser: User? = null
+    private var initialPassword: String = ""
+
+    fun onModeChange(mode: AuthMode) {
+        if (mode != AuthMode.CHANGE_PASSWORD) {
+            pendingUser = null
+            initialPassword = ""
+        }
+        _state.update {
+            // 登录页填的是邮箱时带到注册 / 找回密码
+            val email = it.email.ifBlank { it.account.takeIf { a -> '@' in a }.orEmpty() }
+            it.copy(mode = mode, email = email, code = "", password = "", confirmPassword = "", error = null, info = null)
+        }
     }
 
     fun onAccountChange(value: String) = _state.update { it.copy(account = value, error = null) }
@@ -74,6 +88,7 @@ class LoginViewModel(
         it.copy(code = value.filter(Char::isDigit).take(LoginUiState.CODE_LENGTH), error = null)
     }
     fun onPasswordChange(value: String) = _state.update { it.copy(password = value, error = null) }
+    fun onConfirmPasswordChange(value: String) = _state.update { it.copy(confirmPassword = value, error = null) }
 
     fun sendCode() {
         val s = _state.value
@@ -101,11 +116,33 @@ class LoginViewModel(
             _state.update { it.copy(error = validationError(it)) }
             return
         }
+        if (s.mode == AuthMode.CHANGE_PASSWORD && s.password == initialPassword) {
+            _state.update { it.copy(error = "新密码不能与初始密码相同") }
+            return
+        }
         _state.update { it.copy(isLoading = true, error = null, info = null) }
         viewModelScope.launch {
             try {
                 when (s.mode) {
-                    AuthMode.LOGIN -> onLoggedIn(auth.login(s.account.trim(), s.password))
+                    AuthMode.LOGIN -> {
+                        val user = auth.login(s.account.trim(), s.password)
+                        if (user.mustChangePassword) {
+                            pendingUser = user
+                            initialPassword = s.password
+                            _state.update {
+                                it.copy(mode = AuthMode.CHANGE_PASSWORD, password = "", confirmPassword = "", info = "首次登录，请先设置新密码")
+                            }
+                        } else {
+                            onLoggedIn(user)
+                        }
+                    }
+                    AuthMode.CHANGE_PASSWORD -> {
+                        val user = pendingUser ?: error("登录状态已失效，请重新登录")
+                        val saved = auth.changeInitialPassword(user, initialPassword, s.password)
+                        pendingUser = null
+                        initialPassword = ""
+                        onLoggedIn(saved)
+                    }
                     AuthMode.REGISTER -> onLoggedIn(auth.register(s.email.trim(), s.code, s.password))
                     AuthMode.RESET -> {
                         auth.resetPassword(s.email.trim(), s.code, s.password)
@@ -127,6 +164,8 @@ class LoginViewModel(
     private fun validationError(s: LoginUiState): String? = when {
         s.isLoading -> null
         s.mode == AuthMode.LOGIN -> "请输入邮箱或用户 ID"
+        s.mode == AuthMode.CHANGE_PASSWORD && s.password.length < LoginUiState.MIN_PASSWORD -> "密码至少 ${LoginUiState.MIN_PASSWORD} 位"
+        s.mode == AuthMode.CHANGE_PASSWORD -> "两次输入的密码不一致"
         !LoginUiState.isValidEmail(s.email) -> "请输入正确的邮箱"
         s.code.length != LoginUiState.CODE_LENGTH -> "请输入 6 位验证码"
         else -> "密码至少 ${LoginUiState.MIN_PASSWORD} 位"

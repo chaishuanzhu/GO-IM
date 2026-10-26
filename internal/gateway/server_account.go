@@ -299,6 +299,8 @@ func (s *Server) writeLoginResponse(w http.ResponseWriter, u *repo.User) {
 		"avatar_url": avatarURL(u.AvatarFileID),
 		"role":       role,
 		"token":      token,
+		// 为 true 时客户端须先调用 /change-password 再进入应用
+		"must_change_password": u.MustChangePassword,
 	})
 }
 

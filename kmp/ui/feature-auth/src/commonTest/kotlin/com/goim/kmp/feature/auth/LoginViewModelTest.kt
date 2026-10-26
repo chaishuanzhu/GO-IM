@@ -37,11 +37,16 @@ class LoginViewModelTest {
         val codes = mutableListOf<Pair<String, EmailCodePurpose>>()
         val resets = mutableListOf<Triple<String, String, String>>()
         val saved = mutableListOf<User>()
+        val changes = mutableListOf<Triple<String, String, String>>()
         var failLogin = false
+        var mustChange = false
 
         override suspend fun login(account: String, password: String): User {
             if (failLogin) error("invalid account or password")
-            return User("100001", "alice", "t")
+            return User("100001", "alice", "t", mustChangePassword = mustChange)
+        }
+        override suspend fun changePassword(user: User, oldPassword: String, newPassword: String) {
+            changes += Triple(user.uid, oldPassword, newPassword)
         }
         override suspend fun register(email: String, code: String, password: String) =
             User("100002", email.substringBefore('@'), "t", email = email)
@@ -123,6 +128,60 @@ class LoginViewModelTest {
         assertEquals("a@example.com", s.account)
         assertEquals("", s.password)
         assertNotNull(s.info)
+    }
+
+    @Test
+    fun mustChangePasswordHoldsSessionUntilChanged() = runTest(dispatcher) {
+        val auth = FakeAuth().apply { mustChange = true }
+        val loggedIn = mutableListOf<User>()
+        val vm = LoginViewModel(LoginUseCase(auth), onLoggedIn = { loggedIn += it })
+        vm.onAccountChange("admin@example.com")
+        vm.onPasswordChange("Initial123")
+        vm.submit()
+        advanceUntilIdle()
+
+        assertEquals(AuthMode.CHANGE_PASSWORD, vm.state.value.mode)
+        assertTrue(loggedIn.isEmpty())
+        assertTrue(auth.saved.isEmpty())
+
+        vm.onPasswordChange("newpass1")
+        vm.onConfirmPasswordChange("newpass2")
+        vm.submit()
+        assertEquals("两次输入的密码不一致", vm.state.value.error)
+
+        vm.onPasswordChange("Initial123")
+        vm.onConfirmPasswordChange("Initial123")
+        vm.submit()
+        assertEquals("新密码不能与初始密码相同", vm.state.value.error)
+        assertTrue(auth.changes.isEmpty())
+
+        vm.onPasswordChange("newpass1")
+        vm.onConfirmPasswordChange("newpass1")
+        vm.submit()
+        advanceUntilIdle()
+        assertEquals(Triple("100001", "Initial123", "newpass1"), auth.changes.single())
+        val user = loggedIn.single()
+        assertFalse(user.mustChangePassword)
+        assertEquals(listOf(user), auth.saved)
+    }
+
+    @Test
+    fun leavingForcedChangeDropsPendingLogin() = runTest(dispatcher) {
+        val auth = FakeAuth().apply { mustChange = true }
+        val vm = LoginViewModel(LoginUseCase(auth), onLoggedIn = {})
+        vm.onAccountChange("100001")
+        vm.onPasswordChange("Initial123")
+        vm.submit()
+        advanceUntilIdle()
+        vm.onModeChange(AuthMode.LOGIN)
+
+        vm.onModeChange(AuthMode.CHANGE_PASSWORD)
+        vm.onPasswordChange("newpass1")
+        vm.onConfirmPasswordChange("newpass1")
+        vm.submit()
+        advanceUntilIdle()
+        assertTrue(auth.changes.isEmpty())
+        assertNotNull(vm.state.value.error)
     }
 
     @Test

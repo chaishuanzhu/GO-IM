@@ -14,12 +14,14 @@ object MessagePreview {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** 会话列表预览（不出现原始 JSON）。 */
-    fun listPreview(message: Message): String = when (message.msgType) {
-        MsgType.Text -> textPreview(message.content)
+    fun listPreview(message: Message): String = preview(message.msgType, message.content)
+
+    fun preview(msgType: MsgType, content: String): String = when (msgType) {
+        MsgType.Text -> textPreview(content)
         MsgType.Image -> "[图片]"
-        MsgType.Voice -> decodeFileMeta(message.content)?.duration?.takeIf { it > 0 }?.let { "[语音] $it\"" } ?: "[语音]"
-        MsgType.Video -> decodeFileMeta(message.content)?.duration?.takeIf { it > 0 }?.let { "[视频] $it\"" } ?: "[视频]"
-        MsgType.File -> decodeFileMeta(message.content)?.name?.takeIf { it.isNotEmpty() }?.let { "[文件] $it" } ?: "[文件]"
+        MsgType.Voice -> decodeFileMeta(content)?.duration?.takeIf { it > 0 }?.let { "[语音] $it\"" } ?: "[语音]"
+        MsgType.Video -> decodeFileMeta(content)?.duration?.takeIf { it > 0 }?.let { "[视频] $it\"" } ?: "[视频]"
+        MsgType.File -> decodeFileMeta(content)?.name?.takeIf { it.isNotEmpty() }?.let { "[文件] $it" } ?: "[文件]"
         MsgType.Sticker -> "[表情]"
         is MsgType.Unsupported -> MsgType.UNSUPPORTED_PLACEHOLDER
     }

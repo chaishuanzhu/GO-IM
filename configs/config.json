@@ -78,6 +78,8 @@
 
     "admin_uids": [],
 
+    "admin_email": "",
+
     "logic": {
         "addr": "localhost:50051",
         "listen_addr": ":50051",

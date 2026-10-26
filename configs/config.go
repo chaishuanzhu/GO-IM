@@ -51,6 +51,8 @@ type Config struct {
 	Snow      SnowConfig      `json:"snowflake"`
 	Stability StabilityConfig `json:"stability"`
 	AdminUIDs []string        `json:"admin_uids"` // 初始管理员用户 ID
+	// AdminEmail 非空且该邮箱尚未注册时，网关启动时自动创建管理员账号（随机密码发到该邮箱，首次登录须改密码）。
+	AdminEmail string `json:"admin_email"`
 }
 
 // GatewayConfig 保存网关服务器设置。

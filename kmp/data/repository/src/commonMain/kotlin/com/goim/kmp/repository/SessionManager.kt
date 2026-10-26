@@ -17,6 +17,7 @@ import com.goim.kmp.domain.AuthRepository
 import com.goim.kmp.domain.ServerSettingsRepository
 import com.goim.kmp.model.TransportKind
 import com.goim.kmp.model.User
+import com.goim.kmp.model.isAdmin
 import com.goim.kmp.network.GoImApi
 import com.goim.kmp.network.GoImFileApi
 import com.goim.kmp.network.StickerCdnApi
@@ -59,6 +60,8 @@ class UserSession internal constructor(
     val profiles: ProfileRepositoryImpl,
     private val scope: CoroutineScope,
     private val coordinator: SessionCoordinator,
+    /** 管理后台接口；token 不是管理员角色时为 null，界面据此隐藏入口。 */
+    val adminApi: GoImUserApi? = null,
 ) {
     internal fun start(transport: TransportKind) {
         coordinator.start()
@@ -216,6 +219,7 @@ class SessionManager(
         return UserSession(
             user, home, database, connection, messages, conversations, groups, friends, search, files, stickers, profiles,
             scope, coordinator,
+            adminApi = userApi.takeIf { user.isAdmin },
         )
     }
 

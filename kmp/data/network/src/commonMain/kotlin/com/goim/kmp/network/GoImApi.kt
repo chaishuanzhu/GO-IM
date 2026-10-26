@@ -27,6 +27,7 @@ internal data class LoginResponseDto(
     val username: String? = null,
     val email: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
+    @SerialName("must_change_password") val mustChangePassword: Boolean = false,
 )
 
 /** 网关 REST 接口（docs/07）。[baseUrl] 每次请求时读取，设置页改地址后即时生效。 */
@@ -49,6 +50,17 @@ class GoImApi(
 
     suspend fun resetPassword(email: String, code: String, newPassword: String) {
         submit("password/reset", "email" to email, "code" to code, "new_password" to newPassword)
+    }
+
+    /** 已登录改密码（会话尚未保存时也可用，凭据直接取自 [user]）；同时清除服务端「须改密码」标记。 */
+    suspend fun changePassword(user: User, oldPassword: String, newPassword: String) {
+        submit(
+            "change-password",
+            "uid" to user.uid,
+            "token" to user.token,
+            "old_password" to oldPassword,
+            "new_password" to newPassword,
+        )
     }
 
     /**
@@ -80,6 +92,7 @@ class GoImApi(
             token = dto.token,
             email = dto.email.orEmpty(),
             avatarUrl = absoluteUrl(baseUrl(), dto.avatarUrl),
+            mustChangePassword = dto.mustChangePassword,
         )
     }
 

@@ -148,14 +148,22 @@ func (f *fakeUserStore) UpdatePassword(_ context.Context, uid, hash string) erro
 		return repo.ErrUserNotFound
 	}
 	u.PasswordHash = hash
+	u.MustChangePassword = false
 	return nil
 }
 
 func (f *fakeUserStore) ListUsers(context.Context, int, int) ([]*repo.User, int, error) {
 	return nil, 0, nil
 }
-func (f *fakeUserStore) DeleteUser(context.Context, string) error               { return nil }
-func (f *fakeUserStore) UpdateUserRole(context.Context, string, string) error   { return nil }
+func (f *fakeUserStore) DeleteUser(context.Context, string) error { return nil }
+func (f *fakeUserStore) UpdateUserRole(_ context.Context, uid, role string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if u, ok := f.users[uid]; ok {
+		u.Role = role
+	}
+	return nil
+}
 func (f *fakeUserStore) UpdateUserDisabled(context.Context, string, bool) error { return nil }
 func (f *fakeUserStore) CountUsers(context.Context) (int, error)                { return len(f.users), nil }
 

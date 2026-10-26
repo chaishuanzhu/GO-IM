@@ -1,6 +1,9 @@
 package com.goim.kmp.network
 
 import com.goim.kmp.common.DomainError
+import com.goim.kmp.model.AdminMessage
+import com.goim.kmp.model.AdminStats
+import com.goim.kmp.model.AdminUserPage
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.ConversationId
 import com.goim.kmp.model.EmailCodePurpose
@@ -208,6 +211,30 @@ class GoImUserApi(
                 timestampMs = m.timestamp,
             )
         }
+
+    // region 管理后台（网关要求 token 的 role 为 admin，否则 403）
+
+    suspend fun adminStats(): AdminStats = get("admin/stats").decode<AdminStatsDto>().toDomain()
+
+    suspend fun adminUsers(offset: Int, limit: Int): AdminUserPage {
+        val dto = get("admin/users", "offset" to offset.toString(), "limit" to limit.toString()).decode<AdminUsersDto>()
+        return AdminUserPage(dto.users.orEmpty().map { it.toDomain() }, dto.total)
+    }
+
+    suspend fun adminDeleteUser(targetUid: String) {
+        post("admin/users/delete", "target_uid" to targetUid)
+    }
+
+    /** 按时间倒序；[before] 为 null 时从最新开始。 */
+    suspend fun adminMessages(before: Long?, limit: Int): List<AdminMessage> =
+        get("admin/messages", "limit" to limit.toString(), *listOfNotNull(before?.let { "before" to it.toString() }).toTypedArray())
+            .decode<AdminMessagesDto>().messages.orEmpty().map { it.toDomain() }
+
+    suspend fun adminDeleteMessage(msgId: Long) {
+        post("admin/messages/delete", "msg_id" to msgId.toString())
+    }
+
+    // endregion
 
     private fun url(path: String) = baseUrl().trimEnd('/') + "/" + path
 

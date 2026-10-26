@@ -85,6 +85,8 @@ fun SettingsScreen(
     /** 当前账号的最新资料（昵称 / 头像）；为 null 时用登录时保存的信息。 */
     profile: UserProfile? = null,
     onOpenProfile: (() -> Unit)? = null,
+    /** 仅管理员传入；为 null 时不显示「管理」分组。 */
+    onOpenAdmin: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var confirmLogout by remember { mutableStateOf(false) }
@@ -142,6 +144,11 @@ fun SettingsScreen(
                 onApiBaseUrl = viewModel::setApiBaseUrl,
                 onTransport = viewModel::setTransport,
             )
+            if (onOpenAdmin != null) {
+                SettingsSection(title = "管理") {
+                    SettingsRow(title = "管理后台", value = "概览 · 用户 · 消息", icon = GoImIcons.Shield, onClick = onOpenAdmin)
+                }
+            }
             if (onOpenDeveloper != null) {
                 SettingsSection(title = "开发者") {
                     SettingsRow(title = "开发者工具", value = "日志 · 网络 · 数据库", icon = Icons.Filled.Build, onClick = onOpenDeveloper)

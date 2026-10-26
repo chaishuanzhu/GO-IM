@@ -158,6 +158,7 @@ Gateway 和 Logic 只读一个 JSON 配置文件（容器内 `/etc/im/config.jso
 | `gateway.object_storage.cors_allowed_origins` | 浏览器直传时允许的站点来源，启动时写入桶 CORS；原生客户端不受 CORS 限制，可留空 |
 | `gateway.object_storage.max_upload` / `legacy_max_upload` | 直传上限（默认 100 MB）/ 经网关 `POST /upload` 中转的上限（默认 10 MB） |
 | `admin_uids` | 管理员 UID 列表 |
+| `admin_email` | 管理员邮箱。该邮箱尚未注册时，网关启动时自动以它创建管理员账号（跳过验证码），随机密码发到该邮箱，首次登录须修改密码；邮件未启用或发送失败时密码写在网关日志里。已注册的账号只提升为管理员，不改密码 |
 | `logic.worker_id` | 雪花 ID 机器号，须与 `snowflake.worker_id` 不同 |
 
 ## 文件直传

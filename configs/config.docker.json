@@ -94,6 +94,8 @@
 
     "admin_uids": ["SixForOne"],
 
+    "admin_email": "",
+
     "logic": {
         "addr": "logic:50051",
         "listen_addr": ":50051",

@@ -16,7 +16,19 @@ import kotlinx.coroutines.CancellationException
 
 /** 登录 / 注册 / 找回密码；连接在会话挂载（UserHome + 数据库）之后由 app 层发起。 */
 class LoginUseCase(private val auth: AuthRepository) {
-    suspend fun login(account: String, password: String): User = auth.login(account, password).also { auth.saveSession(it) }
+    /**
+     * 返回的用户 [User.mustChangePassword] 为 true 时不保存会话：调用方须先 [changeInitialPassword]，
+     * 这样中途退出应用也不会带着未改的初始密码进入主页。
+     */
+    suspend fun login(account: String, password: String): User = auth.login(account, password).also {
+        if (!it.mustChangePassword) auth.saveSession(it)
+    }
+
+    /** 首次登录强制改密：成功后保存会话并返回可挂载的用户。 */
+    suspend fun changeInitialPassword(user: User, oldPassword: String, newPassword: String): User {
+        auth.changePassword(user, oldPassword, newPassword)
+        return user.copy(mustChangePassword = false).also { auth.saveSession(it) }
+    }
 
     suspend fun register(email: String, code: String, password: String): User =
         auth.register(email, code, password).also { auth.saveSession(it) }

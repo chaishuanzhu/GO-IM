@@ -106,6 +106,38 @@ func TestMySQLUserCreateDuplicate(t *testing.T) {
 	}
 }
 
+func TestMySQLMustChangePasswordClearedByUpdatePassword(t *testing.T) {
+	s := newTestMySQLStore(t)
+	defer s.Close()
+	truncateAll(t, s)
+
+	ctx := context.Background()
+	u := &User{UID: "bootadmin", Nickname: "admin", Email: "Boot@Example.com", PasswordHash: "hash",
+		Role: "admin", MustChangePassword: true, CreatedAt: 1}
+	if err := s.Create(ctx, u); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, _ := s.GetByEmail(ctx, "boot@example.com")
+	if got == nil || got.Role != "admin" || !got.MustChangePassword {
+		t.Fatalf("created user = %+v", got)
+	}
+	if err := s.UpdatePassword(ctx, "bootadmin", "hash2"); err != nil {
+		t.Fatalf("UpdatePassword: %v", err)
+	}
+	got, _ = s.GetByUID(ctx, "bootadmin")
+	if got.MustChangePassword || got.PasswordHash != "hash2" {
+		t.Fatalf("after UpdatePassword = %+v", got)
+	}
+
+	plain := &User{UID: "plainuser", Nickname: "p", PasswordHash: "h", CreatedAt: 1}
+	if err := s.Create(ctx, plain); err != nil {
+		t.Fatalf("Create plain: %v", err)
+	}
+	if got, _ := s.GetByUID(ctx, "plainuser"); got.Role != "user" || got.MustChangePassword {
+		t.Fatalf("plain user = %+v", got)
+	}
+}
+
 func TestMySQLUpdateUserRoleAndDisabled(t *testing.T) {
 	s := newTestMySQLStore(t)
 	defer s.Close()

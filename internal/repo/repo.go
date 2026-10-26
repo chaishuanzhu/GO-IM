@@ -24,7 +24,9 @@ type User struct {
 	PasswordHash string `json:"-"`
 	Role         string `json:"role"` // "user" 或 "admin"
 	IsDisabled   bool   `json:"is_disabled"`
-	CreatedAt    int64  `json:"created_at"` // 毫秒级 Unix 时间戳
+	// MustChangePassword 为 true 时客户端登录后须先改密码（自动创建的管理员账号）；改密或重置后清除。
+	MustChangePassword bool  `json:"-"`
+	CreatedAt          int64 `json:"created_at"` // 毫秒级 Unix 时间戳
 	UpdatedAt    int64  `json:"updated_at"` // 资料最后修改时间（毫秒），0 = 未修改过
 }
 

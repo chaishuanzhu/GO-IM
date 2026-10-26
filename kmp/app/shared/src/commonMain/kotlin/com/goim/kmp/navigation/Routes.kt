@@ -25,6 +25,9 @@ data object AddFriendRoute
 data object DeveloperRoute
 
 @Serializable
+data object AdminRoute
+
+@Serializable
 data object ProfileRoute
 
 @Serializable

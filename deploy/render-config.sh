@@ -11,7 +11,9 @@
 #   MYSQL_PASSWORD   应用连 MySQL 的密码 → DSN(须与服务器 .env 的 MYSQL_PASSWORD 一致)
 #   RUSTFS_SECRET_KEY RustFS 访问密钥 → object_storage.secret_key
 #                   (须与服务器 .env 的 RUSTFS_SECRET_KEY 一致 —— 应用即用管理员凭据访问)
-#   ADMIN_UID        管理员 UID → admin_uids
+#   ADMIN_UID        管理员 UID → admin_uids(可选)
+#   ADMIN_EMAIL      管理员邮箱 → admin_email(可选;首次启动自动建号,随机密码发到该邮箱)
+#                   ADMIN_UID 与 ADMIN_EMAIL 至少填一个
 #
 # 注意:
 #   1. 渲染目标为 gitignore 的 configs/config.prod.generated.json,
@@ -25,13 +27,24 @@ SRC="deploy/config.prod.json"
 DST="configs/config.prod.generated.json"
 
 # 必填环境变量校验
-REQUIRED=(DOMAIN JWT_SECRET MYSQL_PASSWORD RUSTFS_SECRET_KEY ADMIN_UID)
+REQUIRED=(DOMAIN JWT_SECRET MYSQL_PASSWORD RUSTFS_SECRET_KEY)
 for v in "${REQUIRED[@]}"; do
     if [ -z "${!v:-}" ]; then
         echo "ERROR: 缺少环境变量 $v" >&2
         exit 1
     fi
 done
+ADMIN_UID="${ADMIN_UID:-}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-}"
+if [ -z "$ADMIN_UID" ] && [ -z "$ADMIN_EMAIL" ]; then
+    echo "ERROR: ADMIN_UID 与 ADMIN_EMAIL 至少设置一个" >&2
+    exit 1
+fi
+if [ -n "$ADMIN_UID" ]; then
+    ADMIN_UIDS_JSON="[\"$ADMIN_UID\"]"
+else
+    ADMIN_UIDS_JSON="[]"
+fi
 
 # 转义 sed 替换串中的特殊字符(& \ 与分隔符 |)
 esc() {
@@ -42,7 +55,8 @@ mkdir -p "$(dirname "$DST")"
 
 sed \
     -e "s|YOUR_DOMAIN|$(esc "$DOMAIN")|g" \
-    -e "s|YOUR_ADMIN_UID|$(esc "$ADMIN_UID")|g" \
+    -e "s|\[\"YOUR_ADMIN_UID\"\]|$(esc "$ADMIN_UIDS_JSON")|g" \
+    -e "s|YOUR_ADMIN_EMAIL|$(esc "$ADMIN_EMAIL")|g" \
     -e "s|CHANGE_ME_JWT_SECRET_USE_RANDOM_64_CHARS|$(esc "$JWT_SECRET")|g" \
     -e "s|CHANGE_ME_PASSWORD|$(esc "$MYSQL_PASSWORD")|g" \
     -e "s|CHANGE_ME_RUSTFS_SECRET|$(esc "$RUSTFS_SECRET_KEY")|g" \
@@ -50,6 +64,7 @@ sed \
 
 echo "✅ 已生成 $DST"
 echo "   check_origin: https://${DOMAIN} / https://www.${DOMAIN}"
-echo "   admin_uids:   [${ADMIN_UID}]"
+echo "   admin_uids:   ${ADMIN_UIDS_JSON}"
+echo "   admin_email:  ${ADMIN_EMAIL:-(未设置)}"
 echo "   剩余占位符检查(应为空):"
-grep -nE 'YOUR_DOMAIN|YOUR_ADMIN_UID|CHANGE_ME' "$DST" || echo "   无 ✅"
+grep -nE 'YOUR_DOMAIN|YOUR_ADMIN_UID|YOUR_ADMIN_EMAIL|CHANGE_ME' "$DST" || echo "   无 ✅"

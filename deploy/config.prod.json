@@ -122,6 +122,8 @@
 
     "admin_uids": ["YOUR_ADMIN_UID"],
 
+    "admin_email": "YOUR_ADMIN_EMAIL",
+
     "stability": {
         "_comment": "2C2G 最小栈限制连接数,防止资源耗尽;大服务器可调回 1000",
         "max_connections": 200,

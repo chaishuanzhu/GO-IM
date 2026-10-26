@@ -56,6 +56,31 @@ class GoImApiTest {
     }
 
     @Test
+    fun mustChangePasswordAndChangePassword() = runTest {
+        var seenPath = ""
+        var seenBody = ""
+        val engine = MockEngine { request ->
+            seenPath = request.url.encodedPath
+            seenBody = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+            if (seenPath == "/login") {
+                respond("""{"uid":"100000","nickname":"admin","token":"jwt","must_change_password":true}""", HttpStatusCode.OK, jsonHeaders)
+            } else {
+                respond("""{"status":"ok"}""", HttpStatusCode.OK, jsonHeaders)
+            }
+        }
+        val api = GoImApi(createHttpClient(engine)) { "http://h" }
+
+        val user = api.login("admin@example.com", "Initial123")
+        assertTrue(user.mustChangePassword)
+
+        api.changePassword(user, "Initial123", "newpass1")
+        assertEquals("/change-password", seenPath)
+        listOf("uid=100000", "token=jwt", "old_password=Initial123", "new_password=newpass1").forEach {
+            assertTrue(it in seenBody, "missing $it in $seenBody")
+        }
+    }
+
+    @Test
     fun serverErrorMapsToDomainError() = runTest {
         val engine = MockEngine { respondError(HttpStatusCode.Conflict, "user exists\n") }
         val api = GoImApi(createHttpClient(engine)) { "http://h" }

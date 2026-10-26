@@ -48,7 +48,9 @@ TCP data     → GnetHandler.OnTraffic           → frame decode (4-byte len pr
 # Accounts (server_account.go; requires MySQL)
 HTTP /auth/email-code → CodeStore.Issue (Redis or memory; 6 digits, 10 min, 60 s cooldown) → Mailer.Send (SMTP, or log in dev_mode)
 HTTP /register → CodeStore.Verify(register) → UserStore.CreateWithAutoUID (uid_seq, from 100000; nickname = email local part)
-HTTP /login → account = uid or email ('@') → bcrypt → JWT; response carries nickname, email, avatar_url
+HTTP /login → account = uid or email ('@') → bcrypt → JWT; response carries nickname, email, avatar_url, must_change_password
+Startup with admin_email → BootstrapAdmin: email not registered → create admin (random password, skip code, must_change_password=1) → mail password (log it if mail unavailable); registered → promote only
+HTTP /change-password (old + new) → UpdatePassword clears must_change_password (as does /password/reset); KMP login holds the session unsaved until the forced change succeeds
 HTTP /password/reset, /user/email → CodeStore.Verify(reset_password | bind_email) → update password / bind email
 HTTP /user/profile (GET own or ?target, POST nickname / avatar_file_id), /user/profiles?uids=, /user/search?q=
 HTTP /avatar/{file_id}[?thumb=1] → public, only files marked is_avatar, immutable cache
@@ -260,6 +262,7 @@ Default config values:
 - gRPC server: `addr: ""` (empty = disabled, set `:50050` with node_id + peer_addrs for multi-gateway)
 - gRPC discovery: `mode: ""` (empty or "static" = use peer_addrs; "redis" = Redis service discovery with TTL heartbeat)
 - Auth: `dev_mode: true` (no password required; set false for production with MySQL); `multi_device: "single"` (one connection per user; `per_platform` = one phone + one desktop + one web, `unlimited` = no limit)
+- Admins: `admin_uids: []` (promoted at startup), `admin_email: ""` (non-empty and unregistered → auto-created admin, initial password emailed, forced change on first login). Role is baked into the JWT at login, so changes need a re-login
 - Mail: `enabled: false`; SMTP host/port/username/from in config, password only via env `GOIM_MAIL_PASSWORD` (k8s Secret `goim-infra` key `MAIL_PASSWORD`). Port 465 = implicit TLS, others STARTTLS. Without mail, codes are logged in dev_mode and the code endpoints return 503 otherwise
 - Object storage: `enabled: false` (in-memory fallback), endpoint `localhost:9000`, bucket `im-files`, max_upload 10MB
 - Stability: `max_connections: 0` (unlimited), HTTP timeouts (read 10s, write 10s, idle 120s), `shutdown_timeout: 30s`, `pprof_enabled: false`, `swagger_enabled: true` (Swagger UI at `/swagger/`, spec embedded from `api/openapi/openapi.yaml`; off in the deploy configs). Every route added in `cmd/gateway/main.go` must also be added to the spec — `go test ./api/openapi/` fails otherwise

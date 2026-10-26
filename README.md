@@ -389,8 +389,10 @@ DOMAIN=your-domain.com \
 JWT_SECRET=$(openssl rand -base64 64) \
 MYSQL_PASSWORD=<应用密码> \
 RUSTFS_SECRET_KEY=<RustFS 密码> \
-ADMIN_UID=<你的 UID> \
+ADMIN_EMAIL=<你的邮箱> \
 bash deploy/render-config.sh
+# ADMIN_EMAIL：首次启动自动创建管理员账号，随机密码发到该邮箱，首次登录须修改密码；
+# 已知 UID 时也可改用（或同时设置）ADMIN_UID=<你的 UID>
 
 # 4. 启动（本地构建镜像，2 核机器首次约 5-10 分钟）
 docker compose -f docker-compose.prod.yml up -d
@@ -403,7 +405,7 @@ curl -I https://your-domain.com/health
 
 - 生产必须 `auth.dev_mode: false`（启用 bcrypt 密码校验）
 - 修改 JWT secret、MySQL / RustFS 密码，勿用默认值
-- `admin_uids` 仅配置可信账号
+- `admin_uids` / `admin_email` 仅配置可信账号；自动创建的管理员首次登录后立即修改密码
 - SSL 证书首次由 `init-ssl.sh` 获取，之后 certbot 自动续期
 
 ## 可观测性

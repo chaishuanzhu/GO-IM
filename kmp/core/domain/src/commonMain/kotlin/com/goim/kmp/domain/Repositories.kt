@@ -35,6 +35,9 @@ interface AuthRepository {
 
     suspend fun resetPassword(email: String, code: String, newPassword: String)
 
+    /** 用 [user] 的凭据修改密码（首次登录强制改密时会话尚未保存）。 */
+    suspend fun changePassword(user: User, oldPassword: String, newPassword: String)
+
     /** 资料修改后同步已保存账号的昵称 / 头像 / 邮箱。 */
     fun updateSavedProfile(profile: UserProfile)
 

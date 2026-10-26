@@ -118,13 +118,15 @@ fun LoginScreen(
                             AuthMode.LOGIN -> "登录以继续"
                             AuthMode.REGISTER -> "用邮箱创建新账号"
                             AuthMode.RESET -> "通过邮箱验证码重置密码"
+                            AuthMode.CHANGE_PASSWORD -> "首次登录，请设置新密码"
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
-                if (state.mode != AuthMode.RESET) {
+                val changingPassword = state.mode == AuthMode.CHANGE_PASSWORD
+                if (state.mode == AuthMode.LOGIN || state.mode == AuthMode.REGISTER) {
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         listOf(AuthMode.LOGIN to "登录", AuthMode.REGISTER to "注册").forEachIndexed { index, (mode, label) ->
                             SegmentedButton(
@@ -149,7 +151,7 @@ fun LoginScreen(
                         ),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                } else {
+                } else if (!changingPassword) {
                     GoImTextField(
                         value = state.email,
                         onValueChange = viewModel::onEmailChange,
@@ -185,7 +187,7 @@ fun LoginScreen(
                 GoImTextField(
                     value = state.password,
                     onValueChange = viewModel::onPasswordChange,
-                    placeholder = if (state.mode == AuthMode.RESET) "新密码" else "密码",
+                    placeholder = if (state.mode == AuthMode.RESET || changingPassword) "新密码" else "密码",
                     supportingText = if (state.mode == AuthMode.LOGIN) null else "至少 6 位",
                     leadingIcon = Icons.Filled.Lock,
                     trailing = {
@@ -197,10 +199,25 @@ fun LoginScreen(
                         }
                     },
                     visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = if (changingPassword) ImeAction.Next else ImeAction.Go,
+                    ),
                     keyboardActions = KeyboardActions(onGo = { viewModel.submit() }),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (changingPassword) {
+                    GoImTextField(
+                        value = state.confirmPassword,
+                        onValueChange = viewModel::onConfirmPasswordChange,
+                        placeholder = "再次输入新密码",
+                        leadingIcon = Icons.Filled.Lock,
+                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
+                        keyboardActions = KeyboardActions(onGo = { viewModel.submit() }),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
                 state.error?.let { ErrorBanner(it) }
                 state.info?.let { InfoBanner(it) }
@@ -222,6 +239,7 @@ fun LoginScreen(
                                 AuthMode.LOGIN -> "登录"
                                 AuthMode.REGISTER -> "注册并登录"
                                 AuthMode.RESET -> "重置密码"
+                                AuthMode.CHANGE_PASSWORD -> "设置新密码并登录"
                             },
                         )
                     }
@@ -231,14 +249,14 @@ fun LoginScreen(
                         onClick = { viewModel.onModeChange(AuthMode.RESET) },
                         modifier = Modifier.align(Alignment.End),
                     ) { Text("忘记密码？") }
-                    AuthMode.RESET -> TextButton(
+                    AuthMode.RESET, AuthMode.CHANGE_PASSWORD -> TextButton(
                         onClick = { viewModel.onModeChange(AuthMode.LOGIN) },
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     ) { Text("返回登录") }
                     AuthMode.REGISTER -> Unit
                 }
 
-                if (savedAccounts.isNotEmpty()) {
+                if (savedAccounts.isNotEmpty() && !changingPassword) {
                     Spacer(Modifier.height(GoImSpacing.s2))
                     Text(
                         "本机已登录的账号",

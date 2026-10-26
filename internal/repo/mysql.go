@@ -279,6 +279,7 @@ func (s *MySQLStore) migrateProfile() error {
 		{"ALTER TABLE users ADD UNIQUE INDEX uk_email (email)", []uint16{errDupKeyName}},
 		{"ALTER TABLE users ADD INDEX idx_nickname (nickname)", []uint16{errDupKeyName}},
 		{"ALTER TABLE files ADD COLUMN is_avatar TINYINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
+		{"ALTER TABLE users ADD COLUMN must_change_password TINYINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
 	}
 	for _, step := range steps {
 		if _, err := s.db.Exec(step.ddl); err != nil && !isMySQLError(err, step.skipped...) {
@@ -316,7 +317,7 @@ func isDupKey(err error, key string) bool {
 
 // ---------- UserStore 实现 ----------
 
-const userColumns = "uid, nickname, COALESCE(email, ''), avatar_file_id, password_hash, role, is_disabled, created_at, updated_at"
+const userColumns = "uid, nickname, COALESCE(email, ''), avatar_file_id, password_hash, role, is_disabled, must_change_password, created_at, updated_at"
 
 type rowScanner interface {
 	Scan(dest ...interface{}) error
@@ -324,7 +325,8 @@ type rowScanner interface {
 
 func scanUser(row rowScanner) (*User, error) {
 	u := &User{}
-	err := row.Scan(&u.UID, &u.Nickname, &u.Email, &u.AvatarFileID, &u.PasswordHash, &u.Role, &u.IsDisabled, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.UID, &u.Nickname, &u.Email, &u.AvatarFileID, &u.PasswordHash, &u.Role, &u.IsDisabled,
+		&u.MustChangePassword, &u.CreatedAt, &u.UpdatedAt)
 	return u, err
 }
 
@@ -336,11 +338,15 @@ func nullableEmail(email string) interface{} {
 	return strings.ToLower(email)
 }
 
-// Create 插入一个新用户。如果 UID 已存在则返回错误。
+// Create 插入一个新用户。如果 UID 已存在则返回错误。Role 为空时按 "user"。
 func (s *MySQLStore) Create(ctx context.Context, u *User) error {
+	role := u.Role
+	if role == "" {
+		role = "user"
+	}
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO users (uid, nickname, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-		u.UID, u.Nickname, nullableEmail(u.Email), u.PasswordHash, u.CreatedAt,
+		"INSERT INTO users (uid, nickname, email, password_hash, role, must_change_password, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		u.UID, u.Nickname, nullableEmail(u.Email), u.PasswordHash, role, u.MustChangePassword, u.CreatedAt,
 	)
 	if isDupKey(err, "uk_email") {
 		return ErrEmailTaken
@@ -376,11 +382,11 @@ func (s *MySQLStore) CreateWithAutoUID(ctx context.Context, u *User) error {
 	return errors.New("allocate uid: too many collisions")
 }
 
-// UpdatePassword 更新用户的密码哈希。
+// UpdatePassword 更新用户的密码哈希，并清除「须改密码」标记。
 // 如果 UID 不存在则返回错误。
 func (s *MySQLStore) UpdatePassword(ctx context.Context, uid, newPasswordHash string) error {
 	result, err := s.db.ExecContext(ctx,
-		"UPDATE users SET password_hash = ? WHERE uid = ?",
+		"UPDATE users SET password_hash = ?, must_change_password = 0 WHERE uid = ?",
 		newPasswordHash, uid,
 	)
 	if err != nil {
