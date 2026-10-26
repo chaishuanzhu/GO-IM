@@ -78,4 +78,9 @@ data class AdminConversation(
 data class AdminSender(val nickname: String, val avatarUrl: String)
 
 /** 某个会话的一页消息（从新到旧）及本页发送者资料。 */
-data class AdminChatPage(val messages: List<AdminMessage>, val senders: Map<String, AdminSender>)
+data class AdminChatPage(
+    val messages: List<AdminMessage>,
+    val senders: Map<String, AdminSender>,
+    /** 群名或对方昵称，服务端查不到时为空。 */
+    val title: String = "",
+)

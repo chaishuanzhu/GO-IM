@@ -116,4 +116,5 @@ internal data class AdminSenderDto(
 internal data class AdminChatDto(
     val messages: List<AdminMessageDto>? = null,
     val users: Map<String, AdminSenderDto>? = null,
+    val title: String? = null,
 )

@@ -1221,6 +1221,9 @@ paths:
                         nickname: { type: string }
                         avatar_url: { type: string }
                   limit: { type: integer }
+                  title:
+                    type: string
+                    description: 群名或对方昵称；查不到时为空
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/AdminRequired" }

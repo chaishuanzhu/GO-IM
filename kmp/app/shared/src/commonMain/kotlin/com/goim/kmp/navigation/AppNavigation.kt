@@ -113,6 +113,7 @@ import com.goim.kmp.feature.conversations.ConversationListViewModel
 import com.goim.kmp.feature.search.SearchScreen
 import com.goim.kmp.feature.search.SearchViewModel
 import com.goim.kmp.feature.settings.AccountActions
+import com.goim.kmp.feature.settings.AdminChatFocus
 import com.goim.kmp.feature.settings.AdminChatScreen
 import com.goim.kmp.feature.settings.AdminChatViewModel
 import com.goim.kmp.feature.settings.AdminConversationsScreen
@@ -467,6 +468,20 @@ private fun MainNavContent(session: UserSession) {
                         vm,
                         onBack = { nav.popBackStack() },
                         onOpenUser = { user -> nav.navigate(AdminUserRoute(user.uid)) },
+                        onOpenMessage = { m ->
+                            // 以发送者视角打开：该消息靠右
+                            nav.navigate(
+                                AdminConversationRoute(
+                                    uid = m.fromUid,
+                                    name = m.fromUid,
+                                    peer = m.toUid,
+                                    chatType = m.chatType.value,
+                                    title = m.toUid,
+                                    focusMsgId = m.msgId,
+                                    focusTs = m.timestampMs,
+                                ),
+                            )
+                        },
                     )
                 }
             }
@@ -514,14 +529,16 @@ private fun MainNavContent(session: UserSession) {
                         AdminChatViewModel(
                             load = { before, limit -> api.adminConversationMessages(route.uid, route.peer, chatType, before, limit) },
                             deleteMessage = api::adminDeleteMessage,
+                            focus = AdminChatFocus(route.focusMsgId, route.focusTs).takeIf { route.focusMsgId != 0L },
                         )
                     }
                     ReadOnlyBubbles(session.files, session.stickers, onError = vm::showNotice) {
                         AdminChatScreen(
                             vm,
                             title = route.title,
-                            subtitle = if (chatType == ChatType.GROUP) "群聊 · 全部成员的消息" else "${route.name} 的单聊",
+                            isGroup = chatType == ChatType.GROUP,
                             selfUid = route.uid,
+                            selfName = route.name,
                             onBack = { nav.popBackStack() },
                             bubble = { message, sender, outgoing, maxWidth, onLongPress ->
                                 MessageBubble(

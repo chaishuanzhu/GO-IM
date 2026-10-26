@@ -109,6 +109,7 @@ func TestAdminConversationMessages(t *testing.T) {
 	_ = users.Create(context.Background(), &repo.User{UID: "100002", Nickname: "Bob", AvatarFileID: 7})
 	e := &accountEnv{}
 
+	var title string
 	decodeBody := func(q url.Values) (msgs []*proto.Message, profiles map[string]map[string]string) {
 		t.Helper()
 		rec := e.do(t, srv.HandleAdminConversationMessages, http.MethodGet, adminQuery(t, mgr, "admin", q))
@@ -118,10 +119,12 @@ func TestAdminConversationMessages(t *testing.T) {
 		var body struct {
 			Messages []*proto.Message             `json:"messages"`
 			Users    map[string]map[string]string `json:"users"`
+			Title    string                       `json:"title"`
 		}
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
 		}
+		title = body.Title
 		return body.Messages, body.Users
 	}
 
@@ -131,6 +134,9 @@ func TestAdminConversationMessages(t *testing.T) {
 	}
 	if profiles["100002"]["nickname"] != "Bob" || profiles["100002"]["avatar_url"] != "/avatar/7" {
 		t.Fatalf("profiles = %v", profiles)
+	}
+	if title != "Bob" {
+		t.Fatalf("title = %q", title)
 	}
 
 	msgs, _ = decodeBody(url.Values{"target_uid": {"100001"}, "peer": {"100002"}, "before": {itoa64(now - 2000)}})

@@ -63,10 +63,15 @@ import com.goim.kmp.model.ChatType
 
 private enum class AdminTab(val title: String) { OVERVIEW("概览"), USERS("用户"), MESSAGES("消息") }
 
-/** 管理后台：系统概览、用户管理（点用户进入详情）、全站消息浏览（仅管理员可进入，权限由网关校验）。 */
+/** 管理后台：系统概览、用户管理（点用户进入详情）、全站消息浏览（点消息跳到所在会话；仅管理员可进入，权限由网关校验）。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AdminScreen(viewModel: AdminViewModel, onBack: () -> Unit, onOpenUser: (AdminUser) -> Unit) {
+fun AdminScreen(
+    viewModel: AdminViewModel,
+    onBack: () -> Unit,
+    onOpenUser: (AdminUser) -> Unit,
+    onOpenMessage: (AdminMessage) -> Unit,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(AdminTab.OVERVIEW) }
     var deletingMessage by remember { mutableStateOf<AdminMessage?>(null) }
@@ -129,7 +134,7 @@ fun AdminScreen(viewModel: AdminViewModel, onBack: () -> Unit, onOpenUser: (Admi
                     key = { it.msgId },
                     onLoadMore = viewModel::loadMoreMessages,
                 ) { message ->
-                    MessageRow(message, onDelete = { deletingMessage = message })
+                    MessageRow(message, onOpen = { onOpenMessage(message) }, onDelete = { deletingMessage = message })
                 }
             }
         }
@@ -254,9 +259,10 @@ private fun UserRow(user: AdminUser, isSelf: Boolean, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun MessageRow(message: AdminMessage, onDelete: () -> Unit) {
+private fun MessageRow(message: AdminMessage, onOpen: () -> Unit, onDelete: () -> Unit) {
     val target = if (message.chatType == ChatType.GROUP) "群 ${message.toUid}" else message.toUid
     ListItem(
+        modifier = Modifier.clickable(role = Role.Button, onClickLabel = "在会话中查看", onClick = onOpen),
         overlineContent = { Text("${message.fromUid} → $target · ${GoImFormat.messageTime(message.timestampMs)}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         headlineContent = {
             Text(

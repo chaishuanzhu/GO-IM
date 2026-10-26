@@ -54,21 +54,74 @@ data class AdminChatUiState(
     val endReached: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
+    /** 服务端返回的群名或对方昵称，空时用调用方给的标题。 */
+    val title: String = "",
+    /** 要滚动到并高亮的消息，界面高亮后调用 [AdminChatViewModel.clearHighlight]。 */
+    val highlightId: Long? = null,
 )
 
-/** 管理后台：只读查看某个会话的消息，向上滚动加载更早；可删除单条消息。 */
+/** 打开会话后要定位的消息（从全站消息列表点进来）。 */
+data class AdminChatFocus(val msgId: Long, val timestampMs: Long)
+
+/**
+ * 管理后台：只读查看某个会话的消息，向上滚动加载更早；可删除单条消息。
+ * 有 [focus] 时先向前翻页直到覆盖该消息的时间，再定位高亮。
+ */
 class AdminChatViewModel(
     private val load: suspend (before: Long?, limit: Int) -> AdminChatPage,
     private val deleteMessage: suspend (msgId: Long) -> Unit,
+    focus: AdminChatFocus? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(AdminChatUiState())
     val state: StateFlow<AdminChatUiState> = _state.asStateFlow()
 
     init {
-        refresh()
+        if (focus != null) locate(focus) else refresh()
     }
 
     fun refresh() = loadPage(reset = true)
+
+    fun clearHighlight() = _state.update { it.copy(highlightId = null) }
+
+    private fun locate(target: AdminChatFocus) {
+        _state.update { it.copy(loading = true) }
+        viewModelScope.launch {
+            var loaded = AdminChatUiState()
+            var pages = 0
+            val result = attempt {
+                while (!loaded.endReached && pages < MAX_LOCATE_PAGES &&
+                    (loaded.messages.lastOrNull()?.timestampMs ?: Long.MAX_VALUE) > target.timestampMs
+                ) {
+                    val page = load(loaded.messages.lastOrNull()?.timestampMs, LOCATE_PAGE_SIZE)
+                    loaded = loaded.copy(
+                        messages = (loaded.messages + page.messages).distinctBy { it.msgId },
+                        senders = loaded.senders + page.senders,
+                        title = page.title.ifEmpty { loaded.title },
+                        endReached = page.messages.size < LOCATE_PAGE_SIZE,
+                    )
+                    pages++
+                }
+            }
+            _state.update { s ->
+                result.fold(
+                    onSuccess = {
+                        val found = loaded.messages.any { it.msgId == target.msgId }
+                        val tooOld = !loaded.endReached && (loaded.messages.lastOrNull()?.timestampMs ?: 0) > target.timestampMs
+                        loaded.copy(
+                            loaded = true,
+                            highlightId = target.msgId.takeIf { found },
+                            notice = when {
+                                found -> null
+                                tooOld -> "消息太早，未能定位，可向上滚动继续加载"
+                                else -> "未找到该消息，可能已被删除"
+                            },
+                        )
+                    },
+                    onFailure = { e -> s.copy(loading = false, loaded = true, error = e.userMessage()) },
+                )
+            }
+        }
+    }
 
     fun loadOlder() {
         val s = _state.value
@@ -104,6 +157,7 @@ class AdminChatViewModel(
                         s.copy(
                             messages = messages,
                             senders = (if (reset) emptyMap() else s.senders) + page.senders,
+                            title = page.title.ifEmpty { s.title },
                             loading = false,
                             loaded = true,
                             endReached = page.messages.size < PAGE_SIZE,
@@ -125,6 +179,10 @@ class AdminChatViewModel(
 
     private companion object {
         const val PAGE_SIZE = 50
+        const val LOCATE_PAGE_SIZE = 100
+
+        /** 定位最多向前翻这么多页（约 2000 条），更早的消息不再定位。 */
+        const val MAX_LOCATE_PAGES = 20
     }
 }
 

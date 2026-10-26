@@ -184,6 +184,38 @@ class AdminViewModelTest {
     }
 
     @Test
+    fun chatLocatesFocusedMessage() = runTest(dispatcher) {
+        val all = (1000L downTo 1L).map(::message)
+        val cursors = mutableListOf<Long?>()
+        fun chat(focus: AdminChatFocus) = AdminChatViewModel(
+            load = { before, limit ->
+                cursors += before
+                AdminChatPage(all.filter { before == null || it.timestampMs < before }.take(limit), emptyMap(), title = "Bob")
+            },
+            deleteMessage = {},
+            focus = focus,
+        )
+
+        val vm = chat(AdminChatFocus(750, 750))
+        assertEquals(listOf(null, 901L, 801L), cursors)
+        assertEquals(750L, vm.state.value.highlightId)
+        assertEquals("Bob", vm.state.value.title)
+        assertNull(vm.state.value.notice)
+        vm.clearHighlight()
+        assertNull(vm.state.value.highlightId)
+
+        val gone = chat(AdminChatFocus(9999, 950))
+        assertNull(gone.state.value.highlightId)
+        assertEquals("未找到该消息，可能已被删除", gone.state.value.notice)
+
+        cursors.clear()
+        val tooOld = chat(AdminChatFocus(-1, -1))
+        assertEquals(11, cursors.size)
+        assertTrue(tooOld.state.value.endReached)
+        assertEquals("未找到该消息，可能已被删除", tooOld.state.value.notice)
+    }
+
+    @Test
     fun conversationsLoadAndFail() = runTest(dispatcher) {
         val conv = AdminConversation("b", ChatType.SINGLE, "", 3, message(1))
         assertEquals(listOf(conv), AdminConversationsViewModel { listOf(conv) }.state.value.items)

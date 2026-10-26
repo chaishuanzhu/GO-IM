@@ -1529,7 +1529,30 @@ func (s *Server) HandleAdminConversationMessages(w http.ResponseWriter, r *http.
 	if msgs == nil {
 		msgs = []*proto.Message{}
 	}
-	writeJSON(w, map[string]interface{}{"messages": msgs, "users": users, "limit": limit})
+	writeJSON(w, map[string]interface{}{
+		"messages": msgs, "users": users, "limit": limit,
+		"title": s.adminConversationTitle(r.Context(), peer, q.Get("chat_type") == "2"),
+	})
+}
+
+// adminConversationTitle 返回会话标题：群名或对方昵称，查不到时为空（客户端显示 ID）。
+func (s *Server) adminConversationTitle(ctx context.Context, peer string, group bool) string {
+	if group {
+		if s.groupStore == nil {
+			return ""
+		}
+		if g, err := s.groupStore.Get(ctx, peer); err == nil && g != nil {
+			return g.Name
+		}
+		return ""
+	}
+	if s.userStore == nil {
+		return ""
+	}
+	if u, err := s.userStore.GetByUID(ctx, peer); err == nil && u != nil {
+		return u.Nickname
+	}
+	return ""
 }
 
 // HandleAdminMessageDelete 按 ID 删除消息。

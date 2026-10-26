@@ -35,9 +35,20 @@ data class AdminUserRoute(val uid: String)
 @Serializable
 data class AdminUserConversationsRoute(val uid: String, val name: String)
 
-/** 管理后台：[uid] 与 [peer] 的只读消息列表；[chatType] 为 ChatType.value，群聊时 [peer] 为群 ID。 */
+/**
+ * 管理后台：[uid] 与 [peer] 的只读消息列表；[chatType] 为 ChatType.value，群聊时 [peer] 为群 ID。
+ * [focusMsgId] 非 0 时打开后定位到该消息（[focusTs] 为其时间戳）。
+ */
 @Serializable
-data class AdminConversationRoute(val uid: String, val name: String, val peer: String, val chatType: Int, val title: String)
+data class AdminConversationRoute(
+    val uid: String,
+    val name: String,
+    val peer: String,
+    val chatType: Int,
+    val title: String,
+    val focusMsgId: Long = 0,
+    val focusTs: Long = 0,
+)
 
 @Serializable
 data object ProfileRoute

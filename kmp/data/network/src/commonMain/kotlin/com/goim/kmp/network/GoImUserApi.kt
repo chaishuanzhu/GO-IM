@@ -266,6 +266,7 @@ class GoImUserApi(
         return AdminChatPage(
             messages = dto.messages.orEmpty().map { it.toDomain() },
             senders = dto.users.orEmpty().mapValues { (_, u) -> AdminSender(u.nickname, absoluteUrl(baseUrl(), u.avatarUrl)) },
+            title = dto.title.orEmpty(),
         )
     }
 

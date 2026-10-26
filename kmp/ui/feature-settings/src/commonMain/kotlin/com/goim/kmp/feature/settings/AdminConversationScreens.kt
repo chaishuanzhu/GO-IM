@@ -1,5 +1,7 @@
 package com.goim.kmp.feature.settings
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,6 +64,7 @@ import com.goim.kmp.model.AdminSender
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.MessagePreview
 import com.goim.kmp.model.MsgType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 
@@ -156,20 +160,24 @@ typealias AdminBubble = @Composable (
 ) -> Unit
 
 /**
- * 管理后台：只读查看会话消息，没有输入栏。[selfUid]（被查看的用户）的消息靠右，其他人靠左；
+ * 管理后台：只读查看会话消息，没有输入栏。[selfUid]（被查看的用户，名称 [selfName]）的消息靠右，其他人靠左；
  * 长按消息可从服务器删除。气泡由 [bubble] 绘制，与聊天页保持一致。
+ * [title] 在服务端未返回群名 / 对方昵称时使用。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminChatScreen(
     viewModel: AdminChatViewModel,
     title: String,
-    subtitle: String,
+    isGroup: Boolean,
     selfUid: String,
+    selfName: String,
     onBack: () -> Unit,
     bubble: AdminBubble,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val shownTitle = state.title.ifEmpty { title }
+    val subtitle = if (isGroup) "群聊 · 全部成员的消息" else "${state.senders[selfUid]?.nickname?.takeIf { it.isNotBlank() } ?: selfName} 的单聊"
     var deleting by remember { mutableStateOf<AdminMessage?>(null) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.notice) {
@@ -184,7 +192,7 @@ fun AdminChatScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(shownTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
@@ -203,7 +211,14 @@ fun AdminChatScreen(
                 state.messages.isEmpty() && state.error != null -> ErrorState(state.error!!)
                 state.messages.isEmpty() && (state.loading || !state.loaded) -> LoadingState()
                 state.messages.isEmpty() -> EmptyState(GoImIcons.Chat, "没有消息")
-                else -> MessageList(state, selfUid, bubble, onLoadOlder = viewModel::loadOlder, onLongPress = { deleting = it })
+                else -> MessageList(
+                    state,
+                    selfUid,
+                    bubble,
+                    onLoadOlder = viewModel::loadOlder,
+                    onHighlightShown = viewModel::clearHighlight,
+                    onLongPress = { deleting = it },
+                )
             }
         }
     }
@@ -230,9 +245,19 @@ private fun MessageList(
     selfUid: String,
     bubble: AdminBubble,
     onLoadOlder: () -> Unit,
+    onHighlightShown: () -> Unit,
     onLongPress: (AdminMessage) -> Unit,
 ) {
     val listState = rememberLazyListState()
+    val targetIndex = state.highlightId?.let { id -> state.messages.indexOfFirst { it.msgId == id } } ?: -1
+    // 定位：滚到目标消息，高亮 2 秒（同聊天页搜索跳转）
+    LaunchedEffect(state.highlightId, targetIndex >= 0) {
+        if (targetIndex >= 0) {
+            listState.scrollToItem(targetIndex)
+            delay(HIGHLIGHT_MILLIS)
+            onHighlightShown()
+        }
+    }
     // reverseLayout：index 0 在底部，滚到顶部附近时加载更早的消息
     LaunchedEffect(listState) {
         snapshotFlow {
@@ -251,15 +276,20 @@ private fun MessageList(
             modifier = Modifier.fillMaxSize(),
         ) {
             items(state.messages, key = { it.msgId }) { message ->
+                val tint by animateColorAsState(
+                    if (message.msgId == state.highlightId) MaterialTheme.colorScheme.tertiaryContainer else Color.Transparent,
+                )
                 val notice = when {
                     message.recalled -> "${senderName(message.fromUid, state.senders)} 撤回了一条消息"
                     message.msgType == MsgType.Text -> MessagePreview.systemNotice(message.content)
                     else -> null
                 }
-                if (notice != null) {
-                    CenterNotice(notice)
-                } else {
-                    bubble(message, state.senders[message.fromUid], message.fromUid == selfUid, maxBubbleWidth) { onLongPress(message) }
+                Box(Modifier.fillMaxWidth().background(tint, MaterialTheme.shapes.medium)) {
+                    if (notice != null) {
+                        CenterNotice(notice)
+                    } else {
+                        bubble(message, state.senders[message.fromUid], message.fromUid == selfUid, maxBubbleWidth) { onLongPress(message) }
+                    }
                 }
             }
             if (state.loading) {
@@ -274,6 +304,8 @@ private fun MessageList(
         }
     }
 }
+
+private const val HIGHLIGHT_MILLIS = 2_000L
 
 private fun senderName(uid: String, senders: Map<String, AdminSender>): String =
     senders[uid]?.nickname?.takeIf { it.isNotBlank() } ?: uid
