@@ -35,6 +35,6 @@ secretGenerator:
 
 images:
   - name: 870027381/go-im-gateway
-    newTag: "1.5.0"
+    newTag: "1.6.0"
   - name: 870027381/go-im-logic
-    newTag: "1.5.0"
+    newTag: "1.6.0"
