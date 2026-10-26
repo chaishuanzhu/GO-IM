@@ -58,7 +58,9 @@
 
         "auth": {
             "_comment": "生产环境必须关闭 dev_mode",
-            "dev_mode": false
+            "dev_mode": false,
+            "_comment_multi_device": "single = 一个账号只允许一个连接；per_platform = 手机 / 电脑 / 网页各一台；unlimited = 不限",
+            "multi_device": "per_platform"
         },
 
         "kafka": {
