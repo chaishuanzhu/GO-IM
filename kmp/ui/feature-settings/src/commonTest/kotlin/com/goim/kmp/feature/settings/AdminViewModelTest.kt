@@ -1,7 +1,10 @@
 package com.goim.kmp.feature.settings
 
 import com.goim.kmp.common.DomainError
+import com.goim.kmp.model.AdminChatPage
+import com.goim.kmp.model.AdminConversation
 import com.goim.kmp.model.AdminMessage
+import com.goim.kmp.model.AdminSender
 import com.goim.kmp.model.AdminStats
 import com.goim.kmp.model.AdminUser
 import com.goim.kmp.model.AdminUserPage
@@ -120,6 +123,40 @@ class AdminViewModelTest {
         assertEquals(119, s.stats?.totalMessages)
         assertTrue(s.messages.items.none { it.msgId == 200L })
         assertNotNull(s.notice)
+    }
+
+    @Test
+    fun chatPagesOlderAndDeletes() = runTest(dispatcher) {
+        val all = (200L downTo 141L).map(::message)
+        val cursors = mutableListOf<Long?>()
+        val deleted = mutableListOf<Long>()
+        val vm = AdminChatViewModel(
+            load = { before, limit ->
+                cursors += before
+                val page = all.filter { before == null || it.timestampMs < before }.take(limit)
+                AdminChatPage(page, mapOf("a" to AdminSender("Alice", "")))
+            },
+            deleteMessage = { deleted += it },
+        )
+        assertEquals(50, vm.state.value.messages.size)
+        assertEquals("Alice", vm.state.value.senders["a"]?.nickname)
+        vm.loadOlder()
+        vm.loadOlder()
+        assertEquals(listOf(null, 151L), cursors)
+        assertEquals(60, vm.state.value.messages.size)
+        assertTrue(vm.state.value.endReached)
+
+        vm.delete(message(200))
+        assertEquals(listOf(200L), deleted)
+        assertTrue(vm.state.value.messages.none { it.msgId == 200L })
+    }
+
+    @Test
+    fun conversationsLoadAndFail() = runTest(dispatcher) {
+        val conv = AdminConversation("b", ChatType.SINGLE, "", 3, message(1))
+        assertEquals(listOf(conv), AdminConversationsViewModel { listOf(conv) }.state.value.items)
+        val failed = AdminConversationsViewModel { throw DomainError.Server(503, "message store not available") }.state.value
+        assertEquals("服务端未启用该功能", failed.error)
     }
 
     @Test

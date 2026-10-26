@@ -1,7 +1,10 @@
 package com.goim.kmp.network
 
 import com.goim.kmp.common.DomainError
+import com.goim.kmp.model.AdminChatPage
+import com.goim.kmp.model.AdminConversation
 import com.goim.kmp.model.AdminMessage
+import com.goim.kmp.model.AdminSender
 import com.goim.kmp.model.AdminStats
 import com.goim.kmp.model.AdminUserPage
 import com.goim.kmp.model.ChatType
@@ -232,6 +235,33 @@ class GoImUserApi(
 
     suspend fun adminDeleteMessage(msgId: Long) {
         post("admin/messages/delete", "msg_id" to msgId.toString())
+    }
+
+    /** [targetUid] 参与过的会话，按最后消息时间从新到旧。 */
+    suspend fun adminConversations(targetUid: String): List<AdminConversation> =
+        get("admin/conversations", "target_uid" to targetUid)
+            .decode<AdminConversationsDto>().conversations.orEmpty().map { it.toDomain() }
+
+    /** [targetUid] 与 [peer] 的会话消息，从新到旧；群聊时 [peer] 为群 ID。 */
+    suspend fun adminConversationMessages(
+        targetUid: String,
+        peer: String,
+        chatType: ChatType,
+        before: Long?,
+        limit: Int,
+    ): AdminChatPage {
+        val dto = get(
+            "admin/conversations/messages",
+            "target_uid" to targetUid,
+            "peer" to peer,
+            "chat_type" to chatType.value.toString(),
+            "limit" to limit.toString(),
+            *listOfNotNull(before?.let { "before" to it.toString() }).toTypedArray(),
+        ).decode<AdminChatDto>()
+        return AdminChatPage(
+            messages = dto.messages.orEmpty().map { it.toDomain() },
+            senders = dto.users.orEmpty().mapValues { (_, u) -> AdminSender(u.nickname, absoluteUrl(baseUrl(), u.avatarUrl)) },
+        )
     }
 
     // endregion

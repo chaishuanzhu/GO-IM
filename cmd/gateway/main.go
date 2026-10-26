@@ -568,6 +568,8 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/admin/users/delete", app.Server.HandleAdminUserDelete)
 	mux.HandleFunc("/admin/messages", app.Server.HandleAdminMessages)
 	mux.HandleFunc("/admin/messages/delete", app.Server.HandleAdminMessageDelete)
+	mux.HandleFunc("/admin/conversations", app.Server.HandleAdminConversations)
+	mux.HandleFunc("/admin/conversations/messages", app.Server.HandleAdminConversationMessages)
 
 	// 使用 panic 恢复中间件包装
 	handler := gateway.Recovery(mux)

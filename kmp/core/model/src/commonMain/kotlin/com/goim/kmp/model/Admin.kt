@@ -61,3 +61,21 @@ data class AdminMessage(
 ) {
     val preview: String get() = if (recalled) "[已撤回]" else MessagePreview.preview(msgType, content)
 }
+
+/** 管理后台里某个用户的一个会话：[peer] 单聊为对方 UID，群聊为群 ID。 */
+data class AdminConversation(
+    val peer: String,
+    val chatType: ChatType,
+    /** 对方昵称 / 群名，服务端查不到时为空。 */
+    val title: String,
+    val messageCount: Int,
+    val lastMessage: AdminMessage,
+) {
+    val displayTitle: String get() = title.ifBlank { peer }
+}
+
+/** 消息发送者资料；[avatarUrl] 为绝对地址，未设置时为空。 */
+data class AdminSender(val nickname: String, val avatarUrl: String)
+
+/** 某个会话的一页消息（从新到旧）及本页发送者资料。 */
+data class AdminChatPage(val messages: List<AdminMessage>, val senders: Map<String, AdminSender>)

@@ -27,6 +27,14 @@ data object DeveloperRoute
 @Serializable
 data object AdminRoute
 
+/** 管理后台：[uid] 的会话列表。 */
+@Serializable
+data class AdminUserConversationsRoute(val uid: String, val name: String)
+
+/** 管理后台：[uid] 与 [peer] 的只读消息列表；[chatType] 为 ChatType.value，群聊时 [peer] 为群 ID。 */
+@Serializable
+data class AdminConversationRoute(val uid: String, val name: String, val peer: String, val chatType: Int, val title: String)
+
 @Serializable
 data object ProfileRoute
 

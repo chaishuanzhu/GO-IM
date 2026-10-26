@@ -176,6 +176,21 @@ type MessageStore interface {
 	CountMessages(ctx context.Context) (int, error)
 }
 
+// ConversationSummary 是管理后台里某个用户的一条会话：对方（单聊为 UID，群聊为群 ID）及最后一条消息。
+type ConversationSummary struct {
+	Peer         string         `json:"peer"`
+	ChatType     int32          `json:"chat_type"`
+	Title        string         `json:"title"` // 对方昵称 / 群名，查不到时为空
+	MessageCount int            `json:"message_count"`
+	LastMessage  *proto.Message `json:"last_message"`
+}
+
+// AdminConversationStore 是 MessageStore 的可选管理员扩展，调用方先做类型断言。
+type AdminConversationStore interface {
+	// UserConversations 返回 uid 参与过的会话（单聊 + 发过言或所在的群），按最后消息时间从新到旧。
+	UserConversations(ctx context.Context, uid string, limit int) ([]*ConversationSummary, error)
+}
+
 // BatchMessageStore 是 MessageStore 的可选批量写扩展。
 // 调用方应先做类型断言；不支持时回退到逐条 Save。
 type BatchMessageStore interface {

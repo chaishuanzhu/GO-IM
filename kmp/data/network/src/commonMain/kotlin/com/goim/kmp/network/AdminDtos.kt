@@ -1,5 +1,6 @@
 package com.goim.kmp.network
 
+import com.goim.kmp.model.AdminConversation
 import com.goim.kmp.model.AdminMessage
 import com.goim.kmp.model.AdminStats
 import com.goim.kmp.model.AdminUser
@@ -84,3 +85,35 @@ internal data class AdminMessageDto(
 
 @Serializable
 internal data class AdminMessagesDto(val messages: List<AdminMessageDto>? = null)
+
+@Serializable
+internal data class AdminConversationDto(
+    val peer: String = "",
+    @SerialName("chat_type") val chatType: Int = ChatType.SINGLE.value,
+    val title: String = "",
+    @SerialName("message_count") val messageCount: Int = 0,
+    @SerialName("last_message") val lastMessage: AdminMessageDto? = null,
+) {
+    fun toDomain() = AdminConversation(
+        peer = peer,
+        chatType = ChatType.from(chatType),
+        title = title,
+        messageCount = messageCount,
+        lastMessage = (lastMessage ?: AdminMessageDto()).toDomain(),
+    )
+}
+
+@Serializable
+internal data class AdminConversationsDto(val conversations: List<AdminConversationDto>? = null)
+
+@Serializable
+internal data class AdminSenderDto(
+    val nickname: String = "",
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+)
+
+@Serializable
+internal data class AdminChatDto(
+    val messages: List<AdminMessageDto>? = null,
+    val users: Map<String, AdminSenderDto>? = null,
+)

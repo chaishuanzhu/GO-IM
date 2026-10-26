@@ -1158,6 +1158,62 @@ func (s *MySQLStore) BrowseMessages(ctx context.Context, before int64, limit int
 	return msgs, rows.Err()
 }
 
+// UserConversations 实现 AdminConversationStore：每个会话取最后一条消息，并带上消息数与对方昵称 / 群名。
+func (s *MySQLStore) UserConversations(ctx context.Context, uid string, limit int) ([]*ConversationSummary, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	const cols = "msg_id, seq, cmd, from_uid, to_uid, chat_type, msg_type, content, timestamp, need_ack, recalled"
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT t.peer, t.chat_type, t.cnt, COALESCE(u.nickname, g.name, ''),
+		       t.msg_id, t.seq, t.cmd, t.from_uid, t.to_uid, t.msg_type, t.content, t.timestamp, t.need_ack, t.recalled
+		FROM (
+			SELECT c.*,
+			       ROW_NUMBER() OVER (PARTITION BY c.chat_type, c.peer ORDER BY c.timestamp DESC, c.msg_id DESC) AS rn,
+			       COUNT(*) OVER (PARTITION BY c.chat_type, c.peer) AS cnt
+			FROM (
+				SELECT `+cols+`, CASE WHEN from_uid = ? THEN to_uid ELSE from_uid END AS peer
+				FROM messages WHERE chat_type = 1 AND (from_uid = ? OR to_uid = ?)
+				UNION ALL
+				SELECT `+cols+`, to_uid AS peer
+				FROM messages WHERE chat_type = 2
+				  AND (from_uid = ? OR to_uid IN (SELECT group_id FROM group_members WHERE uid = ?))
+			) c
+		) t
+		LEFT JOIN users u ON t.chat_type = 1 AND u.uid = t.peer
+		LEFT JOIN `+"`groups`"+` g ON t.chat_type = 2 AND g.id = t.peer
+		WHERE t.rn = 1
+		ORDER BY t.timestamp DESC
+		LIMIT ?`,
+		uid, uid, uid, uid, uid, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("user conversations: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]*ConversationSummary, 0)
+	for rows.Next() {
+		c := &ConversationSummary{}
+		m := &proto.Message{}
+		var needAck, recalled int
+		if err := rows.Scan(
+			&c.Peer, &c.ChatType, &c.MessageCount, &c.Title,
+			&m.MsgId, &m.Seq, &m.Cmd, &m.From, &m.To, &m.MsgType, &m.Content, &m.Timestamp, &needAck, &recalled,
+		); err != nil {
+			return nil, fmt.Errorf("scan conversation: %w", err)
+		}
+		m.ChatType = c.ChatType
+		m.NeedAck = needAck == 1
+		if recalled == 1 {
+			m.Content = `{"recalled":true}`
+		}
+		c.LastMessage = m
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // DeleteMessage 按 ID 删除一条消息（仅管理员）。
 func (s *MySQLStore) DeleteMessage(ctx context.Context, msgID int64) error {
 	result, err := s.db.ExecContext(ctx, "DELETE FROM messages WHERE msg_id = ?", msgID)

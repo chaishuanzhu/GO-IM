@@ -1,5 +1,6 @@
 package com.goim.kmp.feature.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.goim.kmp.designsystem.ConfirmDialog
@@ -60,10 +62,10 @@ import com.goim.kmp.model.ChatType
 
 private enum class AdminTab(val title: String) { OVERVIEW("概览"), USERS("用户"), MESSAGES("消息") }
 
-/** 管理后台：系统概览、用户管理、全站消息浏览（仅管理员可进入，权限由网关校验）。 */
+/** 管理后台：系统概览、用户管理（点用户查看其会话）、全站消息浏览（仅管理员可进入，权限由网关校验）。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AdminScreen(viewModel: AdminViewModel, onBack: () -> Unit) {
+fun AdminScreen(viewModel: AdminViewModel, onBack: () -> Unit, onOpenUser: (AdminUser) -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(AdminTab.OVERVIEW) }
     var deletingUser by remember { mutableStateOf<AdminUser?>(null) }
@@ -119,7 +121,12 @@ fun AdminScreen(viewModel: AdminViewModel, onBack: () -> Unit) {
                     onLoadMore = viewModel::loadMoreUsers,
                     header = if (state.usersTotal > 0) "共 ${state.usersTotal} 个用户" else null,
                 ) { user ->
-                    UserRow(user, isSelf = user.uid == viewModel.selfUid, onDelete = { deletingUser = user })
+                    UserRow(
+                        user,
+                        isSelf = user.uid == viewModel.selfUid,
+                        onOpen = { onOpenUser(user) },
+                        onDelete = { deletingUser = user },
+                    )
                 }
                 AdminTab.MESSAGES -> PagedList(
                     page = state.messages,
@@ -243,13 +250,14 @@ private fun <T> PagedList(
 }
 
 @Composable
-private fun UserRow(user: AdminUser, isSelf: Boolean, onDelete: () -> Unit) {
+private fun UserRow(user: AdminUser, isSelf: Boolean, onOpen: () -> Unit, onDelete: () -> Unit) {
     val meta = buildList {
         add("ID ${user.uid}")
         if (user.email.isNotEmpty()) add(user.email)
         if (user.createdAtMs > 0) add("注册于 ${GoImFormat.messageTime(user.createdAtMs)}")
     }.joinToString(" · ")
     ListItem(
+        modifier = Modifier.clickable(role = Role.Button, onClickLabel = "查看会话", onClick = onOpen),
         leadingContent = { UserAvatar(user.uid, user.displayName, size = GoImSize.avatarMd, avatarUrl = "") },
         headlineContent = {
             Row(horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2), verticalAlignment = Alignment.CenterVertically) {
@@ -293,18 +301,18 @@ private fun MessageRow(message: AdminMessage, onDelete: () -> Unit) {
 }
 
 @Composable
-private fun Tag(text: String, container: Color, content: Color) {
+internal fun Tag(text: String, container: Color, content: Color) {
     Surface(color = container, contentColor = content, shape = MaterialTheme.shapes.small) {
         Text(text, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = GoImSpacing.s2))
     }
 }
 
 @Composable
-private fun LoadingState() {
+internal fun LoadingState() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
 }
 
 @Composable
-private fun ErrorState(message: String) {
+internal fun ErrorState(message: String) {
     EmptyState(Icons.Filled.Warning, "加载失败", "$message\n点右上角刷新重试")
 }

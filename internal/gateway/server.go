@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/im/api/proto"
 	"github.com/im/configs"
 	"github.com/im/internal/pkg/jwt"
 	"github.com/im/internal/pkg/snowflake"
@@ -1383,6 +1384,101 @@ func (s *Server) HandleAdminMessages(w http.ResponseWriter, r *http.Request) {
 	})
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data)
+}
+
+// HandleAdminConversations 返回某个用户的会话列表（每个会话的最后一条消息）。
+// GET /admin/conversations?uid=admin&token=JWT&target_uid=100001&limit=200
+func (s *Server) HandleAdminConversations(w http.ResponseWriter, r *http.Request) {
+	if s.adminAuth(w, r) == nil {
+		return
+	}
+	store, ok := s.msgStore.(repo.AdminConversationStore)
+	if !ok {
+		http.Error(w, "message store not available", http.StatusServiceUnavailable)
+		return
+	}
+	q := r.URL.Query()
+	target := q.Get("target_uid")
+	if target == "" {
+		http.Error(w, "target_uid required", http.StatusBadRequest)
+		return
+	}
+	limit := 200
+	if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 && v <= 500 {
+		limit = v
+	}
+	convs, err := store.UserConversations(r.Context(), target, limit)
+	if err != nil {
+		log.Printf("[server] admin conversations of %s: %v", target, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]interface{}{"conversations": convs})
+}
+
+// HandleAdminConversationMessages 返回某个用户某个会话的消息（从新到旧），附发送者资料。
+// GET /admin/conversations/messages?uid=admin&token=JWT&target_uid=100001&peer=100002&chat_type=1&before={ts}&limit=50
+// chat_type=2 时 peer 为群 ID，返回整个群的消息。
+func (s *Server) HandleAdminConversationMessages(w http.ResponseWriter, r *http.Request) {
+	if s.adminAuth(w, r) == nil {
+		return
+	}
+	if s.msgStore == nil {
+		http.Error(w, "message store not available", http.StatusServiceUnavailable)
+		return
+	}
+	q := r.URL.Query()
+	target, peer := q.Get("target_uid"), q.Get("peer")
+	if target == "" || peer == "" {
+		http.Error(w, "target_uid and peer required", http.StatusBadRequest)
+		return
+	}
+	before := time.Now().UnixMilli() + 1
+	if v, err := strconv.ParseInt(q.Get("before"), 10, 64); err == nil && v > 0 {
+		before = v
+	}
+	limit := 50
+	if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 && v <= 100 {
+		limit = v
+	}
+
+	var msgs []*proto.Message
+	var err error
+	if q.Get("chat_type") == "2" {
+		msgs, err = s.msgStore.QueryGroupHistory(r.Context(), peer, before, limit)
+	} else {
+		msgs, err = s.msgStore.QueryHistory(r.Context(), target, peer, before, limit)
+	}
+	if err != nil {
+		log.Printf("[server] admin conversation %s/%s: %v", target, peer, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	users := map[string]map[string]string{}
+	if s.userStore != nil {
+		seen := map[string]bool{}
+		uids := []string{}
+		for _, m := range msgs {
+			if !seen[m.From] {
+				seen[m.From] = true
+				uids = append(uids, m.From)
+			}
+		}
+		if len(uids) > 0 {
+			found, err := s.userStore.GetUsers(r.Context(), uids)
+			if err != nil {
+				log.Printf("[server] admin conversation profiles: %v", err)
+			}
+			for _, u := range found {
+				users[u.UID] = map[string]string{"nickname": u.Nickname, "avatar_url": avatarURL(u.AvatarFileID)}
+			}
+		}
+	}
+	if msgs == nil {
+		msgs = []*proto.Message{}
+	}
+	writeJSON(w, map[string]interface{}{"messages": msgs, "users": users, "limit": limit})
 }
 
 // HandleAdminMessageDelete 按 ID 删除消息。

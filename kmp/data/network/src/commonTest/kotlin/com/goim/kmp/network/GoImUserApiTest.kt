@@ -197,6 +197,42 @@ class GoImUserApiTest {
     }
 
     @Test
+    fun adminConversationsAndMessages() = runTest {
+        val api = api { req ->
+            when (req.url.encodedPath) {
+                "/admin/conversations" -> respond(
+                    """{"conversations":[{"peer":"g_1","chat_type":2,"title":"Team","message_count":4,""" +
+                        """"last_message":{"msg_id":9,"from":"100002","to":"g_1","chat_type":2,"content":"hi","timestamp":5}},""" +
+                        """{"peer":"100003","chat_type":1,"title":"","message_count":1,"last_message":{"msg_id":3,"from":"100001","to":"100003","timestamp":2}}]}""",
+                    HttpStatusCode.OK,
+                    jsonHeaders,
+                )
+                else -> respond(
+                    """{"messages":[{"msg_id":9,"from":"100002","to":"g_1","chat_type":2,"content":"hi","timestamp":5}],""" +
+                        """"users":{"100002":{"nickname":"Bob","avatar_url":"/avatar/7"}},"limit":50}""",
+                    HttpStatusCode.OK,
+                    jsonHeaders,
+                )
+            }
+        }
+
+        val convs = api.adminConversations("100001")
+        assertEquals("100001", requests.last().url.parameters["target_uid"])
+        assertEquals(ChatType.GROUP, convs[0].chatType)
+        assertEquals("Team", convs[0].displayTitle)
+        assertEquals("hi", convs[0].lastMessage.content)
+        assertEquals("100003", convs[1].displayTitle)
+
+        val page = api.adminConversationMessages("100001", "g_1", ChatType.GROUP, before = 10, limit = 50)
+        val params = requests.last().url.parameters
+        assertEquals("/admin/conversations/messages", requests.last().url.encodedPath)
+        assertEquals(listOf("100001", "g_1", "2", "10"), listOf(params["target_uid"], params["peer"], params["chat_type"], params["before"]))
+        assertEquals(9L, page.messages.single().msgId)
+        assertEquals("Bob", page.senders["100002"]?.nickname)
+        assertTrue(page.senders["100002"]!!.avatarUrl.endsWith("/avatar/7"))
+    }
+
+    @Test
     fun adminMessagesWithoutCursorOmitsBefore() = runTest {
         val api = api { respond("""{"messages":[],"limit":50}""", HttpStatusCode.OK, jsonHeaders) }
         assertTrue(api.adminMessages(before = null, limit = 50).isEmpty())

@@ -1122,6 +1122,72 @@ paths:
         "403": { $ref: "#/components/responses/AdminRequired" }
         "503": { $ref: "#/components/responses/Unavailable" }
 
+  /admin/conversations:
+    get:
+      tags: [管理]
+      summary: 某个用户的会话列表
+      description: 单聊 + 该用户发过言或所在的群，每个会话带最后一条消息，按时间从新到旧。
+      parameters:
+        - { name: target_uid, in: query, required: true, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 200, maximum: 500 } }
+      responses:
+        "200":
+          description: 会话列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        peer: { type: string, description: 单聊为对方 UID，群聊为群 ID }
+                        chat_type: { type: integer, enum: [1, 2] }
+                        title: { type: string, description: 对方昵称 / 群名，查不到时为空串 }
+                        message_count: { type: integer }
+                        last_message: { $ref: "#/components/schemas/Message" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminRequired" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /admin/conversations/messages:
+    get:
+      tags: [管理]
+      summary: 某个用户某个会话的消息
+      description: 从新到旧分页；`chat_type=2` 时返回整个群的消息。`users` 为本页发送者的昵称与头像。
+      parameters:
+        - { name: target_uid, in: query, required: true, schema: { type: string } }
+        - { name: peer, in: query, required: true, description: 单聊为对方 UID，群聊为群 ID, schema: { type: string } }
+        - { name: chat_type, in: query, schema: { type: integer, enum: [1, 2], default: 1 } }
+        - { name: before, in: query, description: 时间戳上限（毫秒），缺省为当前时间, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 100 } }
+      responses:
+        "200":
+          description: 消息列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: "#/components/schemas/Message" }
+                  users:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        nickname: { type: string }
+                        avatar_url: { type: string }
+                  limit: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminRequired" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
 components:
   securitySchemes:
     uid:

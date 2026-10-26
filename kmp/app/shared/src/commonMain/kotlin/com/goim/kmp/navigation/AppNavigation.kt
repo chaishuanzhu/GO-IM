@@ -111,6 +111,10 @@ import com.goim.kmp.feature.conversations.ConversationListViewModel
 import com.goim.kmp.feature.search.SearchScreen
 import com.goim.kmp.feature.search.SearchViewModel
 import com.goim.kmp.feature.settings.AccountActions
+import com.goim.kmp.feature.settings.AdminChatScreen
+import com.goim.kmp.feature.settings.AdminChatViewModel
+import com.goim.kmp.feature.settings.AdminConversationsScreen
+import com.goim.kmp.feature.settings.AdminConversationsViewModel
 import com.goim.kmp.feature.settings.AdminDeps
 import com.goim.kmp.feature.settings.AdminScreen
 import com.goim.kmp.feature.settings.AdminViewModel
@@ -463,7 +467,50 @@ private fun MainNavContent(session: UserSession) {
                             ),
                         )
                     }
-                    AdminScreen(vm, onBack = { nav.popBackStack() })
+                    AdminScreen(
+                        vm,
+                        onBack = { nav.popBackStack() },
+                        onOpenUser = { user -> nav.navigate(AdminUserConversationsRoute(user.uid, user.displayName)) },
+                    )
+                }
+            }
+            composable<AdminUserConversationsRoute> { entry ->
+                val route = entry.toRoute<AdminUserConversationsRoute>()
+                val api = session.adminApi
+                if (api == null) {
+                    LaunchedEffect(Unit) { nav.popBackStack() }
+                } else {
+                    val vm = viewModel { AdminConversationsViewModel { api.adminConversations(route.uid) } }
+                    AdminConversationsScreen(
+                        vm,
+                        userName = route.name,
+                        onBack = { nav.popBackStack() },
+                        onOpen = { c ->
+                            nav.navigate(AdminConversationRoute(route.uid, route.name, c.peer, c.chatType.value, c.displayTitle))
+                        },
+                    )
+                }
+            }
+            composable<AdminConversationRoute> { entry ->
+                val route = entry.toRoute<AdminConversationRoute>()
+                val api = session.adminApi
+                if (api == null) {
+                    LaunchedEffect(Unit) { nav.popBackStack() }
+                } else {
+                    val chatType = ChatType.from(route.chatType)
+                    val vm = viewModel {
+                        AdminChatViewModel(
+                            load = { before, limit -> api.adminConversationMessages(route.uid, route.peer, chatType, before, limit) },
+                            deleteMessage = api::adminDeleteMessage,
+                        )
+                    }
+                    AdminChatScreen(
+                        vm,
+                        title = route.title,
+                        subtitle = if (chatType == ChatType.GROUP) "群聊 · 全部成员的消息" else "${route.name} 的单聊",
+                        selfUid = route.uid,
+                        onBack = { nav.popBackStack() },
+                    )
                 }
             }
         }
