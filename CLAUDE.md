@@ -77,7 +77,7 @@ CmdUnreadCount → Router.handleUnreadCount → UnreadTracker.GetCounts(uid) →
 # File upload/download (Phase 4)
 HTTP /upload   → Server.HandleUpload      → JWT validate → ObjectStore.Put(fileID, data, mime)
                                           → Thumbnail generation (images, max 4096px, 200px output)
-HTTP /file     → Server.HandleDownload    → JWT validate → files-row ACL (owner or file_refs conversation member; no row = legacy, any logged-in user)
+HTTP /file     → Server.HandleDownload    → JWT validate → files-row ACL (owner, file_refs conversation member, or admin role; no row = legacy, any logged-in user)
   → direct upload enabled: 302 to presigned GET; otherwise ObjectStore.Get + http.ServeContent (Range)
 
 # Direct-to-OSS upload (object_storage.public_endpoint set; clients fall back to /upload on 501)

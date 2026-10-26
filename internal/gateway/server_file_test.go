@@ -277,6 +277,21 @@ func TestDownloadACLFollowsConversation(t *testing.T) {
 	}
 }
 
+func TestDownloadAdminReadsAnyFile(t *testing.T) {
+	e := newFileTestEnv(t, true)
+	id := e.uploadReady(t, "alice", []byte("hello world"), "application/pdf")
+
+	token, err := e.jwt.Generate("root", "root", "admin")
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	e.srv.HandleDownload(rec, httptest.NewRequest(http.MethodGet, "/file?id="+id+"&uid=root&token="+token, nil))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("admin download: expected 302, got %d", rec.Code)
+	}
+}
+
 func TestDownloadPendingIsHidden(t *testing.T) {
 	e := newFileTestEnv(t, true)
 	id := e.presign(t, "alice", "a.bin", 3, "application/octet-stream")

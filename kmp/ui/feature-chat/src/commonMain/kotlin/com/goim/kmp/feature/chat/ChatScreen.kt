@@ -85,6 +85,8 @@ import com.goim.kmp.designsystem.GoImTheme
 import com.goim.kmp.designsystem.title
 import com.goim.kmp.designsystem.GoImSpacing
 import com.goim.kmp.designsystem.GoImSize
+import com.goim.kmp.domain.FileRepository
+import com.goim.kmp.domain.StickerRepository
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.ConnectionState
 import com.goim.kmp.model.FileMeta
@@ -128,7 +130,8 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() 
     }
     val bubbles = remember(viewModel, player) {
         BubbleEnv(
-            viewModel.media,
+            viewModel.media?.files,
+            viewModel.media?.stickers,
             player,
             selfName = viewModel.selfName,
             onPreview = { model, local -> preview = model to local },
@@ -264,14 +267,17 @@ private fun DropOverlay() {
     }
 }
 
-/** 气泡渲染附件所需的依赖。 */
-private class BubbleEnv(
-    val media: ChatMediaActions?,
+/** 气泡渲染附件所需的依赖；[files] / [stickers] 为空时附件只显示文字摘要。 */
+internal class BubbleEnv(
+    val files: FileRepository?,
+    val stickers: StickerRepository?,
     val player: VoicePlayer,
     val selfName: String,
     val onPreview: (model: String, localPath: String?) -> Unit,
     val onOpenFile: (path: String, meta: FileMeta) -> Unit,
     val onError: (String) -> Unit,
+    /** 只读列表用长按做别的操作，文字不进入选择模式。 */
+    val selectableText: Boolean = true,
 )
 
 @Composable
@@ -370,9 +376,23 @@ private fun CenterNotice(text: String) {
 
 @Composable
 private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> Unit, bubbles: BubbleEnv) {
+    val senderName = if (message.isOutgoing) bubbles.selfName else rememberDisplayName(message.fromUid)
+    BubbleRow(message, senderName, avatarUrl = null, maxBubbleWidth, bubbles, onRetry = onRetry)
+}
+
+/** 头像 + 昵称时间 + 气泡；[avatarUrl] 为空时从资料缓存读取头像。 */
+@Composable
+internal fun BubbleRow(
+    message: Message,
+    senderName: String,
+    avatarUrl: String?,
+    maxBubbleWidth: Dp,
+    bubbles: BubbleEnv,
+    onRetry: (Message) -> Unit = {},
+    onLongPress: (() -> Unit)? = null,
+) {
     val outgoing = message.isOutgoing
     val time = GoImFormat.messageTime(message.timestampMs)
-    val senderName = if (outgoing) bubbles.selfName else rememberDisplayName(message.fromUid)
     val meta = if (outgoing) time else "$senderName · $time"
 
     val description = remember(message.content, message.status, message.msgType, time, senderName) {
@@ -392,7 +412,7 @@ private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> U
         horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2, if (outgoing) Alignment.End else Alignment.Start),
         verticalAlignment = Alignment.Top,
     ) {
-        if (!outgoing) UserAvatar(message.fromUid, senderName, size = GoImDimens.messageAvatarSize)
+        if (!outgoing) UserAvatar(message.fromUid, senderName, size = GoImDimens.messageAvatarSize, avatarUrl = avatarUrl)
         Column(
             Modifier.weight(1f, fill = false),
             horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start,
@@ -420,10 +440,12 @@ private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> U
                     }
                     Spacer(Modifier.width(GoImSpacing.s2))
                 }
-                BubbleBody(message, maxBubbleWidth, bubbles)
+                Box(if (onLongPress != null) Modifier.onLongPress(onLongPress) else Modifier) {
+                    BubbleBody(message, maxBubbleWidth, bubbles)
+                }
             }
         }
-        if (outgoing) UserAvatar(message.fromUid, senderName, size = GoImDimens.messageAvatarSize)
+        if (outgoing) UserAvatar(message.fromUid, senderName, size = GoImDimens.messageAvatarSize, avatarUrl = avatarUrl)
     }
 }
 
@@ -431,7 +453,8 @@ private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> U
 private fun BubbleBody(message: Message, maxBubbleWidth: Dp, bubbles: BubbleEnv) {
     val colors = GoImTheme.chatColors
     val outgoing = message.isOutgoing
-    val media = bubbles.media
+    val files = bubbles.files
+    val stickers = bubbles.stickers
     val meta = remember(message.content, message.msgType) {
         if (message.msgType == MsgType.Text || message.msgType == MsgType.Sticker) null else MessagePreview.decodeFileMeta(message.content)
     }
@@ -439,12 +462,12 @@ private fun BubbleBody(message: Message, maxBubbleWidth: Dp, bubbles: BubbleEnv)
         if (message.msgType == MsgType.Sticker) StickerRef.decode(message.content) else null
     }
     // 图片 / 贴纸不画气泡底色
-    if (media != null && sticker != null) {
-        StickerView(sticker, media.stickers, 140.dp)
+    if (stickers != null && sticker != null) {
+        StickerView(sticker, stickers, 140.dp)
         return
     }
-    if (media != null && meta != null && displayType(message.msgType, meta) == MsgType.Image) {
-        ImageBubble(meta, media.files, bubbles.onPreview)
+    if (files != null && meta != null && displayType(message.msgType, meta) == MsgType.Image) {
+        ImageBubble(meta, files, bubbles.onPreview)
         return
     }
     Surface(
@@ -455,13 +478,13 @@ private fun BubbleBody(message: Message, maxBubbleWidth: Dp, bubbles: BubbleEnv)
     ) {
         val type = meta?.let { displayType(message.msgType, it) }
         when {
-            media != null && meta != null && type == MsgType.Voice ->
-                VoiceBubble(message, meta, media.files, bubbles.player, bubbles.onError)
-            media != null && meta != null && (type == MsgType.Video || type == MsgType.File) ->
-                FileCardBubble(meta, media.files, isVideo = type == MsgType.Video, maxWidth = maxBubbleWidth, onOpen = bubbles.onOpenFile, onError = bubbles.onError)
+            files != null && meta != null && type == MsgType.Voice ->
+                VoiceBubble(message, meta, files, bubbles.player, bubbles.onError)
+            files != null && meta != null && (type == MsgType.Video || type == MsgType.File) ->
+                FileCardBubble(meta, files, isVideo = type == MsgType.Video, maxWidth = maxBubbleWidth, onOpen = bubbles.onOpenFile, onError = bubbles.onError)
             else -> {
                 val isText = message.msgType == MsgType.Text
-                SelectionContainer {
+                val text = @Composable {
                     Text(
                         if (isText) message.content else MessagePreview.listPreview(message),
                         fontStyle = if (isText) FontStyle.Normal else FontStyle.Italic,
@@ -469,6 +492,7 @@ private fun BubbleBody(message: Message, maxBubbleWidth: Dp, bubbles: BubbleEnv)
                         modifier = Modifier.padding(horizontal = GoImDimens.bubblePaddingHorizontal, vertical = GoImDimens.bubblePaddingVertical),
                     )
                 }
+                if (bubbles.selectableText) SelectionContainer { text() } else text()
             }
         }
     }

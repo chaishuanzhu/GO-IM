@@ -1,7 +1,6 @@
 package com.goim.kmp.feature.settings
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -44,7 +42,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -56,7 +53,6 @@ import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.GoImIcons
 import com.goim.kmp.designsystem.GoImSize
 import com.goim.kmp.designsystem.GoImSpacing
-import com.goim.kmp.designsystem.GoImTheme
 import com.goim.kmp.designsystem.MonogramAvatar
 import com.goim.kmp.designsystem.UserAvatar
 import com.goim.kmp.model.AdminConversation
@@ -150,9 +146,18 @@ private fun ConversationRow(conversation: AdminConversation, onClick: () -> Unit
     )
 }
 
+/** 绘制一条消息气泡：[outgoing] 时靠右，长按调用 onLongPress。 */
+typealias AdminBubble = @Composable (
+    message: AdminMessage,
+    sender: AdminSender?,
+    outgoing: Boolean,
+    maxBubbleWidth: Dp,
+    onLongPress: () -> Unit,
+) -> Unit
+
 /**
  * 管理后台：只读查看会话消息，没有输入栏。[selfUid]（被查看的用户）的消息靠右，其他人靠左；
- * 长按消息可从服务器删除。
+ * 长按消息可从服务器删除。气泡由 [bubble] 绘制，与聊天页保持一致。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -162,6 +167,7 @@ fun AdminChatScreen(
     subtitle: String,
     selfUid: String,
     onBack: () -> Unit,
+    bubble: AdminBubble,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var deleting by remember { mutableStateOf<AdminMessage?>(null) }
@@ -197,7 +203,7 @@ fun AdminChatScreen(
                 state.messages.isEmpty() && state.error != null -> ErrorState(state.error!!)
                 state.messages.isEmpty() && (state.loading || !state.loaded) -> LoadingState()
                 state.messages.isEmpty() -> EmptyState(GoImIcons.Chat, "没有消息")
-                else -> MessageList(state, selfUid, onLoadOlder = viewModel::loadOlder, onLongPress = { deleting = it })
+                else -> MessageList(state, selfUid, bubble, onLoadOlder = viewModel::loadOlder, onLongPress = { deleting = it })
             }
         }
     }
@@ -222,6 +228,7 @@ fun AdminChatScreen(
 private fun MessageList(
     state: AdminChatUiState,
     selfUid: String,
+    bubble: AdminBubble,
     onLoadOlder: () -> Unit,
     onLongPress: (AdminMessage) -> Unit,
 ) {
@@ -252,13 +259,7 @@ private fun MessageList(
                 if (notice != null) {
                     CenterNotice(notice)
                 } else {
-                    MessageBubble(
-                        message = message,
-                        sender = state.senders[message.fromUid],
-                        outgoing = message.fromUid == selfUid,
-                        maxBubbleWidth = maxBubbleWidth,
-                        onLongPress = { onLongPress(message) },
-                    )
+                    bubble(message, state.senders[message.fromUid], message.fromUid == selfUid, maxBubbleWidth) { onLongPress(message) }
                 }
             }
             if (state.loading) {
@@ -289,50 +290,5 @@ private fun CenterNotice(text: String) {
                 modifier = Modifier.padding(horizontal = GoImSpacing.s3, vertical = GoImSpacing.s1),
             )
         }
-    }
-}
-
-@Composable
-private fun MessageBubble(
-    message: AdminMessage,
-    sender: AdminSender?,
-    outgoing: Boolean,
-    maxBubbleWidth: Dp,
-    onLongPress: () -> Unit,
-) {
-    val name = sender?.nickname?.takeIf { it.isNotBlank() } ?: message.fromUid
-    val avatar = @Composable { UserAvatar(message.fromUid, name, size = GoImDimens.messageAvatarSize, avatarUrl = sender?.avatarUrl.orEmpty()) }
-    val colors = GoImTheme.chatColors
-    val isText = message.msgType == MsgType.Text
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2, if (outgoing) Alignment.End else Alignment.Start),
-        verticalAlignment = Alignment.Top,
-    ) {
-        if (!outgoing) avatar()
-        Column(Modifier.weight(1f, fill = false), horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start) {
-            Text(
-                "$name · ${GoImFormat.messageTime(message.timestampMs)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = GoImSpacing.s2, vertical = GoImSpacing.s1),
-            )
-            Surface(
-                color = if (outgoing) colors.outgoingBubble else colors.incomingBubble,
-                contentColor = if (outgoing) colors.outgoingText else colors.incomingText,
-                shape = if (outgoing) GoImDimens.outgoingBubbleShape else GoImDimens.incomingBubbleShape,
-                modifier = Modifier
-                    .widthIn(max = maxBubbleWidth)
-                    .combinedClickable(onClickLabel = null, onLongClickLabel = "删除消息", onLongClick = onLongPress, onClick = {}),
-            ) {
-                Text(
-                    if (isText) message.content else message.preview,
-                    fontStyle = if (isText) FontStyle.Normal else FontStyle.Italic,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(horizontal = GoImDimens.bubblePaddingHorizontal, vertical = GoImDimens.bubblePaddingVertical),
-                )
-            }
-        }
-        if (outgoing) avatar()
     }
 }

@@ -90,6 +90,8 @@ import com.goim.kmp.feature.auth.LoginViewModel
 import com.goim.kmp.feature.chat.ChatMediaDeps
 import com.goim.kmp.feature.chat.ChatScreen
 import com.goim.kmp.feature.chat.ChatViewModel
+import com.goim.kmp.feature.chat.MessageBubble
+import com.goim.kmp.feature.chat.ReadOnlyBubbles
 import com.goim.kmp.feature.contacts.ContactsScreen
 import com.goim.kmp.feature.contacts.ContactsViewModel
 import com.goim.kmp.feature.contacts.FriendInfoScreen
@@ -130,8 +132,11 @@ import com.goim.kmp.designsystem.ProfileLookup
 import com.goim.kmp.designsystem.GoImSpacing
 import androidx.compose.runtime.CompositionLocalProvider
 import com.goim.kmp.feature.settings.SettingsViewModel
+import com.goim.kmp.model.AdminMessage
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.Conversation
+import com.goim.kmp.model.Message
+import com.goim.kmp.model.MessageStatus
 import com.goim.kmp.model.Group
 import com.goim.kmp.model.ConversationId
 import com.goim.kmp.model.Friend
@@ -504,13 +509,24 @@ private fun MainNavContent(session: UserSession) {
                             deleteMessage = api::adminDeleteMessage,
                         )
                     }
-                    AdminChatScreen(
-                        vm,
-                        title = route.title,
-                        subtitle = if (chatType == ChatType.GROUP) "群聊 · 全部成员的消息" else "${route.name} 的单聊",
-                        selfUid = route.uid,
-                        onBack = { nav.popBackStack() },
-                    )
+                    ReadOnlyBubbles(session.files, session.stickers, onError = vm::showNotice) {
+                        AdminChatScreen(
+                            vm,
+                            title = route.title,
+                            subtitle = if (chatType == ChatType.GROUP) "群聊 · 全部成员的消息" else "${route.name} 的单聊",
+                            selfUid = route.uid,
+                            onBack = { nav.popBackStack() },
+                            bubble = { message, sender, outgoing, maxWidth, onLongPress ->
+                                MessageBubble(
+                                    message.toChatMessage(outgoing),
+                                    senderName = sender?.nickname?.takeIf { it.isNotBlank() } ?: message.fromUid,
+                                    avatarUrl = sender?.avatarUrl,
+                                    maxBubbleWidth = maxWidth,
+                                    onLongPress = onLongPress,
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -961,3 +977,19 @@ private fun TabIcon(tab: HomeTab, badge: Int) {
         Icon(icon, contentDescription = null)
     }
 }
+
+/** 管理后台的服务端消息转成聊天气泡使用的模型；[outgoing] 即是否为被查看用户发出。 */
+private fun AdminMessage.toChatMessage(outgoing: Boolean) = Message(
+    id = msgId.toString(),
+    serverMsgId = msgId,
+    clientSeq = 0,
+    conversationId = "",
+    fromUid = fromUid,
+    toUid = toUid,
+    chatType = chatType,
+    msgType = msgType,
+    content = content,
+    timestampMs = timestampMs,
+    status = if (recalled) MessageStatus.RECALLED else MessageStatus.SENT,
+    isOutgoing = outgoing,
+)

@@ -218,7 +218,7 @@ func (s *Server) generateThumb(fileID int64) {
 
 // HandleDownload 提供文件/图片数据。
 // GET /file?id={file_id}[&thumb=1]&uid=uid&token=token
-// 有记录的文件仅上传者与文件所在会话的成员可读；无记录的旧文件登录即可读。
+// 有记录的文件仅上传者、文件所在会话的成员与管理员可读；无记录的旧文件登录即可读。
 // 启用直传时 302 到预签名下载地址，否则由网关支持 Range 地转发。
 func (s *Server) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	if s.objectStore == nil {
@@ -250,7 +250,7 @@ func (s *Server) HandleDownload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if f != nil {
-		if f.Status != repo.FileStatusReady || !fileAccessible(ctx, s.fileStore, s.groupStore, claims.UID, f) {
+		if f.Status != repo.FileStatusReady || (claims.Role != "admin" && !fileAccessible(ctx, s.fileStore, s.groupStore, claims.UID, f)) {
 			http.Error(w, "file not found", http.StatusNotFound)
 			return
 		}

@@ -77,6 +77,8 @@ class AdminChatViewModel(
 
     fun consumeNotice() = _state.update { it.copy(notice = null) }
 
+    fun showNotice(text: String) = _state.update { it.copy(notice = text) }
+
     fun delete(message: AdminMessage) {
         viewModelScope.launch {
             attempt { deleteMessage(message.msgId) }.fold(
