@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"log"
 	"sync"
-	"time"
 
 	"github.com/panjf2000/gnet/v2"
 )
@@ -13,13 +12,12 @@ import (
 // 出站消息使用 4 字节大端长度前缀进行封帧
 // (与入站 gnet TCP 线上协议格式相同)。
 type gnetTransport struct {
-	conn         gnet.Conn
-	writeTimeout time.Duration
+	conn gnet.Conn
 }
 
 // newGnetTransport 创建一个 gnet Transport。
 func newGnetTransport(conn gnet.Conn) *gnetTransport {
-	return &gnetTransport{conn: conn, writeTimeout: 10 * time.Second}
+	return &gnetTransport{conn: conn}
 }
 
 func (t *gnetTransport) Close() error {
@@ -49,13 +47,8 @@ func (t *gnetTransport) Write(p []byte) error {
 	*bufPtr = buf[:0]
 	frameBufPool.Put(bufPtr)
 
-	// 设置写超时,使卡住的 TCP 连接不会永久阻塞。
-	if t.writeTimeout > 0 {
-		if err := t.conn.SetWriteDeadline(time.Now().Add(t.writeTimeout)); err != nil {
-			log.Printf("[gnet] set write deadline error fd=%d: %v", t.conn.Fd(), err)
-		}
-	}
-
+	// gnet.Conn 不支持写超时(SetWriteDeadline 恒返回 unsupported);AsyncWrite
+	// 不阻塞调用方,写不动的连接由心跳检测关闭。
 	// 带错误回调的 AsyncWrite,使静默的写入失败被记录日志。
 	return t.conn.AsyncWrite(frame, func(c gnet.Conn, err error) error {
 		if err != nil {
