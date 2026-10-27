@@ -722,13 +722,16 @@ func checkSignature(sig string) string {
 }
 
 // checkRemark 校验好友备注：可为空（清除），最多 maxNicknameLen 个字符。
-func checkRemark(remark string) string {
-	if utf8.RuneCountInString(remark) > maxNicknameLen {
-		return "remark too long"
+func checkRemark(remark string) string { return checkShortText(remark, "remark") }
+
+// checkShortText 校验备注、群昵称、群名这类短文本：最多 maxNicknameLen 个字符，不含控制字符。
+func checkShortText(text, field string) string {
+	if utf8.RuneCountInString(text) > maxNicknameLen {
+		return field + " too long"
 	}
-	for _, r := range remark {
+	for _, r := range text {
 		if unicode.IsControl(r) {
-			return "remark contains invalid characters"
+			return field + " contains invalid characters"
 		}
 	}
 	return ""

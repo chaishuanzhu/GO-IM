@@ -16,6 +16,7 @@ import com.goim.kmp.model.Friend
 import com.goim.kmp.model.FriendRequest
 import com.goim.kmp.model.FriendRequestStatus
 import com.goim.kmp.model.Group
+import com.goim.kmp.model.GroupMember
 import com.goim.kmp.model.MultiDevicePolicy
 import com.goim.kmp.model.SearchHit
 import com.goim.kmp.model.User
@@ -61,6 +62,7 @@ internal data class GroupListDto(val groups: List<GroupDto>? = null)
 internal data class GroupMembersDto(
     @SerialName("group_id") val groupId: String = "",
     val members: List<String>? = null,
+    val aliases: Map<String, String>? = null,
 )
 
 @Serializable
@@ -162,8 +164,22 @@ class GoImUserApi(
     suspend fun listGroups(): List<Group> =
         get("group/list").decode<GroupListDto>().groups.orEmpty().map { it.toDomain() }
 
-    suspend fun groupMembers(groupId: String): List<String> =
-        get("group/members", "group_id" to groupId).decode<GroupMembersDto>().members.orEmpty()
+    /** 成员按入群顺序；`alias` 为成员自己设置的群昵称。`role` 由调用方按群主补齐。 */
+    suspend fun groupMembers(groupId: String): List<GroupMember> {
+        val dto = get("group/members", "group_id" to groupId).decode<GroupMembersDto>()
+        val aliases = dto.aliases.orEmpty()
+        return dto.members.orEmpty().map { GroupMember(groupId, it, alias = aliases[it].orEmpty()) }
+    }
+
+    /** 仅群主（服务端校验）。 */
+    suspend fun renameGroup(groupId: String, name: String) {
+        post("group/rename", "group_id" to groupId, "name" to name)
+    }
+
+    /** 设置自己的群昵称，空串清除。 */
+    suspend fun setGroupAlias(groupId: String, alias: String) {
+        post("group/alias", "group_id" to groupId, "alias" to alias)
+    }
 
     /** 服务端把 `uid` 规整为对端、`friend_uid` 为自己（同 iOS 解析）。 */
     suspend fun friendList(): FriendSnapshot {

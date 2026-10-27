@@ -649,9 +649,47 @@ paths:
                   members:
                     type: array
                     items: { type: string }
+                  aliases:
+                    type: object
+                    description: 设置了群昵称的成员 uid → 群昵称
+                    additionalProperties: { type: string }
+                    example: { "100002": 小王 }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /group/alias:
+    post:
+      tags: [群组]
+      summary: 设置我在群里的昵称
+      description: 群内所有成员可见；最多 32 个字符，空串清除。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [group_id]
+              properties:
+                group_id: { type: string }
+                alias: { type: string, example: 小王 }
+      responses:
+        "200":
+          description: 已保存
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  alias: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: 不是群成员
+          content: { text/plain: { schema: { type: string } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "503": { $ref: "#/components/responses/Unavailable" }
 
@@ -766,6 +804,7 @@ paths:
     post:
       tags: [群组]
       summary: 修改群名（仅群主）
+      description: 去掉首尾空白后最多 32 个字符；在线成员收到 `group_renamed` 通知。
       requestBody:
         required: true
         content:

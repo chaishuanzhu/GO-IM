@@ -343,6 +343,10 @@ private fun MainNavContent(session: UserSession) {
                         chatInfoOpen = false
                         selected = null
                     },
+                    onOpenDirectChat = { uid, name ->
+                        chatInfoOpen = false
+                        openDirectChat(uid, name)
+                    },
                 )
             }
         }
@@ -401,7 +405,7 @@ private fun MainNavContent(session: UserSession) {
             }
             composable<FriendInfoRoute> { entry ->
                 val route = entry.toRoute<FriendInfoRoute>()
-                val vm = viewModel { FriendInfoViewModel(route.uid, route.name, session.friends) }
+                val vm = viewModel { FriendInfoViewModel(route.uid, route.name, session.friends, selfUid) }
                 FriendInfoScreen(
                     vm,
                     onBack = { nav.popBackStack() },
@@ -452,6 +456,7 @@ private fun MainNavContent(session: UserSession) {
                     onBack = { nav.popBackStack() },
                     // 退群后回到进入群聊之前的页面（同 iOS）
                     onLeft = { if (!nav.popBackStack<ChatRoute>(inclusive = true)) nav.popBackStack() },
+                    onOpenMember = { uid, name -> nav.navigate(FriendInfoRoute(uid, name)) },
                 )
             }
             composable<ProfileRoute> {
@@ -591,12 +596,13 @@ private fun ChatWithInfoPanel(
     infoOpen: Boolean,
     onToggleInfo: () -> Unit,
     onLeftGroup: () -> Unit,
+    onOpenDirectChat: (uid: String, name: String) -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inline = maxWidth >= GoImDimens.chatWithPanelMinWidth
         val panel: @Composable () -> Unit = {
             ScopedViewModelStore(route.conversationId to "info") {
-                ChatInfoPanel(session, route, onClose = onToggleInfo, onLeftGroup = onLeftGroup)
+                ChatInfoPanel(session, route, onClose = onToggleInfo, onLeftGroup = onLeftGroup, onOpenDirectChat = onOpenDirectChat)
             }
         }
         Row(Modifier.fillMaxSize()) {
@@ -620,14 +626,42 @@ private fun ChatWithInfoPanel(
 }
 
 @Composable
-private fun ChatInfoPanel(session: UserSession, route: ChatRoute, onClose: () -> Unit, onLeftGroup: () -> Unit) {
+private fun ChatInfoPanel(
+    session: UserSession,
+    route: ChatRoute,
+    onClose: () -> Unit,
+    onLeftGroup: () -> Unit,
+    onOpenDirectChat: (uid: String, name: String) -> Unit,
+) {
     if (route.chatType == ChatType.GROUP.value) {
         val vm = viewModel {
             GroupInfoViewModel(route.peer, route.title, session.user.uid, session.groups, session.friends)
         }
-        GroupInfoScreen(vm, onBack = onClose, onLeft = onLeftGroup, presentation = Presentation.Overlay)
+        // 群成员资料在同一面板内打开，返回回到群信息
+        var member by remember(route.peer) { mutableStateOf<Pair<String, String>?>(null) }
+        val open = member
+        if (open == null) {
+            GroupInfoScreen(
+                vm,
+                onBack = onClose,
+                onLeft = onLeftGroup,
+                onOpenMember = { uid, name -> member = uid to name },
+                presentation = Presentation.Overlay,
+            )
+        } else {
+            ScopedViewModelStore(open) {
+                val memberVm = viewModel { FriendInfoViewModel(open.first, open.second, session.friends, session.user.uid) }
+                FriendInfoScreen(
+                    memberVm,
+                    onBack = { member = null },
+                    onSendMessage = { onOpenDirectChat(open.first, memberVm.displayName) },
+                    onRemoved = { member = null },
+                    presentation = Presentation.Overlay,
+                )
+            }
+        }
     } else {
-        val vm = viewModel { FriendInfoViewModel(route.peer, route.title, session.friends) }
+        val vm = viewModel { FriendInfoViewModel(route.peer, route.title, session.friends, session.user.uid) }
         FriendInfoScreen(vm, onBack = onClose, onSendMessage = null, onRemoved = onClose, presentation = Presentation.Overlay)
     }
 }
@@ -664,7 +698,7 @@ private fun ContactDetailPane(
             )
         }
         is ContactDetail.Person -> {
-            val vm = viewModel { FriendInfoViewModel(detail.uid, detail.name, session.friends) }
+            val vm = viewModel { FriendInfoViewModel(detail.uid, detail.name, session.friends, session.user.uid) }
             FriendInfoScreen(
                 vm,
                 onBack = onClose,

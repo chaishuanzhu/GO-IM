@@ -553,9 +553,13 @@ func (s *Server) HandleGroupRename(w http.ResponseWriter, r *http.Request) {
 	}
 
 	groupID := r.FormValue("group_id")
-	newName := r.FormValue("name")
+	newName := strings.TrimSpace(r.FormValue("name"))
 	if groupID == "" || newName == "" {
 		http.Error(w, "group_id and name required", http.StatusBadRequest)
+		return
+	}
+	if msg := checkShortText(newName, "name"); msg != "" {
+		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
 
@@ -670,12 +674,59 @@ func (s *Server) HandleGroupMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	aliases, err := s.groupStore.MemberAliases(r.Context(), groupID)
+	if err != nil {
+		log.Printf("[server] group %s aliases: %v", groupID, err)
+		aliases = map[string]string{}
+	}
+
 	data, _ := json.Marshal(map[string]interface{}{
 		"group_id": groupID,
 		"members":  members,
+		"aliases":  aliases,
 	})
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data)
+}
+
+// HandleGroupAlias 设置自己在群里的昵称（群内所有成员可见），空串清除。
+// POST /group/alias 表单字段：group_id、alias
+func (s *Server) HandleGroupAlias(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.groupStore == nil {
+		http.Error(w, "group store not available", http.StatusServiceUnavailable)
+		return
+	}
+	claims := s.authenticateRequest(w, r)
+	if claims == nil {
+		return
+	}
+	groupID := r.FormValue("group_id")
+	if groupID == "" {
+		http.Error(w, "group_id required", http.StatusBadRequest)
+		return
+	}
+	alias := strings.TrimSpace(r.FormValue("alias"))
+	if msg := checkShortText(alias, "alias"); msg != "" {
+		http.Error(w, msg, http.StatusBadRequest)
+		return
+	}
+	if err := s.groupStore.SetMemberAlias(r.Context(), groupID, claims.UID, alias); err != nil {
+		switch {
+		case errors.Is(err, ErrGroupNotFound):
+			http.Error(w, "group not found", http.StatusNotFound)
+		case errors.Is(err, ErrNotMember):
+			http.Error(w, "not a group member", http.StatusForbidden)
+		default:
+			log.Printf("[server] group %s alias for %s: %v", groupID, claims.UID, err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok", "alias": alias})
 }
 
 // HandleGroupList 返回用户所属的所有群。

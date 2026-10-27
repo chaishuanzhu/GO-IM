@@ -539,6 +539,7 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/group/rename", app.Server.HandleGroupRename)
 	mux.HandleFunc("/group/transfer", app.Server.HandleGroupTransfer)
 	mux.HandleFunc("/group/members", app.Server.HandleGroupMembers)
+	mux.HandleFunc("/group/alias", app.Server.HandleGroupAlias)
 	mux.HandleFunc("/group/list", app.Server.HandleGroupList)
 
 	// 未读数量查询。

@@ -78,7 +78,11 @@ class GoImUserApiTest {
                     HttpStatusCode.OK,
                     jsonHeaders,
                 )
-                else -> respond("""{"group_id":"g_1","members":["bob","alice"]}""", HttpStatusCode.OK, jsonHeaders)
+                else -> respond(
+                    """{"group_id":"g_1","members":["bob","alice"],"aliases":{"alice":"小艾"}}""",
+                    HttpStatusCode.OK,
+                    jsonHeaders,
+                )
             }
         }
 
@@ -87,7 +91,8 @@ class GoImUserApiTest {
 
         assertEquals(listOf(Group("g_1", "", "bob", 3)), groups)
         assertEquals("g_1", groups.single().displayName)
-        assertEquals(listOf("bob", "alice"), members)
+        assertEquals(listOf("bob", "alice"), members.map { it.uid })
+        assertEquals(listOf("", "小艾"), members.map { it.alias })
         assertEquals("alice", requests[0].url.parameters["uid"])
         assertEquals("jwt", requests[0].url.parameters["token"])
         assertEquals("g_1", requests[1].url.parameters["group_id"])
@@ -108,6 +113,19 @@ class GoImUserApiTest {
         assertEquals("hi", friend.signature)
         assertEquals("老王", friend.remark)
         assertEquals("老王", friend.sortName)
+    }
+
+    @Test
+    fun renameAndAliasPostForms() = runTest {
+        val api = api { respond("""{"status":"ok"}""", HttpStatusCode.OK, jsonHeaders) }
+
+        api.renameGroup("g_1", "Ops")
+        api.setGroupAlias("g_1", "小艾")
+
+        assertEquals(listOf("/group/rename", "/group/alias"), requests.map { it.url.encodedPath })
+        assertTrue("name=Ops" in requests[0].form())
+        val alias = requests[1].form()
+        assertTrue("group_id=g_1" in alias && "alias=" in alias, alias)
     }
 
     @Test

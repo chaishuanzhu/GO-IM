@@ -13,6 +13,8 @@ data class GroupMember(
     val groupId: String,
     val uid: String,
     val role: String = "member",
+    /** 成员自己设置的群昵称，空 = 未设置。 */
+    val alias: String = "",
 )
 
 data class Friend(

@@ -320,6 +320,7 @@ func (s *MySQLStore) migrateProfile() error {
 		{"ALTER TABLE files ADD COLUMN is_avatar TINYINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
 		{"ALTER TABLE users ADD COLUMN must_change_password TINYINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
 		{"ALTER TABLE users ADD COLUMN signature VARCHAR(255) NOT NULL DEFAULT ''", []uint16{errDupFieldName}},
+		{"ALTER TABLE group_members ADD COLUMN alias VARCHAR(128) NOT NULL DEFAULT ''", []uint16{errDupFieldName}},
 	}
 	for _, step := range steps {
 		if _, err := s.db.Exec(step.ddl); err != nil && !isMySQLError(err, step.skipped...) {

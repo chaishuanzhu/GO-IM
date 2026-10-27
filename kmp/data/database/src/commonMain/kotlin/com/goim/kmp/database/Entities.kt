@@ -54,6 +54,7 @@ data class GroupMemberEntity(
     @ColumnInfo(name = "group_id") val groupId: String,
     val uid: String,
     @ColumnInfo(defaultValue = "member") val role: String,
+    @ColumnInfo(defaultValue = "") val alias: String = "",
 )
 
 @Entity(tableName = "friends")

@@ -187,20 +187,42 @@ class AddFriendViewModel(
 }
 
 /** [friend] 为 null 表示已不是好友（被对方删除或尚未同步）。 */
+/** 非好友时与对方的请求状态，决定「添加好友」入口的样子。 */
+enum class PendingRequest { NONE, SENT, RECEIVED }
+
 data class FriendInfoUiState(
     val friend: Friend? = null,
     val loaded: Boolean = false,
+    val pending: PendingRequest = PendingRequest.NONE,
 )
 
 class FriendInfoViewModel(
     val uid: String,
     private val fallbackName: String,
     private val friends: FriendRepository,
+    private val selfUid: String = "",
 ) : ActionViewModel() {
-    val state: StateFlow<FriendInfoUiState> = friends.observeFriends()
-        .map { list -> FriendInfoUiState(list.firstOrNull { it.uid == uid }, loaded = true) }
+    val state: StateFlow<FriendInfoUiState> = combine(
+        friends.observeFriends(),
+        friends.observeRequestHistory().catch { emit(emptyList()) },
+    ) { list, requests ->
+        val open = requests.filter { it.status == FriendRequestStatus.PENDING }
+        val pending = when {
+            open.any { it.fromUid == uid } -> PendingRequest.RECEIVED
+            open.any { it.toUid == uid } -> PendingRequest.SENT
+            else -> PendingRequest.NONE
+        }
+        FriendInfoUiState(list.firstOrNull { it.uid == uid }, loaded = true, pending = pending)
+    }
         .catch { emit(FriendInfoUiState(loaded = true)) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FriendInfoUiState())
+
+    /** 打开的是自己（如群成员列表里的自己）：不显示加好友 / 备注。 */
+    val isSelf: Boolean get() = uid == selfUid
+
+    fun addFriend() = action(success = "好友请求已发送", block = { friends.sendRequest(uid) })
+
+    fun accept() = action(success = "已添加为好友", block = { friends.respond(uid, accept = true) })
 
     val displayName: String get() = state.value.friend?.displayName ?: fallbackName.ifBlank { uid }
 
@@ -256,28 +278,48 @@ data class GroupInfoUiState(
     val group: Group? = null,
     val members: List<GroupMember> = emptyList(),
     val isOwner: Boolean = false,
-)
+    /** 我给好友设置的备注，成员没设群昵称时用它。 */
+    val remarks: Map<String, String> = emptyMap(),
+) {
+    /** 成员名字前面的备注：群昵称优先，其次我给他的好友备注。 */
+    fun labelOf(member: GroupMember): String = member.alias.ifBlank { remarks[member.uid].orEmpty() }
+}
 
 class GroupInfoViewModel(
     val groupId: String,
     private val fallbackName: String,
-    private val selfUid: String,
+    val selfUid: String,
     private val groups: GroupRepository,
     friends: FriendRepository,
 ) : ActionViewModel() {
     private val members = MutableStateFlow<List<GroupMember>>(emptyList())
 
-    val state: StateFlow<GroupInfoUiState> = combine(
-        groups.observeGroups().map { list -> list.firstOrNull { it.groupId == groupId } }.catch { emit(null) },
-        members,
-    ) { group, list ->
-        val shown = group ?: Group(groupId, fallbackName, ownerUid = "", memberCount = list.size)
-        GroupInfoUiState(shown, list, isOwner = shown.ownerUid == selfUid)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GroupInfoUiState())
-
     val friendList: StateFlow<List<Friend>> = friends.observeFriends()
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val state: StateFlow<GroupInfoUiState> = combine(
+        groups.observeGroups().map { list -> list.firstOrNull { it.groupId == groupId } }.catch { emit(null) },
+        members,
+        friendList,
+    ) { group, list, friendRows ->
+        val shown = group ?: Group(groupId, fallbackName, ownerUid = "", memberCount = list.size)
+        val remarks = friendRows.filter { it.remark.isNotBlank() }.associate { it.uid to it.remark }
+        GroupInfoUiState(shown, list, isOwner = shown.ownerUid == selfUid, remarks = remarks)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GroupInfoUiState())
+
+    /** 我在本群的昵称。 */
+    val myAlias: String get() = state.value.members.firstOrNull { it.uid == selfUid }?.alias.orEmpty()
+
+    fun rename(name: String) = action(success = "群名称已修改", block = { groups.rename(groupId, name) })
+
+    fun setMyAlias(alias: String) = action(
+        success = if (alias.isBlank()) "已清除群昵称" else "群昵称已保存",
+        block = {
+            groups.setMyAlias(groupId, alias)
+            members.value = groups.members(groupId)
+        },
+    )
 
     init {
         reload()

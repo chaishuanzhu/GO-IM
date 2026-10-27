@@ -1,0 +1,430 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 4,
+    "identityHash": "36b49b87f5b43f9a1272d0c9e4bd9f1d",
+    "entities": [
+      {
+        "tableName": "messages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `server_msg_id` INTEGER, `client_seq` INTEGER NOT NULL, `conversation_id` TEXT NOT NULL, `from_uid` TEXT NOT NULL, `to_uid` TEXT NOT NULL, `chat_type` INTEGER NOT NULL, `msg_type` INTEGER NOT NULL, `content` TEXT NOT NULL, `timestamp_ms` INTEGER NOT NULL, `status` INTEGER NOT NULL, `is_outgoing` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverMsgId",
+            "columnName": "server_msg_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "clientSeq",
+            "columnName": "client_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conversationId",
+            "columnName": "conversation_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fromUid",
+            "columnName": "from_uid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "toUid",
+            "columnName": "to_uid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "chatType",
+            "columnName": "chat_type",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "msgType",
+            "columnName": "msg_type",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "content",
+            "columnName": "content",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestampMs",
+            "columnName": "timestamp_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isOutgoing",
+            "columnName": "is_outgoing",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_messages_server_msg_id",
+            "unique": true,
+            "columnNames": [
+              "server_msg_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_messages_server_msg_id` ON `${TABLE_NAME}` (`server_msg_id`)"
+          },
+          {
+            "name": "index_messages_conversation_id",
+            "unique": false,
+            "columnNames": [
+              "conversation_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_conversation_id` ON `${TABLE_NAME}` (`conversation_id`)"
+          },
+          {
+            "name": "index_messages_timestamp_ms",
+            "unique": false,
+            "columnNames": [
+              "timestamp_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_timestamp_ms` ON `${TABLE_NAME}` (`timestamp_ms`)"
+          },
+          {
+            "name": "index_messages_client_seq",
+            "unique": false,
+            "columnNames": [
+              "client_seq"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_client_seq` ON `${TABLE_NAME}` (`client_seq`)"
+          }
+        ]
+      },
+      {
+        "tableName": "conversations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `chat_type` INTEGER NOT NULL, `title` TEXT NOT NULL, `peer_or_group_id` TEXT NOT NULL, `last_msg_preview` TEXT NOT NULL DEFAULT '', `last_msg_at` INTEGER NOT NULL DEFAULT 0, `unread_count` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "chatType",
+            "columnName": "chat_type",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peerOrGroupId",
+            "columnName": "peer_or_group_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastMsgPreview",
+            "columnName": "last_msg_preview",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "lastMsgAt",
+            "columnName": "last_msg_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "unreadCount",
+            "columnName": "unread_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "groups",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`group_id` TEXT NOT NULL, `name` TEXT NOT NULL, `owner_uid` TEXT NOT NULL, `member_count` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`group_id`))",
+        "fields": [
+          {
+            "fieldPath": "groupId",
+            "columnName": "group_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUid",
+            "columnName": "owner_uid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "memberCount",
+            "columnName": "member_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "group_id"
+          ]
+        }
+      },
+      {
+        "tableName": "group_members",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`group_id` TEXT NOT NULL, `uid` TEXT NOT NULL, `role` TEXT NOT NULL DEFAULT 'member', `alias` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`group_id`, `uid`))",
+        "fields": [
+          {
+            "fieldPath": "groupId",
+            "columnName": "group_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uid",
+            "columnName": "uid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "role",
+            "columnName": "role",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'member'"
+          },
+          {
+            "fieldPath": "alias",
+            "columnName": "alias",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "group_id",
+            "uid"
+          ]
+        }
+      },
+      {
+        "tableName": "friends",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uid` TEXT NOT NULL, `nickname` TEXT NOT NULL, `avatar_url` TEXT NOT NULL DEFAULT '', `signature` TEXT NOT NULL DEFAULT '', `remark` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`uid`))",
+        "fields": [
+          {
+            "fieldPath": "uid",
+            "columnName": "uid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nickname",
+            "columnName": "nickname",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avatarUrl",
+            "columnName": "avatar_url",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "signature",
+            "columnName": "signature",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "remark",
+            "columnName": "remark",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "uid"
+          ]
+        }
+      },
+      {
+        "tableName": "friend_requests",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`from_uid` TEXT NOT NULL, `to_uid` TEXT NOT NULL, `status` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `nickname` TEXT, `avatar_url` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`from_uid`, `to_uid`))",
+        "fields": [
+          {
+            "fieldPath": "fromUid",
+            "columnName": "from_uid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "toUid",
+            "columnName": "to_uid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nickname",
+            "columnName": "nickname",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "avatarUrl",
+            "columnName": "avatar_url",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "from_uid",
+            "to_uid"
+          ]
+        }
+      },
+      {
+        "tableName": "meta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))",
+        "fields": [
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "key"
+          ]
+        }
+      },
+      {
+        "tableName": "profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uid` TEXT NOT NULL, `nickname` TEXT NOT NULL, `avatar_url` TEXT NOT NULL DEFAULT '', `fetched_at` INTEGER NOT NULL DEFAULT 0, `signature` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`uid`))",
+        "fields": [
+          {
+            "fieldPath": "uid",
+            "columnName": "uid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nickname",
+            "columnName": "nickname",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avatarUrl",
+            "columnName": "avatar_url",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "fetchedAt",
+            "columnName": "fetched_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "signature",
+            "columnName": "signature",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "uid"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '36b49b87f5b43f9a1272d0c9e4bd9f1d')"
+    ]
+  }
+}

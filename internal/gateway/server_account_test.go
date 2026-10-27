@@ -625,3 +625,77 @@ func TestHandleFriendRemark(t *testing.T) {
 		t.Fatalf("missing friend_uid: %d", rec.Code)
 	}
 }
+
+func TestHandleGroupAliasAndMembers(t *testing.T) {
+	e := newAccountEnv(t, false)
+	sg, _ := snowflake.New(2)
+	gs := NewInMemoryGroupStore(sg)
+	e.srv.groupStore = gs
+	e.router.SetGroupStore(gs)
+	g, err := gs.Create(context.Background(), "Dev", "100000", []string{"100001"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := func(uid, value string) *httptest.ResponseRecorder {
+		form := url.Values{"group_id": {g.ID}, "alias": {value}}
+		return e.do(t, e.srv.HandleGroupAlias, http.MethodPost, e.auth(t, uid, form))
+	}
+
+	if rec := alias("100001", " 小王 "); rec.Code != http.StatusOK {
+		t.Fatalf("set alias: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := alias("100009", "x"); rec.Code != http.StatusForbidden {
+		t.Fatalf("non-member: %d", rec.Code)
+	}
+	if rec := alias("100001", strings.Repeat("名", 33)); rec.Code != http.StatusBadRequest {
+		t.Fatalf("long alias: %d", rec.Code)
+	}
+
+	rec := e.do(t, e.srv.HandleGroupMembers, http.MethodGet, e.auth(t, "100000", url.Values{"group_id": {g.ID}}))
+	var body struct {
+		Members []string          `json:"members"`
+		Aliases map[string]string `json:"aliases"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("members body %q: %v", rec.Body.String(), err)
+	}
+	if len(body.Members) != 2 || body.Aliases["100001"] != "小王" || len(body.Aliases) != 1 {
+		t.Fatalf("members = %+v", body)
+	}
+
+	if rec := alias("100001", ""); rec.Code != http.StatusOK {
+		t.Fatalf("clear alias: %d", rec.Code)
+	}
+	if aliases, _ := gs.MemberAliases(context.Background(), g.ID); len(aliases) != 0 {
+		t.Fatalf("aliases after clear = %v", aliases)
+	}
+}
+
+func TestHandleGroupRenameValidation(t *testing.T) {
+	e := newAccountEnv(t, false)
+	sg, _ := snowflake.New(2)
+	gs := NewInMemoryGroupStore(sg)
+	e.srv.groupStore = gs
+	e.router.SetGroupStore(gs)
+	g, _ := gs.Create(context.Background(), "Dev", "100000", []string{"100001"})
+	rename := func(uid, name string) *httptest.ResponseRecorder {
+		form := url.Values{"group_id": {g.ID}, "name": {name}}
+		return e.do(t, e.srv.HandleGroupRename, http.MethodPost, e.auth(t, uid, form))
+	}
+
+	if rec := rename("100001", "Ops"); rec.Code != http.StatusForbidden {
+		t.Fatalf("member rename: %d", rec.Code)
+	}
+	if rec := rename("100000", "   "); rec.Code != http.StatusBadRequest {
+		t.Fatalf("blank name: %d", rec.Code)
+	}
+	if rec := rename("100000", strings.Repeat("群", 33)); rec.Code != http.StatusBadRequest {
+		t.Fatalf("long name: %d", rec.Code)
+	}
+	if rec := rename("100000", " Ops "); rec.Code != http.StatusOK {
+		t.Fatalf("owner rename: %d %s", rec.Code, rec.Body.String())
+	}
+	if got, _ := gs.Get(context.Background(), g.ID); got.Name != "Ops" {
+		t.Fatalf("name = %q", got.Name)
+	}
+}

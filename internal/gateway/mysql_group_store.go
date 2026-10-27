@@ -152,6 +152,17 @@ func (s *MySQLGroupStore) UpdateName(ctx context.Context, groupID, newName strin
 	return translateRepoError(s.repo.UpdateName(ctx, groupID, newName))
 }
 
+// SetMemberAlias 设置成员在群里的昵称，空串清除。
+func (s *MySQLGroupStore) SetMemberAlias(ctx context.Context, groupID, uid, alias string) error {
+	return translateRepoError(s.repo.SetAlias(ctx, groupID, uid, alias))
+}
+
+// MemberAliases 返回设置了群昵称的成员 uid → 群昵称。
+func (s *MySQLGroupStore) MemberAliases(ctx context.Context, groupID string) (map[string]string, error) {
+	aliases, err := s.repo.MemberAliases(ctx, groupID)
+	return aliases, translateRepoError(err)
+}
+
 // TransferOwnership 将群所有权从一个成员转给另一个成员。
 func (s *MySQLGroupStore) TransferOwnership(ctx context.Context, groupID, fromUID, toUID string) error {
 	return translateRepoError(s.repo.TransferOwnership(ctx, groupID, fromUID, toUID))

@@ -77,11 +77,24 @@ class GroupRepositoryImpl(
 
     override suspend fun members(groupId: String): List<GroupMember> {
         val owner = persist { dao.byId(groupId)?.ownerUid }
-        val members = api.groupMembers(groupId).map { uid ->
-            GroupMember(groupId, uid, role = if (uid == owner) "owner" else "member")
-        }
-        persist { dao.replaceMembers(groupId, members.map { GroupMemberEntity(it.groupId, it.uid, it.role) }) }
+        val members = api.groupMembers(groupId).map { it.copy(role = if (it.uid == owner) "owner" else "member") }
+        persist { dao.replaceMembers(groupId, members.map { GroupMemberEntity(it.groupId, it.uid, it.role, it.alias) }) }
         return members
+    }
+
+    override suspend fun rename(groupId: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) throw DomainError.InvalidState("群名称不能为空")
+        if (trimmed.length > MAX_GROUP_TEXT) throw DomainError.InvalidState("群名称最多 $MAX_GROUP_TEXT 个字")
+        api.renameGroup(groupId, trimmed)
+        persist { dao.byId(groupId)?.let { dao.upsert(it.copy(name = trimmed)) } }
+        conversations.syncGroupTitles(listOf(Group(groupId, trimmed, ownerUid = "")))
+    }
+
+    override suspend fun setMyAlias(groupId: String, alias: String) {
+        val trimmed = alias.trim()
+        if (trimmed.length > MAX_GROUP_TEXT) throw DomainError.InvalidState("群昵称最多 $MAX_GROUP_TEXT 个字")
+        api.setGroupAlias(groupId, trimmed)
     }
 
     private fun Group.toConversation() = Conversation(
@@ -90,6 +103,10 @@ class GroupRepositoryImpl(
         title = displayName,
         peerOrGroupId = groupId,
     )
+
+    private companion object {
+        const val MAX_GROUP_TEXT = 32
+    }
 }
 
 /**

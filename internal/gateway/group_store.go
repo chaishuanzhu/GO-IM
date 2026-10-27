@@ -17,6 +17,8 @@ type Group struct {
 	OwnerUID  string          `json:"owner_uid"`  // 创建者/群主
 	Members   map[string]bool `json:"members"`    // uid → true(包含群主)
 	CreatedAt int64           `json:"created_at"` // unix 毫秒时间戳
+
+	aliases map[string]string // uid → 群昵称（仅内存实现使用）
 }
 
 // GroupStore 管理群的持久化。InMemoryGroupStore 是默认实现;
@@ -32,6 +34,10 @@ type GroupStore interface {
 	Get(ctx context.Context, groupID string) (*Group, error)
 	UpdateName(ctx context.Context, groupID, newName string) error
 	TransferOwnership(ctx context.Context, groupID, fromUID, toUID string) error
+	// SetMemberAlias 设置成员在群里的昵称（群内所有人可见），空串清除。
+	SetMemberAlias(ctx context.Context, groupID, uid, alias string) error
+	// MemberAliases 返回设置了群昵称的成员 uid → 群昵称。
+	MemberAliases(ctx context.Context, groupID string) (map[string]string, error)
 }
 
 // 群操作的哨兵错误。
@@ -123,6 +129,7 @@ func (s *InMemoryGroupStore) RemoveMember(ctx context.Context, groupID, uid stri
 		return ErrNotMember
 	}
 	delete(g.Members, uid)
+	delete(g.aliases, uid)
 
 	// 自动删除空群。
 	if len(g.Members) == 0 {
@@ -215,4 +222,43 @@ func (s *InMemoryGroupStore) TransferOwnership(ctx context.Context, groupID, fro
 	}
 	g.OwnerUID = toUID
 	return nil
+}
+
+// SetMemberAlias 设置成员在群里的昵称，空串清除。
+func (s *InMemoryGroupStore) SetMemberAlias(ctx context.Context, groupID, uid, alias string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	g, ok := s.groups[groupID]
+	if !ok {
+		return ErrGroupNotFound
+	}
+	if !g.Members[uid] {
+		return ErrNotMember
+	}
+	if alias == "" {
+		delete(g.aliases, uid)
+		return nil
+	}
+	if g.aliases == nil {
+		g.aliases = make(map[string]string)
+	}
+	g.aliases[uid] = alias
+	return nil
+}
+
+// MemberAliases 返回设置了群昵称的成员 uid → 群昵称。
+func (s *InMemoryGroupStore) MemberAliases(ctx context.Context, groupID string) (map[string]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	g, ok := s.groups[groupID]
+	if !ok {
+		return nil, ErrGroupNotFound
+	}
+	aliases := make(map[string]string, len(g.aliases))
+	for uid, alias := range g.aliases {
+		aliases[uid] = alias
+	}
+	return aliases, nil
 }

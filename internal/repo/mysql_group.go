@@ -318,6 +318,40 @@ func (s *MySQLGroupStore) TransferOwnership(ctx context.Context, groupID, fromUI
 	return tx.Commit()
 }
 
+// SetAlias 设置成员在群里的昵称，空串清除。非成员返回 ErrNotMember。
+func (s *MySQLGroupStore) SetAlias(ctx context.Context, groupID, uid, alias string) error {
+	if !s.IsMember(ctx, groupID, uid) {
+		return ErrNotMember
+	}
+	if _, err := s.db.ExecContext(ctx,
+		"UPDATE group_members SET alias = ? WHERE group_id = ? AND uid = ?", alias, groupID, uid,
+	); err != nil {
+		return fmt.Errorf("update member alias: %w", err)
+	}
+	return nil
+}
+
+// MemberAliases 返回设置了群昵称的成员 uid → 群昵称。
+func (s *MySQLGroupStore) MemberAliases(ctx context.Context, groupID string) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT uid, alias FROM group_members WHERE group_id = ? AND alias <> ''", groupID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query member aliases: %w", err)
+	}
+	defer rows.Close()
+
+	aliases := make(map[string]string)
+	for rows.Next() {
+		var uid, alias string
+		if err := rows.Scan(&uid, &alias); err != nil {
+			return nil, fmt.Errorf("scan member alias: %w", err)
+		}
+		aliases[uid] = alias
+	}
+	return aliases, rows.Err()
+}
+
 // GetMembersForGroup 返回成员 UID 及其详细信息（与 GetMembers 相同，但
 // 同时返回群组数据行，供同时需要两者的调用方使用）。
 func (s *MySQLGroupStore) GetMembersForGroup(ctx context.Context, groupID string) (group *GroupRow, members []string, err error) {

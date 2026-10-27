@@ -184,6 +184,12 @@ interface GroupRepository {
     suspend fun invite(groupId: String, uid: String)
 
     suspend fun members(groupId: String): List<GroupMember>
+
+    /** 仅群主可改（服务端校验）。 */
+    suspend fun rename(groupId: String, name: String)
+
+    /** 设置自己的群昵称，空串清除。 */
+    suspend fun setMyAlias(groupId: String, alias: String)
 }
 
 interface FriendRepository {

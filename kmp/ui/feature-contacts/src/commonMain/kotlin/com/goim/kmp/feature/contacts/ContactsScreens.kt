@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -813,9 +814,11 @@ fun FriendInfoScreen(
     val name = rememberDisplayName(viewModel.uid, viewModel.displayName)
     val friend = state.friend
     val isFriend = friend != null
+    val isSelf = viewModel.isSelf
     val remark = friend?.remark.orEmpty()
     val title = friendTitle(remark, name)
-    val signature = friend?.let { friendSignature(it, rememberProfile(it.uid)) }
+    val profile = rememberProfile(viewModel.uid)
+    val signature = friend?.let { friendSignature(it, profile) } ?: profile?.signature?.ifBlank { null }
 
     Scaffold(
 
@@ -849,13 +852,6 @@ fun FriendInfoScreen(
                         modifier = Modifier.padding(horizontal = GoImSpacing.s6),
                     )
                 }
-                if (state.loaded && !isFriend) {
-                    Text(
-                        "你们已不是好友",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
             SettingsSection(title = "资料") {
                 if (isFriend) {
@@ -871,7 +867,25 @@ fun FriendInfoScreen(
                     viewModel.copied()
                 })
             }
-            if (onSendMessage != null) {
+            if (state.loaded && !isFriend && !isSelf) {
+                SettingsSection(title = null) {
+                    when (state.pending) {
+                        PendingRequest.NONE -> SettingsRow(
+                            "添加好友",
+                            icon = GoImIcons.PersonAdd,
+                            onClick = if (busy) null else viewModel::addFriend,
+                        )
+                        PendingRequest.SENT -> SettingsRow("添加好友", value = "已发送请求，等待对方验证", icon = GoImIcons.PersonAdd)
+                        PendingRequest.RECEIVED -> SettingsRow(
+                            "通过好友验证",
+                            value = "对方请求添加你为好友",
+                            icon = GoImIcons.PersonAdd,
+                            onClick = if (busy) null else viewModel::accept,
+                        )
+                    }
+                }
+            }
+            if (onSendMessage != null && !isSelf) {
                 SettingsSection(title = null) {
                     SettingsRow("发消息", icon = GoImIcons.Chat, onClick = onSendMessage)
                 }
@@ -917,6 +931,7 @@ private fun friendSignature(friend: Friend, profile: UserProfile?): String? =
     profile?.signature?.ifBlank { null } ?: friend.signature.ifBlank { null }
 
 private const val MAX_REMARK = 32
+private const val MAX_GROUP_TEXT = 32
 
 // endregion
 
@@ -928,6 +943,7 @@ fun GroupInfoScreen(
     viewModel: GroupInfoViewModel,
     onBack: () -> Unit,
     onLeft: () -> Unit,
+    onOpenMember: (uid: String, name: String) -> Unit = { _, _ -> },
     presentation: Presentation = Presentation.Page,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -938,6 +954,8 @@ fun GroupInfoScreen(
     val clipboard = LocalClipboardManager.current
     var showInvite by remember { mutableStateOf(false) }
     var confirmLeave by remember { mutableStateOf(false) }
+    var editName by remember { mutableStateOf(false) }
+    var editAlias by remember { mutableStateOf(false) }
     MessageSnackbar(viewModel, snackbar)
     val group = state.group
     val groupName = group?.displayName ?: viewModel.groupId
@@ -976,6 +994,18 @@ fun GroupInfoScreen(
                 )
             }
             SettingsSection(title = "群资料") {
+                SettingsRow(
+                    "群名称",
+                    value = groupName,
+                    icon = Icons.Filled.Edit,
+                    onClick = if (state.isOwner) ({ editName = true }) else null,
+                )
+                SettingsRow(
+                    "我在本群的昵称",
+                    value = viewModel.myAlias.ifBlank { "未设置" },
+                    icon = Icons.Filled.Face,
+                    onClick = { editAlias = true },
+                )
                 SettingsRow("群 ID", value = viewModel.groupId, icon = GoImIcons.Link, onClick = ::copyId)
                 SettingsRow("群主", value = group?.ownerUid?.ifBlank { null } ?: "—", icon = Icons.Filled.Person)
             }
@@ -984,10 +1014,15 @@ fun GroupInfoScreen(
                     Text("加载中…", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(GoImSpacing.s4))
                 }
                 state.members.forEach { member ->
+                    val nickname = rememberDisplayName(member.uid)
+                    val profile = rememberProfile(member.uid)
                     PersonRow(
-                        rememberDisplayName(member.uid),
-                        subtitle = if (member.uid == group?.ownerUid) "群主" else "ID：${member.uid}",
+                        friendTitle(state.labelOf(member), nickname),
+                        subtitle = if (member.uid == group?.ownerUid) "群主" else profile?.signature?.ifBlank { null },
                         uid = member.uid,
+                        onClick = {
+                            if (member.uid == viewModel.selfUid) editAlias = true else onOpenMember(member.uid, nickname)
+                        },
                         showPresence = true,
                     )
                 }
@@ -1015,6 +1050,42 @@ fun GroupInfoScreen(
                 viewModel.invite(it)
             },
             onDismiss = { showInvite = false },
+        )
+    }
+
+    if (editName) {
+        TextInputDialog(
+            title = "修改群名称",
+            message = null,
+            initial = group?.name.orEmpty(),
+            confirmLabel = "保存",
+            validate = {
+                when {
+                    it.isBlank() -> "群名称不能为空"
+                    it.trim().length > MAX_GROUP_TEXT -> "群名称最多 $MAX_GROUP_TEXT 个字"
+                    else -> null
+                }
+            },
+            onConfirm = {
+                editName = false
+                if (it.trim() != group?.name) viewModel.rename(it.trim())
+            },
+            onDismiss = { editName = false },
+        )
+    }
+    if (editAlias) {
+        TextInputDialog(
+            title = "我在本群的昵称",
+            message = "群内所有成员可见",
+            initial = viewModel.myAlias,
+            placeholder = "留空则清除",
+            confirmLabel = "保存",
+            validate = { if (it.trim().length > MAX_GROUP_TEXT) "群昵称最多 $MAX_GROUP_TEXT 个字" else null },
+            onConfirm = {
+                editAlias = false
+                if (it.trim() != viewModel.myAlias) viewModel.setMyAlias(it.trim())
+            },
+            onDismiss = { editAlias = false },
         )
     }
 

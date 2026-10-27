@@ -66,7 +66,7 @@ fun GroupEntity.toDomain() = Group(groupId = groupId, name = name, ownerUid = ow
 
 fun Group.toEntity() = GroupEntity(groupId = groupId, name = name, ownerUid = ownerUid, memberCount = memberCount)
 
-fun GroupMemberEntity.toDomain() = GroupMember(groupId = groupId, uid = uid, role = role)
+fun GroupMemberEntity.toDomain() = GroupMember(groupId = groupId, uid = uid, role = role, alias = alias)
 
 fun FriendEntity.toDomain() = Friend(uid = uid, nickname = nickname, avatarUrl = avatarUrl, signature = signature, remark = remark)
 
