@@ -1,6 +1,6 @@
 # GO-IM Gateway
 
-[GO-IM](https://github.com/chaishuanzhu/GO-IM) 的连接层：WebSocket / 原生 TCP 长连接、HTTP API（邮箱验证码注册与登录、用户资料与头像、群组、文件上传、搜索）、消息路由、多端同时在线（`auth.multi_device`）与多网关转发。
+[GO-IM](https://github.com/chaishuanzhu/GO-IM) 的连接层：WebSocket / 原生 TCP 长连接、HTTP API（邮箱验证码注册与登录、用户资料与头像、好友与群组、文件上传、搜索、管理后台）、消息路由、在线状态、多端同时在线（`auth.multi_device`）与多网关转发。
 
 - 源码：https://github.com/chaishuanzhu/GO-IM
 - 客户端下载 / 项目介绍：https://blog.chaisz.com/GO-IM/
@@ -11,7 +11,7 @@
 | 标签 | 说明 |
 |------|------|
 | `latest` | 最新发布版本 |
-| `1.6.0` 等 | 固定版本，与 GitHub Release `v1.6.0` 对应，生产环境建议使用 |
+| `1.7.0` 等 | 固定版本，与 GitHub Release `v1.7.0` 对应，生产环境建议使用 |
 | `sha-<commit>` | 某次提交的构建 |
 
 均为多架构镜像：`linux/amd64`、`linux/arm64`。
