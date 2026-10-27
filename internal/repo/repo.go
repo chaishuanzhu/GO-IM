@@ -56,6 +56,12 @@ type UserStore interface {
 	CountUsers(ctx context.Context) (int, error)
 }
 
+// SettingsStore 持久化管理后台可改的系统设置（键值对）。
+type SettingsStore interface {
+	GetSettings(ctx context.Context) (map[string]string, error)
+	PutSettings(ctx context.Context, values map[string]string) error
+}
+
 // SearchParams 保存全文搜索参数。
 type SearchParams struct {
 	UID      string // 搜索用户（访问控制 —— 必须是参与者）

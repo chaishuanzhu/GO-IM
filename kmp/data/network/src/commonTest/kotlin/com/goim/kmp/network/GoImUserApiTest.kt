@@ -1,8 +1,10 @@
 package com.goim.kmp.network
 
 import com.goim.kmp.common.DomainError
+import com.goim.kmp.model.AdminSettings
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.Group
+import com.goim.kmp.model.MultiDevicePolicy
 import com.goim.kmp.model.User
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
@@ -167,6 +169,11 @@ class GoImUserApiTest {
                     HttpStatusCode.OK,
                     jsonHeaders,
                 )
+                "/admin/settings" -> respond(
+                    """{"multi_device":"per_platform","registration_open":false}""",
+                    HttpStatusCode.OK,
+                    jsonHeaders,
+                )
                 "/admin/users/create" -> respond(
                     if ("email=ok%40x.com" in req.form()) {
                         """{"status":"ok","mailed":true,"user":{"uid":"100009","nickname":"ok","email":"ok@x.com","role":"user"}}"""
@@ -179,6 +186,11 @@ class GoImUserApiTest {
                 else -> respond("""{"status":"ok"}""", HttpStatusCode.OK, jsonHeaders)
             }
         }
+
+        assertEquals(AdminSettings(MultiDevicePolicy.PER_PLATFORM, registrationOpen = false), api.adminSettings())
+        api.adminUpdateSettings(MultiDevicePolicy.UNLIMITED, null)
+        val update = requests.last().form()
+        assertTrue("multi_device=unlimited" in update && "registration_open" !in update)
 
         val created = api.adminCreateUser("ok@x.com")
         assertEquals("100009", created.user.uid)

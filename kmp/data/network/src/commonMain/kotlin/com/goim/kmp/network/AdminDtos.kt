@@ -2,9 +2,11 @@ package com.goim.kmp.network
 
 import com.goim.kmp.model.AdminConversation
 import com.goim.kmp.model.AdminMessage
+import com.goim.kmp.model.AdminSettings
 import com.goim.kmp.model.AdminStats
 import com.goim.kmp.model.AdminUser
 import com.goim.kmp.model.ChatType
+import com.goim.kmp.model.MultiDevicePolicy
 import com.goim.kmp.model.MsgType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -48,6 +50,14 @@ internal data class AdminUserDto(
     @SerialName("created_at") val createdAt: Long = 0,
 ) {
     fun toDomain() = AdminUser(uid, nickname, email.orEmpty(), role == "admin", isDisabled, createdAt)
+}
+
+@Serializable
+internal data class AdminSettingsDto(
+    @SerialName("multi_device") val multiDevice: String? = null,
+    @SerialName("registration_open") val registrationOpen: Boolean = true,
+) {
+    fun toDomain() = AdminSettings(MultiDevicePolicy.from(multiDevice), registrationOpen)
 }
 
 @Serializable

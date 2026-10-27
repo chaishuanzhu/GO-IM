@@ -36,6 +36,8 @@ class LoginUseCase(private val auth: AuthRepository) {
     suspend fun sendEmailCode(email: String, purpose: EmailCodePurpose) = auth.sendEmailCode(email, purpose)
 
     suspend fun resetPassword(email: String, code: String, newPassword: String) = auth.resetPassword(email, code, newPassword)
+
+    suspend fun registrationOpen(): Boolean = auth.registrationOpen()
 }
 
 class LogoutUseCase(

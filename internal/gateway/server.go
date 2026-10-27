@@ -54,6 +54,9 @@ type Server struct {
 	mailer Mailer
 	codes  CodeStore
 
+	// 管理后台可改的系统设置(nil = 注册开放、多端策略取启动配置)。
+	settings *SettingsManager
+
 	// WebSocket
 	upgrader websocket.Upgrader
 

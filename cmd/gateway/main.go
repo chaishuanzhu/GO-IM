@@ -165,9 +165,16 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		router.SetRateLimit(cfg.Gateway.RateLimit.Rate, cfg.Gateway.RateLimit.Burst)
 	}
 
-	// 多端登录策略与最大连接数限制。
-	hub.SetDevicePolicy(gateway.ParseDevicePolicy(cfg.Gateway.Auth.MultiDevice))
-	log.Printf("[main] multi-device policy: %s", gateway.ParseDevicePolicy(cfg.Gateway.Auth.MultiDevice))
+	// 多端登录策略与是否开放注册：配置文件给默认值，管理后台改过的以数据库为准（见 SettingsManager）。
+	var settingsStore repo.SettingsStore
+	if mysqlStore != nil {
+		settingsStore = mysqlStore
+	}
+	settings := gateway.NewSettingsManager(gateway.SystemSettings{
+		MultiDevice:      gateway.ParseDevicePolicy(cfg.Gateway.Auth.MultiDevice),
+		RegistrationOpen: !cfg.Gateway.Auth.DisableRegistration,
+	}, settingsStore, func(s gateway.SystemSettings) { hub.SetDevicePolicy(s.MultiDevice) })
+	log.Printf("[main] default settings: multi_device=%s registration_open=%t", settings.Get().MultiDevice, settings.Get().RegistrationOpen)
 	if cfg.Stability.MaxConnections > 0 {
 		hub.SetMaxConnections(cfg.Stability.MaxConnections)
 	}
@@ -310,6 +317,7 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		snow, objectStore, cfg.Gateway.ObjectStorage.LegacyMaxUpload,
 		cfg.AdminUIDs,
 	)
+	server.SetSettings(settings)
 
 	// --- 文件记录(按会话鉴权)与客户端直传 ---
 	var fileStore repo.FileStore = gateway.NewInMemoryFileStore()
@@ -498,6 +506,7 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/login", app.Server.HandleLogin)
 	mux.HandleFunc("/register", app.Server.HandleRegister)
 	mux.HandleFunc("/auth/email-code", app.Server.HandleEmailCode)
+	mux.HandleFunc("/auth/config", app.Server.HandleAuthConfig)
 	mux.HandleFunc("/password/reset", app.Server.HandlePasswordReset)
 	mux.HandleFunc("/user/email", app.Server.HandleBindEmail)
 	mux.HandleFunc("/user/profile", app.Server.HandleProfile)
@@ -564,6 +573,8 @@ func (app *App) Run(ctx context.Context) error {
 
 	// 管理员监控与管理端点。
 	mux.HandleFunc("/admin/stats", app.Server.HandleAdminStats)
+	mux.HandleFunc("/admin/settings", app.Server.HandleAdminSettings)
+	app.Server.StartSettingsRefresh(ctx, 30*time.Second)
 	mux.HandleFunc("/admin/users", app.Server.HandleAdminUsers)
 	mux.HandleFunc("/admin/users/delete", app.Server.HandleAdminUserDelete)
 	mux.HandleFunc("/admin/users/create", app.Server.HandleAdminUserCreate)

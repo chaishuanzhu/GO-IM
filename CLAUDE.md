@@ -52,6 +52,7 @@ HTTP /login → account = uid or email ('@') → bcrypt → JWT; response carrie
 Startup with admin_email → BootstrapAdmin: email not registered → create admin (random password, skip code, must_change_password=1) → mail password (log it if mail unavailable); registered → promote only
 HTTP /change-password (old + new) → UpdatePassword clears must_change_password (as does /password/reset); KMP login holds the session unsaved until the forced change succeeds
 HTTP /password/reset, /user/email → CodeStore.Verify(reset_password | bind_email) → update password / bind email
+HTTP /auth/config → {registration_open}; closed → /register and register email codes return 403 "registration closed", KMP login hides the register tab
 HTTP /admin/users/create (email) → same random-password path as BootstrapAdmin with role user (no code, must_change_password=1) → mail the password; mail unconfigured → 503 before creating; send failure → response carries initial_password for the admin to hand over
 HTTP /admin/users/disable | /admin/users/delete → update user → kick local connections (CmdKick "account disabled" / "account deleted"); WS / TCP connect re-checks the account (Server.accountBlocked) so unexpired tokens can't reconnect
 HTTP /user/profile (GET own or ?target, POST nickname / avatar_file_id), /user/profiles?uids=, /user/search?q=
@@ -263,7 +264,7 @@ Default config values:
 - Logic gRPC: `addr: ""` (empty = Gateway uses local MessageStore), `listen_addr: ""` (empty = Logic binds `:50051`)
 - gRPC server: `addr: ""` (empty = disabled, set `:50050` with node_id + peer_addrs for multi-gateway)
 - gRPC discovery: `mode: ""` (empty or "static" = use peer_addrs; "redis" = Redis service discovery with TTL heartbeat)
-- Auth: `dev_mode: true` (no password required; set false for production with MySQL); `multi_device: "single"` (one connection per user; `per_platform` = one phone + one desktop + one web, `unlimited` = no limit)
+- Auth: `dev_mode: true` (no password required; set false for production with MySQL); `multi_device: "single"` (one connection per user; `per_platform` = one phone + one desktop + one web, `unlimited` = no limit); `disable_registration: false`. Both `multi_device` and registration are only defaults — the admin console (`/admin/settings`) writes MySQL `system_settings`, which wins; other gateways pick changes up within 30 s (`SettingsManager`)
 - Admins: `admin_uids: []` (promoted at startup), `admin_email: ""` (non-empty and unregistered → auto-created admin, initial password emailed, forced change on first login). Role is baked into the JWT at login, so changes need a re-login
 - Mail: `enabled: false`; SMTP host/port/username/from in config, password only via env `GOIM_MAIL_PASSWORD` (k8s Secret `goim-infra` key `MAIL_PASSWORD`). Port 465 = implicit TLS, others STARTTLS. Without mail, codes are logged in dev_mode and the code endpoints return 503 otherwise
 - Object storage: `enabled: false` (in-memory fallback), endpoint `localhost:9000`, bucket `im-files`, max_upload 10MB

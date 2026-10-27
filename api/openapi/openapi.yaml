@@ -115,6 +115,9 @@ paths:
                   expires_in: { type: integer, description: 有效期（秒）, example: 600 }
                   retry_after: { type: integer, description: 再次发送前需等待的秒数, example: 60 }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "403":
+          description: "`registration closed`（`purpose=register` 且管理后台已关闭注册）"
+          content: { text/plain: { schema: { type: string } } }
         "404":
           description: "`email not registered`（找回密码时邮箱未注册）"
           content: { text/plain: { schema: { type: string } } }
@@ -130,6 +133,22 @@ paths:
           description: "`failed to send email`"
           content: { text/plain: { schema: { type: string } } }
         "503": { $ref: "#/components/responses/Unavailable" }
+
+  /auth/config:
+    get:
+      tags: [账号]
+      summary: 登录页公开设置
+      description: 关闭注册时客户端隐藏注册入口，提示账号由管理员分配。
+      security: []
+      responses:
+        "200":
+          description: 当前设置
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  registration_open: { type: boolean }
 
   /register:
     post:
@@ -157,6 +176,9 @@ paths:
               schema: { $ref: "#/components/schemas/LoginResponse" }
         "400":
           description: 参数无效，或 `invalid or expired verification code`
+          content: { text/plain: { schema: { type: string } } }
+        "403":
+          description: "`registration closed`（管理后台已关闭注册）"
           content: { text/plain: { schema: { type: string } } }
         "409":
           description: "`email already registered`"
@@ -1023,6 +1045,58 @@ paths:
                       total_messages: { type: integer }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/AdminRequired" }
+
+  /admin/settings:
+    get:
+      tags: [管理]
+      summary: 系统设置
+      description: |
+        多端登录策略与是否开放注册。配置文件 `gateway.auth.multi_device` / `disable_registration` 只是默认值，
+        这里改过之后以数据库为准；其他网关实例在 30 秒内生效。
+      responses:
+        "200":
+          description: 当前设置
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  multi_device: { type: string, enum: [single, per_platform, unlimited] }
+                  registration_open: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminRequired" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+    post:
+      tags: [管理]
+      summary: 修改系统设置
+      description: |
+        字段均可选，只改传入的项。多端策略只影响之后的登录：收紧策略不会立即踢掉已在线的设备，
+        下次有新登录时再按新策略处理冲突。关闭注册后 `/register` 与注册验证码返回 403，管理员仍可添加用户。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                multi_device: { type: string, enum: [single, per_platform, unlimited] }
+                registration_open: { type: boolean }
+      responses:
+        "200":
+          description: 修改后的设置
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  multi_device: { type: string, enum: [single, per_platform, unlimited] }
+                  registration_open: { type: boolean }
+        "400":
+          description: 取值无效
+          content: { text/plain: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminRequired" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /admin/users:
     get:

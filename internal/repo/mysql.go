@@ -214,7 +214,15 @@ func (s *MySQLStore) migrate() error {
 			PRIMARY KEY (file_id, conv_key)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
 
-	for _, ddl := range []string{userTable, uidSeqTable, msgTable, groupTable, groupMembersTable, unreadTable, friendsTable, filesTable, fileRefsTable} {
+	// 管理后台可改的系统设置（多端登录策略、是否开放注册），各网关定时读取。
+	settingsTable := `
+		CREATE TABLE IF NOT EXISTS system_settings (
+			k          VARCHAR(64)  PRIMARY KEY,
+			v          VARCHAR(255) NOT NULL,
+			updated_at BIGINT       NOT NULL
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
+
+	for _, ddl := range []string{userTable, uidSeqTable, msgTable, groupTable, groupMembersTable, unreadTable, friendsTable, filesTable, fileRefsTable, settingsTable} {
 		if _, err := s.db.Exec(ddl); err != nil {
 			return fmt.Errorf("exec ddl: %w", err)
 		}

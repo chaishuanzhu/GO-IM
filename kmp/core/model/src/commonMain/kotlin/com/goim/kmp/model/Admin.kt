@@ -48,6 +48,22 @@ data class AdminUser(
 
 data class AdminUserPage(val users: List<AdminUser>, val total: Int)
 
+/** 多端登录策略（网关 `DevicePolicy`）。 */
+enum class MultiDevicePolicy(val raw: String) {
+    /** 一个账号只允许一个连接。 */
+    SINGLE("single"),
+    /** 手机 / 电脑 / 网页各一台同时在线。 */
+    PER_PLATFORM("per_platform"),
+    UNLIMITED("unlimited");
+
+    companion object {
+        fun from(raw: String?): MultiDevicePolicy = entries.firstOrNull { it.raw == raw } ?: SINGLE
+    }
+}
+
+/** `GET /admin/settings`：管理后台可改的系统设置。 */
+data class AdminSettings(val multiDevice: MultiDevicePolicy, val registrationOpen: Boolean)
+
 /** `POST /admin/users/create` 的结果；初始密码邮件发送失败时 [initialPassword] 非空，需管理员转交。 */
 data class AdminCreatedUser(val user: AdminUser, val initialPassword: String?)
 

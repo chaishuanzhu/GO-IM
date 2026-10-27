@@ -112,6 +112,9 @@ type AuthConfig struct {
 	// MultiDevice 多端登录策略："single"（默认，新登录踢掉旧连接）、
 	// "per_platform"（手机 / 电脑 / 网页各一台同时在线）、"unlimited"（不限设备数）。
 	MultiDevice string `json:"multi_device"`
+	// DisableRegistration 为 true 时关闭自助注册，账号只能由管理员添加。
+	// 与 MultiDevice 一样只是默认值：管理后台改过之后以数据库中的设置为准。
+	DisableRegistration bool `json:"disable_registration"`
 }
 
 // MailConfig 保存发送邮箱验证码用的 SMTP 设置。

@@ -6,6 +6,7 @@ import com.goim.kmp.model.AdminConversation
 import com.goim.kmp.model.AdminCreatedUser
 import com.goim.kmp.model.AdminMessage
 import com.goim.kmp.model.AdminSender
+import com.goim.kmp.model.AdminSettings
 import com.goim.kmp.model.AdminStats
 import com.goim.kmp.model.AdminUserPage
 import com.goim.kmp.model.ChatType
@@ -14,6 +15,7 @@ import com.goim.kmp.model.EmailCodePurpose
 import com.goim.kmp.model.Friend
 import com.goim.kmp.model.FriendRequest
 import com.goim.kmp.model.Group
+import com.goim.kmp.model.MultiDevicePolicy
 import com.goim.kmp.model.SearchHit
 import com.goim.kmp.model.User
 import com.goim.kmp.model.UserProfile
@@ -224,6 +226,13 @@ class GoImUserApi(
         val dto = get("admin/users", "offset" to offset.toString(), "limit" to limit.toString()).decode<AdminUsersDto>()
         return AdminUserPage(dto.users.orEmpty().map { it.toDomain() }, dto.total)
     }
+
+    suspend fun adminSettings(): AdminSettings = get("admin/settings").decode<AdminSettingsDto>().toDomain()
+
+    /** 只提交非 null 的项。 */
+    suspend fun adminUpdateSettings(multiDevice: MultiDevicePolicy?, registrationOpen: Boolean?): AdminSettings =
+        post("admin/settings", "multi_device" to multiDevice?.raw, "registration_open" to registrationOpen?.toString())
+            .decode<AdminSettingsDto>().toDomain()
 
     /** 免验证码建号：服务端随机初始密码并发到该邮箱，首次登录须改密码。 */
     suspend fun adminCreateUser(email: String): AdminCreatedUser {

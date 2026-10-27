@@ -57,6 +57,10 @@ func (s *Server) HandleEmailCode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid purpose", http.StatusBadRequest)
 		return
 	}
+	if purpose == PurposeRegister && !s.registrationOpen() {
+		http.Error(w, "registration closed", http.StatusForbidden)
+		return
+	}
 	email, ok := normalizeEmail(r.FormValue("email"))
 	if !ok {
 		http.Error(w, "invalid email", http.StatusBadRequest)
@@ -128,6 +132,10 @@ func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.userStore == nil || s.codes == nil {
 		http.Error(w, "registration not available", http.StatusServiceUnavailable)
+		return
+	}
+	if !s.registrationOpen() {
+		http.Error(w, "registration closed", http.StatusForbidden)
 		return
 	}
 	if err := r.ParseForm(); err != nil {

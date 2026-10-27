@@ -51,6 +51,7 @@ private val serverTexts = listOf(
     "group not found" to "群不存在",
     "user not found" to "用户不存在",
     "not a member" to "不在该群中",
+    "registration closed" to "已关闭注册，账号由管理员分配",
     "mail not available" to "服务端未配置邮件，无法发送初始密码",
     "not available" to "服务端未启用该功能",
     "no pending" to "该请求已处理",

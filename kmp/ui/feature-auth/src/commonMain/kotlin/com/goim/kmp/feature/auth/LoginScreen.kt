@@ -45,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -80,6 +81,7 @@ fun LoginScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showPassword by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { viewModel.refreshAuthConfig() }
 
     Scaffold(
         topBar = {
@@ -126,7 +128,14 @@ fun LoginScreen(
                 }
 
                 val changingPassword = state.mode == AuthMode.CHANGE_PASSWORD
-                if (state.mode == AuthMode.LOGIN || state.mode == AuthMode.REGISTER) {
+                if (state.mode == AuthMode.LOGIN && !state.registrationOpen) {
+                    Text(
+                        "账号由管理员分配，不提供注册",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
+                } else if (state.mode == AuthMode.LOGIN || state.mode == AuthMode.REGISTER) {
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         listOf(AuthMode.LOGIN to "登录", AuthMode.REGISTER to "注册").forEachIndexed { index, (mode, label) ->
                             SegmentedButton(

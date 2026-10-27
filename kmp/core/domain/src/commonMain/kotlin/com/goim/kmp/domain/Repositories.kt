@@ -35,6 +35,9 @@ interface AuthRepository {
 
     suspend fun resetPassword(email: String, code: String, newPassword: String)
 
+    /** 服务端是否开放自助注册（关闭时账号只能由管理员添加）。 */
+    suspend fun registrationOpen(): Boolean
+
     /** 用 [user] 的凭据修改密码（首次登录强制改密时会话尚未保存）。 */
     suspend fun changePassword(user: User, oldPassword: String, newPassword: String)
 

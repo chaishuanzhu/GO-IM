@@ -30,6 +30,11 @@ internal data class LoginResponseDto(
     @SerialName("must_change_password") val mustChangePassword: Boolean = false,
 )
 
+@Serializable
+internal data class AuthConfigDto(
+    @SerialName("registration_open") val registrationOpen: Boolean = true,
+)
+
 /** 网关 REST 接口（docs/07）。[baseUrl] 每次请求时读取，设置页改地址后即时生效。 */
 class GoImApi(
     private val client: HttpClient,
@@ -46,6 +51,17 @@ class GoImApi(
     /** 发送注册 / 找回密码验证码（绑定邮箱需登录，见 [GoImUserApi.sendBindEmailCode]）。 */
     suspend fun sendEmailCode(email: String, purpose: EmailCodePurpose) {
         submit("auth/email-code", "email" to email, "purpose" to purpose.raw)
+    }
+
+    /** 管理后台是否开放自助注册；旧网关没有该接口或请求失败时按开放处理，由注册接口再做最终判定。 */
+    suspend fun registrationOpen(): Boolean = try {
+        request {
+            client.get(url("auth/config")) { timeout { requestTimeoutMillis = REQUEST_TIMEOUT_MS } }
+        }.decode<AuthConfigDto>().registrationOpen
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        true
     }
 
     suspend fun resetPassword(email: String, code: String, newPassword: String) {

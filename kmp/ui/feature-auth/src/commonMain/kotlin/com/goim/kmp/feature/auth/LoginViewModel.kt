@@ -34,6 +34,8 @@ data class LoginUiState(
     val codeCooldown: Int = 0,
     val error: String? = null,
     val info: String? = null,
+    /** 管理后台关闭注册时为 false：隐藏注册入口，提示账号由管理员分配。 */
+    val registrationOpen: Boolean = true,
 ) {
     val canSendCode: Boolean get() = isValidEmail(email) && !isSendingCode && codeCooldown == 0
 
@@ -70,7 +72,22 @@ class LoginViewModel(
     private var pendingUser: User? = null
     private var initialPassword: String = ""
 
+    /** 进入登录页（含从服务器设置返回）时调用，服务器地址可能已变。 */
+    fun refreshAuthConfig() {
+        viewModelScope.launch {
+            val open = auth.registrationOpen()
+            _state.update { s ->
+                if (!open && s.mode == AuthMode.REGISTER) {
+                    s.copy(registrationOpen = false, mode = AuthMode.LOGIN, code = "", password = "", error = null, info = null)
+                } else {
+                    s.copy(registrationOpen = open)
+                }
+            }
+        }
+    }
+
     fun onModeChange(mode: AuthMode) {
+        if (mode == AuthMode.REGISTER && !_state.value.registrationOpen) return
         if (mode != AuthMode.CHANGE_PASSWORD) {
             pendingUser = null
             initialPassword = ""

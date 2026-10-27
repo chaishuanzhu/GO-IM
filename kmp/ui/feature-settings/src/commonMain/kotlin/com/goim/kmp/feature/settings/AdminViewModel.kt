@@ -5,9 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.goim.kmp.common.userMessage
 import com.goim.kmp.model.AdminCreatedUser
 import com.goim.kmp.model.AdminMessage
+import com.goim.kmp.model.AdminSettings
 import com.goim.kmp.model.AdminStats
 import com.goim.kmp.model.AdminUser
 import com.goim.kmp.model.AdminUserPage
+import com.goim.kmp.model.MultiDevicePolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +27,9 @@ class AdminDeps(
     val setUserDisabled: suspend (uid: String, disabled: Boolean) -> Unit,
     /** [before] 为 null 时从最新一条开始，按时间倒序。 */
     val messages: suspend (before: Long?, limit: Int) -> List<AdminMessage>,
+    val settings: suspend () -> AdminSettings,
+    /** 只提交非 null 的项，返回修改后的设置。 */
+    val updateSettings: suspend (multiDevice: MultiDevicePolicy?, registrationOpen: Boolean?) -> AdminSettings,
 )
 
 /** 分页列表的通用状态；[error] 只在首屏加载失败时用于空状态，翻页失败走 notice。 */
@@ -43,6 +48,9 @@ data class AdminUiState(
     val users: AdminPage<AdminUser> = AdminPage(),
     val usersTotal: Int = 0,
     val messages: AdminPage<AdminMessage> = AdminPage(),
+    val settings: AdminSettings? = null,
+    val settingsError: String? = null,
+    val savingSettings: Boolean = false,
     val creatingUser: Boolean = false,
     /** 刚添加但初始密码邮件没发出去的用户及其密码，弹窗展示给管理员转交。 */
     val unsentPassword: AdminCreatedUser? = null,
@@ -136,6 +144,45 @@ class AdminViewModel(private val deps: AdminDeps) : ViewModel() {
                         s.copy(messages = AdminPage(items, loaded = true, endReached = page.size < PAGE_SIZE))
                     },
                     onFailure = { s.failed(s.messages, it) { p -> copy(messages = p) } },
+                )
+            }
+        }
+    }
+
+    /** 首次进入「设置」页时调用。 */
+    fun ensureSettings() {
+        if (_state.value.settings == null) refreshSettings()
+    }
+
+    fun refreshSettings() {
+        viewModelScope.launch {
+            val result = attempt { deps.settings() }
+            _state.update { s ->
+                result.fold(
+                    onSuccess = { s.copy(settings = it, settingsError = null) },
+                    onFailure = { s.copy(settingsError = it.userMessage()) },
+                )
+            }
+        }
+    }
+
+    fun setMultiDevice(policy: MultiDevicePolicy) {
+        if (_state.value.settings?.multiDevice != policy) saveSettings(policy, null)
+    }
+
+    fun setRegistrationOpen(open: Boolean) {
+        if (_state.value.settings?.registrationOpen != open) saveSettings(null, open)
+    }
+
+    private fun saveSettings(multiDevice: MultiDevicePolicy?, registrationOpen: Boolean?) {
+        if (_state.value.savingSettings) return
+        _state.update { it.copy(savingSettings = true) }
+        viewModelScope.launch {
+            val result = attempt { deps.updateSettings(multiDevice, registrationOpen) }
+            _state.update { s ->
+                result.fold(
+                    onSuccess = { s.copy(settings = it, savingSettings = false, notice = "设置已保存") },
+                    onFailure = { e -> s.copy(savingSettings = false, notice = "保存失败：${e.userMessage()}") },
                 )
             }
         }

@@ -40,6 +40,7 @@ class LoginViewModelTest {
         val changes = mutableListOf<Triple<String, String, String>>()
         var failLogin = false
         var mustChange = false
+        var registrationOpen = true
 
         override suspend fun login(account: String, password: String): User {
             if (failLogin) error("invalid account or password")
@@ -52,6 +53,7 @@ class LoginViewModelTest {
             User("100002", email.substringBefore('@'), "t", email = email)
         override suspend fun sendEmailCode(email: String, purpose: EmailCodePurpose) { codes += email to purpose }
         override suspend fun resetPassword(email: String, code: String, newPassword: String) { resets += Triple(email, code, newPassword) }
+        override suspend fun registrationOpen() = registrationOpen
         override fun updateSavedProfile(profile: UserProfile) = Unit
         override fun currentUser(): User? = null
         override suspend fun saveSession(user: User) { saved += user }
@@ -106,6 +108,29 @@ class LoginViewModelTest {
         assertEquals("new", loggedIn.single().nickname)
         assertEquals(loggedIn, auth.saved)
         assertNull(vm.state.value.error)
+    }
+
+    @Test
+    fun closedRegistrationHidesRegisterMode() = runTest(dispatcher) {
+        val auth = FakeAuth()
+        val vm = LoginViewModel(LoginUseCase(auth), onLoggedIn = {})
+        vm.onModeChange(AuthMode.REGISTER)
+
+        auth.registrationOpen = false
+        vm.refreshAuthConfig()
+        advanceUntilIdle()
+        assertFalse(vm.state.value.registrationOpen)
+        assertEquals(AuthMode.LOGIN, vm.state.value.mode)
+        vm.onModeChange(AuthMode.REGISTER)
+        assertEquals(AuthMode.LOGIN, vm.state.value.mode)
+        vm.onModeChange(AuthMode.RESET)
+        assertEquals(AuthMode.RESET, vm.state.value.mode)
+
+        auth.registrationOpen = true
+        vm.refreshAuthConfig()
+        advanceUntilIdle()
+        vm.onModeChange(AuthMode.REGISTER)
+        assertEquals(AuthMode.REGISTER, vm.state.value.mode)
     }
 
     @Test

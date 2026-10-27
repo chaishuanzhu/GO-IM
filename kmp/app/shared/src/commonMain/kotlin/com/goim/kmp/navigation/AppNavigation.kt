@@ -1010,6 +1010,8 @@ private fun adminDeps(selfUid: String, api: GoImUserApi) = AdminDeps(
     deleteUser = api::adminDeleteUser,
     setUserDisabled = api::adminSetUserDisabled,
     messages = api::adminMessages,
+    settings = api::adminSettings,
+    updateSettings = api::adminUpdateSettings,
 )
 
 /** 管理后台的服务端消息转成聊天气泡使用的模型；[outgoing] 即是否为被查看用户发出。 */

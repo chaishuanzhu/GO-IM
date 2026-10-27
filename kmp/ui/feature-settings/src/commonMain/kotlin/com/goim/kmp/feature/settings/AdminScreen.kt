@@ -28,9 +28,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -67,8 +69,9 @@ import com.goim.kmp.model.AdminMessage
 import com.goim.kmp.model.AdminStats
 import com.goim.kmp.model.AdminUser
 import com.goim.kmp.model.ChatType
+import com.goim.kmp.model.MultiDevicePolicy
 
-private enum class AdminTab(val title: String) { OVERVIEW("概览"), USERS("用户"), MESSAGES("消息") }
+private enum class AdminTab(val title: String) { OVERVIEW("概览"), USERS("用户"), MESSAGES("消息"), SETTINGS("设置") }
 
 /** 管理后台：系统概览、用户管理（添加用户；点用户进入详情）、全站消息浏览（点消息跳到所在会话；仅管理员可进入，权限由网关校验）。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,6 +98,7 @@ fun AdminScreen(
             AdminTab.OVERVIEW -> Unit
             AdminTab.USERS -> viewModel.ensureUsers()
             AdminTab.MESSAGES -> viewModel.ensureMessages()
+            AdminTab.SETTINGS -> viewModel.ensureSettings()
         }
     }
 
@@ -116,6 +120,7 @@ fun AdminScreen(
                             AdminTab.OVERVIEW -> viewModel.refreshStats()
                             AdminTab.USERS -> viewModel.refreshUsers()
                             AdminTab.MESSAGES -> viewModel.refreshMessages()
+                            AdminTab.SETTINGS -> viewModel.refreshSettings()
                         }
                     }) { Icon(Icons.Filled.Refresh, contentDescription = "刷新") }
                 },
@@ -148,6 +153,7 @@ fun AdminScreen(
                 ) { message ->
                     MessageRow(message, onOpen = { onOpenMessage(message) })
                 }
+                AdminTab.SETTINGS -> SettingsPane(state, viewModel::setMultiDevice, viewModel::setRegistrationOpen)
             }
         }
     }
@@ -200,6 +206,52 @@ private fun OverviewPane(state: AdminUiState) {
     when {
         stats != null -> StatsContent(stats)
         state.statsError != null -> ErrorState(state.statsError)
+        else -> LoadingState()
+    }
+}
+
+@Composable
+private fun SettingsPane(
+    state: AdminUiState,
+    onMultiDevice: (MultiDevicePolicy) -> Unit,
+    onRegistrationOpen: (Boolean) -> Unit,
+) {
+    val settings = state.settings
+    when {
+        settings != null -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            val enabled = !state.savingSettings
+            SettingsSection(
+                title = "多端登录",
+                footer = "只影响之后的登录：收紧后已在线的设备不会立即下线，下次有新登录时按新策略互踢。多网关部署时其他实例 30 秒内生效。",
+            ) {
+                MultiDevicePolicy.entries.forEach { policy ->
+                    val (title, desc) = when (policy) {
+                        MultiDevicePolicy.SINGLE -> "单端登录" to "一个账号只允许一台设备在线，新登录会挤掉旧设备"
+                        MultiDevicePolicy.PER_PLATFORM -> "每类平台一台" to "手机、电脑、网页各一台同时在线"
+                        MultiDevicePolicy.UNLIMITED -> "不限" to "不限设备数量"
+                    }
+                    val selected = settings.multiDevice == policy
+                    SettingsRow(
+                        title = title,
+                        value = desc,
+                        onClick = if (enabled) ({ onMultiDevice(policy) }) else null,
+                        trailing = { RadioButton(selected = selected, enabled = enabled, onClick = { onMultiDevice(policy) }) },
+                    )
+                }
+            }
+            SettingsSection(
+                title = "注册",
+                footer = "关闭后登录页不再显示注册入口，账号只能由管理员在「用户」页添加；找回密码不受影响。",
+            ) {
+                SettingsRow(
+                    title = "开放注册",
+                    value = if (settings.registrationOpen) "任何人可用邮箱验证码注册" else "账号由管理员分配",
+                    onClick = if (enabled) ({ onRegistrationOpen(!settings.registrationOpen) }) else null,
+                    trailing = { Switch(checked = settings.registrationOpen, enabled = enabled, onCheckedChange = onRegistrationOpen) },
+                )
+            }
+        }
+        state.settingsError != null -> ErrorState(state.settingsError)
         else -> LoadingState()
     }
 }

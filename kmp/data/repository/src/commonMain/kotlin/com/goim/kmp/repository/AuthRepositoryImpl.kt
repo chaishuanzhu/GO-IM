@@ -29,6 +29,8 @@ class AuthRepositoryImpl(
     override suspend fun resetPassword(email: String, code: String, newPassword: String) =
         api.resetPassword(email, code, newPassword)
 
+    override suspend fun registrationOpen(): Boolean = api.registrationOpen()
+
     override suspend fun changePassword(user: User, oldPassword: String, newPassword: String) =
         api.changePassword(user, oldPassword, newPassword)
 

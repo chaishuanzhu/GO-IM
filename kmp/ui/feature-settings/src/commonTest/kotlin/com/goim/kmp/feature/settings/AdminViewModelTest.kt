@@ -6,11 +6,13 @@ import com.goim.kmp.model.AdminConversation
 import com.goim.kmp.model.AdminCreatedUser
 import com.goim.kmp.model.AdminMessage
 import com.goim.kmp.model.AdminSender
+import com.goim.kmp.model.AdminSettings
 import com.goim.kmp.model.AdminStats
 import com.goim.kmp.model.AdminUser
 import com.goim.kmp.model.AdminUserPage
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.MsgType
+import com.goim.kmp.model.MultiDevicePolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -47,6 +49,9 @@ class AdminViewModelTest {
         val disabled = mutableListOf<Pair<String, Boolean>>()
         var failDisable = false
         val created = mutableListOf<String>()
+        var settings = AdminSettings(MultiDevicePolicy.SINGLE, registrationOpen = true)
+        val settingUpdates = mutableListOf<Pair<MultiDevicePolicy?, Boolean?>>()
+        var failSettings = false
     }
 
     private fun vm(
@@ -80,6 +85,13 @@ class AdminViewModelTest {
             messages = { before, limit ->
                 calls.messageCursors += before
                 allMessages.filter { before == null || it.timestampMs < before }.take(limit)
+            },
+            settings = { calls.settings },
+            updateSettings = { multiDevice, open ->
+                if (calls.failSettings) throw DomainError.Server(500, "internal error")
+                calls.settingUpdates += multiDevice to open
+                calls.settings = AdminSettings(multiDevice ?: calls.settings.multiDevice, open ?: calls.settings.registrationOpen)
+                calls.settings
             },
         ),
     )
@@ -161,6 +173,30 @@ class AdminViewModelTest {
         vm.createUser("taken@x.com")
         assertEquals("添加失败：该邮箱已被注册", vm.state.value.notice)
         assertEquals(listOf("ok@x.com", "down@x.com"), calls.created)
+    }
+
+    @Test
+    fun settingsLoadAndSaveOnlyChanges() = runTest(dispatcher) {
+        val calls = Calls()
+        val vm = vm(calls)
+        vm.ensureSettings()
+        assertEquals(MultiDevicePolicy.SINGLE, vm.state.value.settings?.multiDevice)
+
+        vm.setMultiDevice(MultiDevicePolicy.SINGLE)
+        vm.setRegistrationOpen(true)
+        assertTrue(calls.settingUpdates.isEmpty())
+
+        vm.setMultiDevice(MultiDevicePolicy.PER_PLATFORM)
+        vm.setRegistrationOpen(false)
+        assertEquals(listOf<Pair<MultiDevicePolicy?, Boolean?>>(MultiDevicePolicy.PER_PLATFORM to null, null to false), calls.settingUpdates)
+        assertEquals(AdminSettings(MultiDevicePolicy.PER_PLATFORM, registrationOpen = false), vm.state.value.settings)
+        assertEquals("设置已保存", vm.state.value.notice)
+
+        calls.failSettings = true
+        vm.setRegistrationOpen(true)
+        assertFalse(vm.state.value.settings!!.registrationOpen)
+        assertFalse(vm.state.value.savingSettings)
+        assertEquals("保存失败：服务器错误 (500)：internal error", vm.state.value.notice)
     }
 
     @Test
@@ -265,6 +301,8 @@ class AdminViewModelTest {
                 deleteUser = {},
                 setUserDisabled = { _, _ -> },
                 messages = { _, _ -> emptyList() },
+                settings = { error("unused") },
+                updateSettings = { _, _ -> error("unused") },
             ),
         )
         vm.ensureUsers()
