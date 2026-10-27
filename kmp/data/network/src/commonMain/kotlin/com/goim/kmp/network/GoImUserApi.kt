@@ -111,6 +111,9 @@ internal data class SearchMessageDto(
 @Serializable
 internal data class SearchResponseDto(val messages: List<SearchMessageDto>? = null)
 
+@Serializable
+internal data class PresenceDto(val online: List<String>? = null)
+
 data class FriendSnapshot(val friends: List<Friend>, val pending: List<FriendRequest>)
 
 /** 已登录用户的 REST 接口：每个请求带 `uid` + `token`（网关 `authenticateRequest`）。 */
@@ -180,6 +183,10 @@ class GoImUserApi(
     /** 批量公开资料；不存在的用户不返回。 */
     suspend fun profiles(uids: List<String>): List<UserProfile> =
         get("user/profiles", "uids" to uids.joinToString(",")).decode<ProfileListDto>().users.orEmpty().map { it.toDomain() }
+
+    /** [uids] 中当前在线（任一网关有连接）的用户，最多 500 个。 */
+    suspend fun presence(uids: Collection<String>): Set<String> =
+        get("presence", "uids" to uids.joinToString(",")).decode<PresenceDto>().online.orEmpty().toSet()
 
     /** [nickname] / [avatarFileId] 为 null 表示不修改；[avatarFileId] 为 "0" 清除头像。 */
     suspend fun updateProfile(nickname: String? = null, avatarFileId: String? = null): UserProfile =

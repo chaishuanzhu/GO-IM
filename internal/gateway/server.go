@@ -57,6 +57,9 @@ type Server struct {
 	// 管理后台可改的系统设置(nil = 注册开放、多端策略取启动配置)。
 	settings *SettingsManager
 
+	// 在线状态(nil = 只看本网关的连接)。
+	presence Presence
+
 	// WebSocket
 	upgrader websocket.Upgrader
 
@@ -1241,7 +1244,7 @@ func (s *Server) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 		status = "degraded"
 	}
 
-	onlineUsers := s.clients.Count(r.Context())
+	onlineUsers := s.onlineUserCount(r.Context())
 	totalUsers := 0
 	totalMessages := 0
 	if s.userStore != nil {

@@ -43,6 +43,9 @@ object GoImSize {
 
     val touchTarget = 48.dp
     val strokeThin = 2.dp
+
+    /** 头像右下角在线圆点（含 [strokeThin] 的 surface 描边）。 */
+    val presenceDot = 12.dp
 }
 
 /** M3 色调高度（tonal / shadow elevation）。 */
@@ -60,6 +63,11 @@ object GoImMediaColors {
     val background = Color.Black
     val scrim = Color.Black.copy(alpha = 0.45f)
     val content = Color.White
+}
+
+/** 在线状态，浅色 / 深色主题都清晰可辨，不随主题变化。 */
+object GoImPresenceColors {
+    val online = Color(0xFF2E9E4F)
 }
 
 private val Display = TextStyle(fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.SemiBold)

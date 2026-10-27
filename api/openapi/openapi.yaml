@@ -324,6 +324,33 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "503": { $ref: "#/components/responses/Unavailable" }
 
+  /presence:
+    get:
+      tags: [用户]
+      summary: 批量查询在线状态
+      description: |
+        在线 = 在任一网关上有长连接。配置 Redis 时各网关在位图 `im:online:{node}` 中按数字 UID 置位，
+        查询合并所有网关；状态最长约 30 秒收敛。非数字的早期自定义 ID 只在同一网关上能查到。
+      parameters:
+        - name: uids
+          in: query
+          required: true
+          description: 逗号分隔的用户 ID，最多 500 个
+          schema: { type: string, example: "100001,100002" }
+      responses:
+        "200":
+          description: 其中在线的用户
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  online: { type: array, items: { type: string }, example: ["100001"] }
+        "400":
+          description: "`too many uids`"
+          content: { text/plain: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /user/search:
     get:
       tags: [用户]

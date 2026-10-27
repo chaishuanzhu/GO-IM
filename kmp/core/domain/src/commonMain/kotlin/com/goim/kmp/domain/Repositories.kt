@@ -202,6 +202,11 @@ interface FriendRepository {
     suspend fun remove(uid: String)
 }
 
+/** 用户在线状态：按 UID 订阅，订阅期间定期向网关查询。 */
+fun interface PresenceRepository {
+    fun observe(uid: String): Flow<Boolean>
+}
+
 /** 用户资料：本地缓存 + 按需批量拉取；自己的资料可修改。 */
 interface ProfileRepository {
     /** 缓存中的资料；未缓存或过期时自动后台拉取。 */

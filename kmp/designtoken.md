@@ -119,6 +119,7 @@ Error（M3 基准）：600 #BA1A1A = 浅色 `error`；100 #FFDAD6 = 浅色 `erro
 | media.scrim | #000000 @ 45% | 图片上的上传进度遮罩 |
 | media.content | #FFFFFF | 媒体层上的图标、进度 |
 | unread badge | `error` / `onError` | 未读数（M3 Badge） |
+| presence.online | #2E9E4F | 头像在线圆点、聊天顶栏「在线」（`GoImPresenceColors`，不随主题变化） |
 | danger | `error` / `errorContainer` | 退出群聊、删除会话的滑动背景、危险操作按钮 |
 
 ## Typography
@@ -172,7 +173,8 @@ Error（M3 基准）：600 #BA1A1A = 浅色 `error`；100 #FFDAD6 = 浅色 `erro
 | avatar-2xl | 80dp | 联系人 / 群资料页、登录页品牌图标 |
 | avatar-3xl | 96dp | 个人资料编辑 |
 | touch-target | 48dp | 最小触控区、表情格、媒体播放按钮 |
-| stroke-thin | 2dp | 进度环描边、拖放高亮边框（focus ring） |
+| stroke-thin | 2dp | 进度环描边、拖放高亮边框（focus ring）、在线圆点描边 |
+| presence-dot | 12dp | 头像右下角在线圆点 |
 
 布局（`GoImDimens`）：
 

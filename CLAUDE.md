@@ -58,6 +58,13 @@ HTTP /admin/users/disable | /admin/users/delete → update user → kick local c
 HTTP /user/profile (GET own or ?target, POST nickname / avatar_file_id), /user/profiles?uids=, /user/search?q=
 HTTP /avatar/{file_id}[?thumb=1] → public, only files marked is_avatar, immutable cache
 
+# Presence (presence.go, server_presence.go)
+Hub first connection / last disconnect → presenceHook → RedisPresence.Changed → SETBIT im:online:{node} <numeric uid> (uid < 2^27; non-numeric skipped)
+Every 30 s → rebuild the whole bitmap from the Hub (SET tmp key + RENAME, 90 s TTL, so a dead gateway expires); graceful shutdown → DEL
+HTTP /presence?uids= (≤ 500) → local Hub first, then pipelined GETBIT on every im:online:* key (SCAN, cached 10 s) → {"online":[...]}
+Admin stats online_users → BITOP OR of all node bitmaps + BITCOUNT (cluster-wide); without Redis everything uses the local Hub
+KMP PresenceRepositoryImpl → ref-counts watched UIDs, polls /presence every 30 s while connected (new UID → immediate fetch) → LocalPresenceLookup → UserAvatar(showPresence) dot + PresenceText (friends, group members, friend info, DM top bar)
+
 # Message history (CmdHistory)
 CmdHistory    → Router.handleHistory(ctx, …)    → LogicClient.QueryHistory (gRPC) or MessageStore.QueryHistory (local)
              → sender.Send(historyMsg)        → sender.Send(completion) with Seq=delivered count

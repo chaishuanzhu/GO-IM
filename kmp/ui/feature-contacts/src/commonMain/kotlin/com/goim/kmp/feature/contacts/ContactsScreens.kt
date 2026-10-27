@@ -73,6 +73,7 @@ import com.goim.kmp.designsystem.MonogramAvatar
 import com.goim.kmp.designsystem.SettingsRow
 import com.goim.kmp.designsystem.SettingsSection
 import com.goim.kmp.designsystem.UnreadBadge
+import com.goim.kmp.designsystem.PresenceText
 import com.goim.kmp.designsystem.UserAvatar
 import com.goim.kmp.designsystem.rememberDisplayName
 import com.goim.kmp.designsystem.GoImSpacing
@@ -127,11 +128,14 @@ private fun PersonRow(
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     selected: Boolean = false,
+    showPresence: Boolean = false,
 ) {
     ListItem(
         headlineContent = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = subtitle?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-        leadingContent = { UserAvatar(uid, title, size = GoImSize.avatarMd, avatarUrl = avatarUrl.ifEmpty { null }) },
+        leadingContent = {
+            UserAvatar(uid, title, size = GoImSize.avatarMd, avatarUrl = avatarUrl.ifEmpty { null }, showPresence = showPresence)
+        },
         trailingContent = trailing,
         colors = selectableColors(selected),
         modifier = if (onClick != null) Modifier.selectableRow(selected, onClick) else Modifier,
@@ -209,6 +213,7 @@ fun ContactsScreen(
                         avatarUrl = friend.avatarUrl,
                         onClick = { onOpenFriend(friend) },
                         selected = selection == ContactsSelection.Person(friend.uid),
+                        showPresence = true,
                     )
                 }
             }
@@ -806,9 +811,10 @@ fun FriendInfoScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(GoImSpacing.s1),
             ) {
-                UserAvatar(viewModel.uid, name, size = GoImSize.avatar2xl)
+                UserAvatar(viewModel.uid, name, size = GoImSize.avatar2xl, showPresence = true)
                 Spacer(Modifier.height(GoImSpacing.s2))
                 Text(name, style = MaterialTheme.typography.headlineSmall)
+                PresenceText(viewModel.uid)
                 if (state.loaded && !isFriend) {
                     Text(
                         "你们已不是好友",
@@ -919,6 +925,7 @@ fun GroupInfoScreen(
                         rememberDisplayName(member.uid),
                         subtitle = if (member.uid == group?.ownerUid) "群主" else "ID：${member.uid}",
                         uid = member.uid,
+                        showPresence = true,
                     )
                 }
             }

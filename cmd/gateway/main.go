@@ -319,6 +319,21 @@ func NewApp(cfg *configs.Config) (*App, error) {
 	)
 	server.SetSettings(settings)
 
+	// 在线状态:有 Redis 时每个网关维护一张位图(im:online:{node}),查询时合并所有网关。
+	if rdb != nil {
+		node := cfg.Gateway.Grpc.NodeID
+		if node == "" {
+			node, _ = os.Hostname()
+		}
+		if node == "" {
+			node = "gateway"
+		}
+		presence := gateway.NewRedisPresence(rdb, hub, node)
+		hub.SetPresenceHook(func(uid string) { presence.Changed(context.Background(), uid) })
+		server.SetPresence(presence)
+		log.Printf("[main] presence: redis bitmap (node=%s)", node)
+	}
+
 	// --- 文件记录(按会话鉴权)与客户端直传 ---
 	var fileStore repo.FileStore = gateway.NewInMemoryFileStore()
 	if mysqlStore != nil {
@@ -575,6 +590,8 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/admin/stats", app.Server.HandleAdminStats)
 	mux.HandleFunc("/admin/settings", app.Server.HandleAdminSettings)
 	app.Server.StartSettingsRefresh(ctx, 30*time.Second)
+	mux.HandleFunc("/presence", app.Server.HandlePresence)
+	app.Server.StartPresence(ctx, 30*time.Second)
 	mux.HandleFunc("/admin/users", app.Server.HandleAdminUsers)
 	mux.HandleFunc("/admin/users/delete", app.Server.HandleAdminUserDelete)
 	mux.HandleFunc("/admin/users/create", app.Server.HandleAdminUserCreate)

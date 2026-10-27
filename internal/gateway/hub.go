@@ -59,6 +59,9 @@ type Hub struct {
 
 	maxConnections int // 0 = 无限制(按在线用户数计)
 	policy         DevicePolicy
+
+	// presenceHook 在用户于本节点上线(首个连接)或下线(最后一个连接断开)后异步调用。
+	presenceHook func(uid string)
 }
 
 // NewHub 创建一个新的 Hub。
@@ -69,6 +72,13 @@ func NewHub(offlineMaxSize int) *Hub {
 		offlineMaxSize: offlineMaxSize,
 		policy:         DevicePolicySingle,
 	}
+}
+
+// SetPresenceHook 设置上下线回调(在锁外的新 goroutine 中调用,回调应自行读取当前状态)。
+func (h *Hub) SetPresenceHook(fn func(uid string)) {
+	h.mu.Lock()
+	h.presenceHook = fn
+	h.mu.Unlock()
 }
 
 // SetMaxConnections 设置全局连接数上限。0 表示无限制。
@@ -137,7 +147,11 @@ func (h *Hub) Register(ctx context.Context, c *Client) {
 	}
 	// 在释放锁之前写入映射,以防另一个 goroutine 在关闭旧连接与写入映射之间注册。
 	h.clients[c.UID] = append(kept, c)
+	hook := h.presenceHook
 	h.mu.Unlock()
+	if len(existing) == 0 && hook != nil {
+		go hook(c.UID)
+	}
 
 	// 在锁外通知并关闭旧连接,避免网络 I/O 阻塞其他 Register/Unregister。
 	for _, old := range replaced {
@@ -166,12 +180,17 @@ func (h *Hub) Unregister(ctx context.Context, c *Client) {
 			break
 		}
 	}
+	_, wasOnline := h.clients[c.UID]
 	if len(conns) == 0 {
 		delete(h.clients, c.UID)
 	} else {
 		h.clients[c.UID] = conns
 	}
+	hook := h.presenceHook
 	h.mu.Unlock()
+	if wasOnline && len(conns) == 0 && hook != nil {
+		go hook(c.UID)
+	}
 }
 
 // Get 返回指定 UID 最近注册的连接,不存在时返回 nil。

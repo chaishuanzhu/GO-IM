@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import okio.Path.Companion.toPath
 import com.goim.kmp.domain.AuthRepository
 import com.goim.kmp.domain.ServerSettingsRepository
+import com.goim.kmp.model.ConnectionState
 import com.goim.kmp.model.TransportKind
 import com.goim.kmp.model.User
 import com.goim.kmp.model.isAdmin
@@ -40,6 +41,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -58,6 +60,7 @@ class UserSession internal constructor(
     val files: FileRepositoryImpl,
     val stickers: StickerRepositoryImpl,
     val profiles: ProfileRepositoryImpl,
+    val presence: PresenceRepositoryImpl,
     private val scope: CoroutineScope,
     private val coordinator: SessionCoordinator,
     /** 管理后台接口；token 不是管理员角色时为 null，界面据此隐藏入口。 */
@@ -213,12 +216,13 @@ class SessionManager(
             auth.updateSavedProfile(profile)
             _accounts.value = auth.savedAccounts()
         })
+        val presence = PresenceRepositoryImpl(userApi::presence, connection.state.map { it == ConnectionState.CONNECTED }, scope)
         val coordinator = SessionCoordinator(user, connection, messages, conversations, scope, groups, friends, files, profiles) { reason ->
             appScope.launch { logout(reason) }
         }
         return UserSession(
             user, home, database, connection, messages, conversations, groups, friends, search, files, stickers, profiles,
-            scope, coordinator,
+            presence, scope, coordinator,
             adminApi = userApi.takeIf { user.isAdmin },
         )
     }

@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.style.TextOverflow
 import com.goim.kmp.designsystem.MonogramAvatar
+import com.goim.kmp.designsystem.PresenceText
 import com.goim.kmp.designsystem.UserAvatar
 import com.goim.kmp.designsystem.rememberDisplayName
 import androidx.compose.material.icons.Icons
@@ -160,7 +161,7 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() 
                         if (isGroup) {
                             MonogramAvatar(title, size = GoImSize.avatarMd)
                         } else {
-                            UserAvatar(conversation.peerOrGroupId, title, size = GoImSize.avatarMd)
+                            UserAvatar(conversation.peerOrGroupId, title, size = GoImSize.avatarMd, showPresence = true)
                         }
                         Spacer(Modifier.width(GoImSpacing.s3))
                         Column {
@@ -181,6 +182,8 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() 
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                            } else {
+                                PresenceText(conversation.peerOrGroupId, style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }

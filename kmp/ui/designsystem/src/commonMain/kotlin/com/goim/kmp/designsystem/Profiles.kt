@@ -1,16 +1,22 @@
 package com.goim.kmp.designsystem
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import coil3.compose.AsyncImage
 import com.goim.kmp.model.UserProfile
@@ -32,6 +38,32 @@ fun rememberProfile(uid: String): UserProfile? {
     return profile
 }
 
+/** 按 UID 订阅在线状态；登录后由 app 层提供（批量轮询网关 `/presence`）。 */
+fun interface PresenceLookup {
+    fun observe(uid: String): Flow<Boolean>
+}
+
+val LocalPresenceLookup = staticCompositionLocalOf { PresenceLookup { flowOf(false) } }
+
+@Composable
+fun rememberOnline(uid: String): Boolean {
+    val lookup = LocalPresenceLookup.current
+    val flow = remember(uid, lookup) { if (uid.isEmpty()) flowOf(false) else lookup.observe(uid) }
+    val online by flow.collectAsState(false)
+    return online
+}
+
+/** 「在线」（绿色）/「离线」状态文字。 */
+@Composable
+fun PresenceText(uid: String, style: TextStyle = MaterialTheme.typography.bodyMedium) {
+    val online = rememberOnline(uid)
+    Text(
+        if (online) "在线" else "离线",
+        style = style,
+        color = if (online) GoImPresenceColors.online else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
 /** 优先用资料缓存中的昵称，未知时用 [fallback]（为空则用 UID）。 */
 @Composable
 fun rememberDisplayName(uid: String, fallback: String = uid): String =
@@ -48,6 +80,8 @@ fun UserAvatar(
     size: Dp = GoImDimens.listAvatarSize,
     modifier: Modifier = Modifier,
     avatarUrl: String? = null,
+    /** 在线时在右下角显示绿点。 */
+    showPresence: Boolean = false,
 ) {
     val profile = if (avatarUrl == null) rememberProfile(uid) else null
     val url = avatarUrl ?: profile?.avatarUrl.orEmpty()
@@ -60,6 +94,16 @@ fun UserAvatar(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(size).clip(CircleShape),
+            )
+        }
+        if (showPresence && rememberOnline(uid)) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(GoImSize.presenceDot)
+                    .clip(CircleShape)
+                    .background(GoImPresenceColors.online)
+                    .border(GoImSize.strokeThin, MaterialTheme.colorScheme.surface, CircleShape),
             )
         }
     }

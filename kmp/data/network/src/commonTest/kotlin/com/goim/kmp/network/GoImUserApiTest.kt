@@ -59,6 +59,16 @@ class GoImUserApiTest {
     }
 
     @Test
+    fun presenceReturnsOnlineSubset() = runTest {
+        val api = api { respond("""{"online":["100002"]}""", HttpStatusCode.OK, jsonHeaders) }
+
+        assertEquals(setOf("100002"), api.presence(listOf("100001", "100002")))
+        val req = requests.single()
+        assertEquals("/presence", req.url.encodedPath)
+        assertEquals("100001,100002", req.url.parameters["uids"])
+    }
+
+    @Test
     fun listGroupsAndMembersUseQueryAuth() = runTest {
         val api = api { req ->
             when (req.url.encodedPath) {

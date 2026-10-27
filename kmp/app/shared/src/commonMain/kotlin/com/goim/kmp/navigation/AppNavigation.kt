@@ -130,7 +130,9 @@ import com.goim.kmp.feature.settings.ServerSettingsScreen
 import com.goim.kmp.feature.settings.SettingsScreen
 import com.goim.kmp.feature.settings.ProfileScreen
 import com.goim.kmp.feature.settings.ProfileViewModel
+import com.goim.kmp.designsystem.LocalPresenceLookup
 import com.goim.kmp.designsystem.LocalProfileLookup
+import com.goim.kmp.designsystem.PresenceLookup
 import com.goim.kmp.designsystem.ProfileLookup
 import com.goim.kmp.designsystem.GoImSpacing
 import androidx.compose.runtime.CompositionLocalProvider
@@ -218,7 +220,8 @@ private val ContactDetailSaver = Saver<ContactDetail?, String>(
 @Composable
 fun MainNavHost(session: UserSession) {
     val lookup = remember(session) { ProfileLookup(session.profiles::observe) }
-    CompositionLocalProvider(LocalProfileLookup provides lookup) {
+    val presence = remember(session) { PresenceLookup(session.presence::observe) }
+    CompositionLocalProvider(LocalProfileLookup provides lookup, LocalPresenceLookup provides presence) {
         MainNavContent(session)
     }
 }
