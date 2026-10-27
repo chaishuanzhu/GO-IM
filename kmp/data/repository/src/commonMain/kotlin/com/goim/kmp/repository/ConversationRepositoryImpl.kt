@@ -67,6 +67,8 @@ class ConversationRepositoryImpl(database: AppDatabase) : ConversationRepository
 
     override suspend fun setUnread(conversationId: String, count: Int) = persist { dao.setUnread(conversationId, count) }
 
+    override suspend fun replaceUnread(counts: Map<String, Int>) = persist { dao.replaceUnread(counts) }
+
     override suspend fun deleteConversation(id: String) = persist { dao.delete(id) }
 
     override suspend fun ensureConversation(conversation: Conversation) = persist {

@@ -83,8 +83,11 @@ class SessionCoordinator(
                 },
             )
             is InboundEvent.ReadSynced -> conversations.setUnread(event.conversationId, 0)
-            is InboundEvent.Unread -> event.counts.forEach { (key, count) ->
-                conversations.setUnread(conversationIdForUnreadKey(key), count)
+            // 服务端的未读表是完整的：没列出的会话已读（可能在其他设备上读过），本地清零；打开中的会话保持 0。
+            is InboundEvent.Unread -> {
+                val active = conversations.activeConversationId
+                val counts = event.counts.mapKeys { (key, _) -> conversationIdForUnreadKey(key) }.filterKeys { it != active }
+                conversations.replaceUnread(counts)
             }
             is InboundEvent.FriendRequestReceived -> friends?.onRequestReceived(event)
             is InboundEvent.FriendRequestResult -> friends?.onRequestResult(event)

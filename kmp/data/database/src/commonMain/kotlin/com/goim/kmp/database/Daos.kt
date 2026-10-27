@@ -137,6 +137,16 @@ abstract class ConversationDao {
     @Query("UPDATE conversations SET unread_count = :count WHERE id = :id")
     abstract suspend fun setUnread(id: String, count: Int)
 
+    @Query("UPDATE conversations SET unread_count = 0 WHERE unread_count != 0")
+    protected abstract suspend fun clearAllUnread()
+
+    /** 以服务端的未读表为准：表里没有的会话清零。 */
+    @Transaction
+    open suspend fun replaceUnread(counts: Map<String, Int>) {
+        clearAllUnread()
+        counts.forEach { (id, count) -> setUnread(id, count) }
+    }
+
     @Query("UPDATE conversations SET title = :title WHERE id = :id AND title != :title")
     abstract suspend fun updateTitle(id: String, title: String)
 

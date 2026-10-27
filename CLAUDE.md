@@ -70,12 +70,13 @@ CmdChat       → Router.handleChat(ctx, …)     → deliver + ACK (hot path, u
 # Group chat (Phase 4)
 CmdChat (ChatType=Group) → Router.handleChat → fanoutGroup(ctx, sender, msg)
                          → GroupStore.GetMembers → for each member: send or routeOrStoreOffline
-                         → UnreadTracker.Increment (all members except sender)
+                         → UnreadTracker.Increment (all members except sender, keyed by group ID so clients map it to the group conversation)
 
 # Read receipt & unread count (Phase 4)
-CmdReadReceipt → Router.handleReadReceipt → UnreadTracker.MarkRead(reader, peer)
-               → forward receipt to peer (local or cross-gateway via hash ring)
-CmdUnreadCount → Router.handleUnreadCount → UnreadTracker.GetCounts(uid) → JSON response
+CmdReadReceipt → Router.handleReadReceipt → UnreadTracker.MarkRead(reader, peer or group ID)
+               → forward receipt to peer (local or cross-gateway via hash ring); group receipts are not forwarded
+CmdUnreadCount → Router.handleUnreadCount → UnreadTracker.GetCounts(uid) → JSON response (complete table: the client zeroes conversations not listed)
+(the gateway never uses Logic's unread RPCs — increment, mark-read and query must hit the same tracker)
 
 # File upload/download (Phase 4)
 HTTP /upload   → Server.HandleUpload      → JWT validate → ObjectStore.Put(fileID, data, mime)

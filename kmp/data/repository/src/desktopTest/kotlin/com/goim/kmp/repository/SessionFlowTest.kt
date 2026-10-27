@@ -92,9 +92,21 @@ class SessionFlowTest {
         eventually { messages.countMessages("dm:alice_bob") == 3 }
         assertEquals(1, conversations.conversation("dm:alice_bob")!!.unreadCount)
 
-        // 服务端未读数覆盖本地
-        connection.events.send(InboundEvent.Unread(mapOf("bob" to 5)))
+        // 服务端未读表覆盖本地：列出的取服务端值，没列出的清零，打开中的会话保持 0
+        conversations.activeConversationId = null
+        connection.events.send(
+            InboundEvent.MessageReceived(inbound.copy(id = "c1", serverMsgId = 902, conversationId = "dm:alice_carol", fromUid = "carol")),
+        )
+        eventually { conversations.conversation("dm:alice_carol")?.unreadCount == 1 }
+        connection.events.send(InboundEvent.Unread(mapOf("bob" to 5, "g_1" to 2)))
         eventually { conversations.conversation("dm:alice_bob")?.unreadCount == 5 }
+        assertEquals(0, conversations.conversation("dm:alice_carol")!!.unreadCount)
+
+        conversations.activeConversationId = "dm:alice_bob"
+        connection.events.send(InboundEvent.Unread(mapOf("bob" to 3, "carol" to 4)))
+        eventually { conversations.conversation("dm:alice_carol")?.unreadCount == 4 }
+        assertEquals(0, conversations.conversation("dm:alice_bob")!!.unreadCount)
+        conversations.activeConversationId = null
 
         // 旧历史不覆盖最新预览
         connection.events.send(InboundEvent.MessageReceived(inbound.copy(id = "old", serverMsgId = 1, content = "old", timestampMs = 1)))

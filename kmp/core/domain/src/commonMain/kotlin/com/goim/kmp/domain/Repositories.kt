@@ -150,6 +150,9 @@ interface ConversationRepository {
 
     suspend fun setUnread(conversationId: String, count: Int)
 
+    /** 用服务端下发的完整未读表（会话 ID → 未读数）覆盖本地，表里没有的会话清零。 */
+    suspend fun replaceUnread(counts: Map<String, Int>)
+
     suspend fun deleteConversation(id: String)
 
     /** 当前打开的聊天页会话（该会话不累加未读）。 */

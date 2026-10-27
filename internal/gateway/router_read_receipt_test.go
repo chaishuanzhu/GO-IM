@@ -346,17 +346,28 @@ func TestGroupChatIncrementsUnread(t *testing.T) {
 		Seq:      1,
 	})
 
-	// Bob 和 Carol 应各有 1 条来自 Alice 的未读。
-	if c := ut.GetCount(ctx, "bob", "alice"); c != 1 {
-		t.Errorf("expected bob unread count 1, got %d", c)
-	}
-	if c := ut.GetCount(ctx, "carol", "alice"); c != 1 {
-		t.Errorf("expected carol unread count 1, got %d", c)
+	// 群聊未读记在群 ID 下（客户端据此还原群会话），不能记到发送者名下。
+	for _, uid := range []string{"bob", "carol"} {
+		if c := ut.GetCount(ctx, uid, g.ID); c != 1 {
+			t.Errorf("expected %s group unread 1, got %d", uid, c)
+		}
+		if c := ut.GetCount(ctx, uid, "alice"); c != 0 {
+			t.Errorf("group message must not count as a DM from alice for %s, got %d", uid, c)
+		}
 	}
 
-	// Alice（发送者）不应有来自自己的未读。
-	if c := ut.GetCount(ctx, "alice", "alice"); c != 0 {
+	// Alice（发送者）不应有未读。
+	if c := ut.GetCount(ctx, "alice", g.ID); c != 0 {
 		t.Errorf("expected alice unread count 0 (excluded as sender), got %d", c)
+	}
+
+	// 群聊已读回执按群 ID 清零，且不当作用户转发。
+	r.Route(ctx, bob, &proto.Message{Cmd: proto.CmdReadReceipt, From: "bob", To: g.ID, ChatType: proto.ChatTypeGroup})
+	if c := ut.GetCount(ctx, "bob", g.ID); c != 0 {
+		t.Errorf("group read receipt should clear bob's unread, got %d", c)
+	}
+	if c := ut.GetCount(ctx, "carol", g.ID); c != 1 {
+		t.Errorf("bob's read receipt must not touch carol's unread, got %d", c)
 	}
 }
 

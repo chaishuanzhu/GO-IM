@@ -748,25 +748,7 @@ func (r *Router) handleChat(ctx context.Context, sender *Client, msg *proto.Mess
 		}
 	}
 
-	// 增加目标的未读计数。
-	// 单聊:目标获得来自发送方的 +1 未读。
-	// 群聊:除发送方外的所有成员获得来自发送方的 +1 未读。
-	if r.unreadTracker != nil {
-		if msg.ChatType == proto.ChatTypeGroup && r.groupStore != nil {
-			members, err := r.groupStore.GetMembers(ctx, msg.To)
-			if err == nil {
-				for _, memberUID := range members {
-					if memberUID != sender.UID {
-						r.unreadTracker.Increment(ctx, memberUID, msg.From)
-					}
-				}
-			}
-		} else {
-			if msg.To != msg.From {
-				r.unreadTracker.Increment(ctx, msg.To, msg.From)
-			}
-		}
-	}
+	r.incrementUnread(ctx, sender.UID, msg)
 
 	// 向发送方发送 ACK
 	if msg.NeedAck {
@@ -994,17 +976,8 @@ func (r *Router) handleReadReceipt(ctx context.Context, sender *Client, msg *pro
 		return
 	}
 
-	// 1. 清除对方发给阅读者(发送方)的未读计数。
-	// 优先 gRPC Logic 服务,回退到本地跟踪器。
-	if r.logicClient != nil {
-		if err := r.logicClient.MarkReadClient(ctx, sender.UID, peerUID); err != nil {
-			log.Printf("[router] gRPC MarkRead error: %v", err)
-			// gRPC 失败时回退到本地跟踪器。
-			if r.unreadTracker != nil {
-				r.unreadTracker.MarkRead(ctx, sender.UID, peerUID)
-			}
-		}
-	} else if r.unreadTracker != nil {
+	// 1. 清除该会话的未读计数(单聊键为对方 UID,群聊键为群 ID,与 incrementUnread 一致)。
+	if r.unreadTracker != nil {
 		r.unreadTracker.MarkRead(ctx, sender.UID, peerUID)
 	}
 
@@ -1021,6 +994,11 @@ func (r *Router) handleReadReceipt(ctx context.Context, sender *Client, msg *pro
 
 	// 3. 同步给阅读者自己的其他设备(From 为自己),让它们清掉该会话的未读。
 	r.syncToOwnDevices(ctx, sender, receipt)
+
+	// 群聊的已读只影响自己的未读,不转发给群(群 ID 不是用户)。
+	if msg.ChatType == proto.ChatTypeGroup {
+		return
+	}
 
 	// 4. 先尝试本地投递给对方所有设备。
 	if found, failed := r.sendLocal(ctx, peerUID, receipt, nil); found {
@@ -1046,16 +1024,38 @@ func (r *Router) handleReadReceipt(ctx context.Context, sender *Client, msg *pro
 		sender.UID, peerUID)
 }
 
-// handleUnreadCount 返回请求用户的各会话未读计数。
-func (r *Router) handleUnreadCount(ctx context.Context, sender *Client, msg *proto.Message) {
-	// 优先 gRPC Logic 服务,回退到本地跟踪器。
-	counts := map[string]int64{}
-	if r.logicClient != nil {
-		if remoteCounts, err := r.logicClient.GetUnreadCountsClient(ctx, sender.UID); err == nil && remoteCounts != nil {
-			counts = remoteCounts
+// incrementUnread 为消息的接收方加一条未读:单聊键为发送方 UID,群聊键为群 ID(除发送方外的成员各 +1)。
+// 客户端按键还原会话(`g_` 前缀为群),已读回执用同样的键清零。
+func (r *Router) incrementUnread(ctx context.Context, senderUID string, msg *proto.Message) {
+	if r.unreadTracker == nil {
+		return
+	}
+	if msg.ChatType != proto.ChatTypeGroup {
+		if msg.To != senderUID {
+			r.unreadTracker.Increment(ctx, msg.To, senderUID)
+		}
+		return
+	}
+	if r.groupStore == nil {
+		return
+	}
+	members, err := r.groupStore.GetMembers(ctx, msg.To)
+	if err != nil {
+		return
+	}
+	for _, memberUID := range members {
+		if memberUID != senderUID {
+			r.unreadTracker.Increment(ctx, memberUID, msg.To)
 		}
 	}
-	if len(counts) == 0 && r.unreadTracker != nil {
+}
+
+// handleUnreadCount 返回请求用户的各会话未读计数。
+func (r *Router) handleUnreadCount(ctx context.Context, sender *Client, msg *proto.Message) {
+	// 未读只由 unreadTracker 维护(配置 Redis 时各网关共享):增、清、查必须同一处,
+	// 否则清掉的是另一份,重连后旧未读会复活。
+	counts := map[string]int64{}
+	if r.unreadTracker != nil {
 		counts = r.unreadTracker.GetCounts(ctx, sender.UID)
 	}
 
@@ -1982,21 +1982,7 @@ func (r *Router) handleForward(ctx context.Context, sender *Client, msg *proto.M
 		r.syncToOwnDevices(ctx, sender, msg)
 	}
 
-	// 增加目标的未读计数。
-	if r.unreadTracker != nil {
-		if msg.ChatType == proto.ChatTypeGroup && r.groupStore != nil {
-			members, err := r.groupStore.GetMembers(ctx, msg.To)
-			if err == nil {
-				for _, memberUID := range members {
-					if memberUID != sender.UID {
-						r.unreadTracker.Increment(ctx, memberUID, sender.UID)
-					}
-				}
-			}
-		} else if msg.To != sender.UID {
-			r.unreadTracker.Increment(ctx, msg.To, sender.UID)
-		}
-	}
+	r.incrementUnread(ctx, sender.UID, msg)
 
 	// 对转发请求发送 ACK。
 	if msg.NeedAck {
