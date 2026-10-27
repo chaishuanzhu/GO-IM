@@ -3,6 +3,7 @@ package com.goim.kmp.repository
 import com.goim.kmp.common.DomainError
 import com.goim.kmp.common.nowMillis
 import com.goim.kmp.database.AppDatabase
+import com.goim.kmp.database.FriendRequestEntity
 import com.goim.kmp.database.GroupMemberEntity
 import com.goim.kmp.database.toDomain
 import com.goim.kmp.database.toEntity
@@ -172,6 +173,7 @@ class FriendRepositoryImpl(
     }
 
     override suspend fun respond(fromUid: String, accept: Boolean) {
+        val original = persist { dao.request(fromUid, selfUid) }
         val viaSocket = connection.state.value == ConnectionState.CONNECTED &&
             runCatching { connection.send(OutboundEnvelope.FriendResponse(fromUid, accept)) }.isSuccess
         if (viaSocket) {
@@ -182,6 +184,7 @@ class FriendRepositoryImpl(
                 if (runCatching { refresh() }.isSuccess &&
                     persist { dao.pending(selfUid) }.none { it.fromUid == fromUid }
                 ) {
+                    recordResult(original ?: FriendRequest(fromUid, selfUid).toEntity(), accept)
                     return
                 }
             }
@@ -192,16 +195,15 @@ class FriendRepositoryImpl(
             // 长连接已处理过该请求时 HTTP 返回 404（no pending friend request）
             if (!viaSocket || e.code != 404) throw e
         }
-        applyResponse(fromUid, accept)
+        recordResult(original ?: FriendRequest(fromUid, selfUid).toEntity(), accept)
+        if (accept) persist { dao.upsertFriends(listOf(Friend(fromUid).toEntity())) }
         runCatching { refresh() }
     }
 
-    private suspend fun applyResponse(fromUid: String, accept: Boolean) {
-        persist {
-            val status = if (accept) FriendRequestStatus.ACCEPTED else FriendRequestStatus.REJECTED
-            dao.setRequestStatus(fromUid, selfUid, status.raw)
-            if (accept) dao.upsertFriends(listOf(Friend(fromUid).toEntity()))
-        }
+    /** 请求处理结果写入记录；旧版网关的刷新不带记录、会删掉待处理行，所以按整行写回。 */
+    private suspend fun recordResult(request: FriendRequestEntity, accept: Boolean) {
+        val status = if (accept) FriendRequestStatus.ACCEPTED else FriendRequestStatus.REJECTED
+        persist { dao.upsertRequests(listOf(request.copy(status = status.raw))) }
     }
 
     override suspend fun remove(uid: String) {
@@ -220,6 +222,11 @@ class FriendRepositoryImpl(
         when {
             event.removed -> persist { dao.deleteFriend(event.peerUid) }
             event.accepted -> persist { dao.upsertFriends(listOf(Friend(event.peerUid).toEntity())) }
+        }
+        if (!event.removed) {
+            val sent = persist { dao.request(selfUid, event.peerUid) }
+                ?: FriendRequest(fromUid = selfUid, toUid = event.peerUid, createdAt = nowMillis()).toEntity()
+            recordResult(sent, event.accepted)
         }
         runCatching { refresh() }
     }

@@ -233,8 +233,8 @@ abstract class FriendDao {
     @Query("SELECT * FROM friend_requests WHERE from_uid = :uid OR to_uid = :uid ORDER BY created_at DESC")
     abstract fun observeHistory(uid: String): Flow<List<FriendRequestEntity>>
 
-    @Query("UPDATE friend_requests SET status = :status WHERE from_uid = :fromUid AND to_uid = :toUid")
-    abstract suspend fun setRequestStatus(fromUid: String, toUid: String, status: String)
+    @Query("SELECT * FROM friend_requests WHERE from_uid = :fromUid AND to_uid = :toUid")
+    abstract suspend fun request(fromUid: String, toUid: String): FriendRequestEntity?
 
     @Query("DELETE FROM friend_requests WHERE from_uid = :uid OR to_uid = :uid")
     protected abstract suspend fun deleteRequestsOf(uid: String)

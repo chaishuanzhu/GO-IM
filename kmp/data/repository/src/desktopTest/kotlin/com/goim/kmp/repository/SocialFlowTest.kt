@@ -160,7 +160,26 @@ class SocialFlowTest {
         assertTrue("/friend/accept" !in httpCalls)
         assertTrue(friends.observeRequests().first().isEmpty())
         assertEquals(listOf("bob"), friends.observeFriends().first().map { it.uid })
+        // 网关不返回请求记录时，接受方本地也要留下「已添加」
+        assertEquals(listOf(FriendRequestStatus.ACCEPTED), friends.observeRequestHistory().first().map { it.status })
         pumps.cancel()
+    }
+
+    @Test
+    fun peerResponseUpdatesSentRecord() = runBlocking<Unit> {
+        val friends = FriendRepositoryImpl(api, db, FakeConnection(connected = false), me.uid)
+        routes = mapOf("/friend/request" to (HttpStatusCode.OK to """{"status":"ok"}"""))
+        friends.sendRequest("bob")
+        friends.sendRequest("carol")
+        assertEquals(setOf(FriendRequestStatus.PENDING), friends.observeRequestHistory().first().map { it.status }.toSet())
+
+        routes = mapOf("/friend/list" to (HttpStatusCode.OK to """{"friends":[{"uid":"bob","friend_uid":"alice"}],"pending_requests":[]}"""))
+        friends.onResponded(InboundEvent.FriendResponded("bob", accepted = true))
+        friends.onResponded(InboundEvent.FriendResponded("carol", accepted = false))
+
+        val history = friends.observeRequestHistory().first().associate { it.toUid to it.status }
+        assertEquals(mapOf("bob" to FriendRequestStatus.ACCEPTED, "carol" to FriendRequestStatus.REJECTED), history)
+        assertEquals(listOf("bob"), friends.observeFriends().first().map { it.uid })
     }
 
     @Test
