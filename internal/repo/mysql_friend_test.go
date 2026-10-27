@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -95,5 +96,56 @@ func TestMySQLFriendRequestHistory(t *testing.T) {
 	}
 	if got[a+">"+b] != FriendStatusAccepted || got[c+">"+a] != FriendStatusPending {
 		t.Fatalf("history statuses = %v", got)
+	}
+}
+
+func TestMySQLFriendRemark(t *testing.T) {
+	s := newTestMySQLStore(t)
+	defer s.Close()
+	ctx := context.Background()
+	a, b, c := "frk_test_a", "frk_test_b", "frk_test_c"
+	clear := func() {
+		s.db.Exec(`DELETE FROM friends WHERE uid IN (?, ?, ?) OR friend_uid IN (?, ?, ?)`, a, b, c, a, b, c)
+		s.db.Exec(`DELETE FROM friend_remarks WHERE uid IN (?, ?, ?)`, a, b, c)
+	}
+	clear()
+	defer clear()
+
+	if err := s.SetRemark(ctx, a, c, "x"); !errors.Is(err, ErrNotFriends) {
+		t.Fatalf("remark for non-friend: %v", err)
+	}
+	if err := s.SendRequest(ctx, a, b); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AcceptRequest(ctx, b, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRemark(ctx, a, b, "老同学"); err != nil {
+		t.Fatal(err)
+	}
+	remarkOf := func(uid, friend string) string {
+		friends, err := s.GetFriends(ctx, uid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range friends {
+			if f.UID == friend {
+				return f.Remark
+			}
+		}
+		t.Fatalf("%s not in %s's friends", friend, uid)
+		return ""
+	}
+	if got := remarkOf(a, b); got != "老同学" {
+		t.Fatalf("a's remark for b = %q", got)
+	}
+	if got := remarkOf(b, a); got != "" {
+		t.Fatalf("remark leaked to b: %q", got)
+	}
+	if err := s.SetRemark(ctx, a, b, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := remarkOf(a, b); got != "" {
+		t.Fatalf("cleared remark = %q", got)
 	}
 }

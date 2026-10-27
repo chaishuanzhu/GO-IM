@@ -22,9 +22,13 @@ import com.goim.kmp.common.ioDispatcher
         MetaEntity::class,
         ProfileEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2, spec = AppDatabase.NicknameMigration::class)],
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2, spec = AppDatabase.NicknameMigration::class),
+        // 个性签名、好友备注
+        AutoMigration(from = 2, to = 3),
+    ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {

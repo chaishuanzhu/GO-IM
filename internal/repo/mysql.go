@@ -235,7 +235,17 @@ func (s *MySQLStore) migrate() error {
 			INDEX idx_to (to_uid, created_at)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
 
-	for _, ddl := range []string{userTable, uidSeqTable, msgTable, groupTable, groupMembersTable, unreadTable, friendsTable, friendRequestsTable, filesTable, fileRefsTable, settingsTable} {
+	// 好友备注：每个用户给自己的好友单独设置，(uid, friend_uid) 即「uid 给 friend_uid 的备注」。
+	friendRemarksTable := `
+		CREATE TABLE IF NOT EXISTS friend_remarks (
+			uid        VARCHAR(64)  NOT NULL,
+			friend_uid VARCHAR(64)  NOT NULL,
+			remark     VARCHAR(128) NOT NULL,
+			updated_at BIGINT       NOT NULL,
+			PRIMARY KEY (uid, friend_uid)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
+
+	for _, ddl := range []string{userTable, uidSeqTable, msgTable, groupTable, groupMembersTable, unreadTable, friendsTable, friendRequestsTable, friendRemarksTable, filesTable, fileRefsTable, settingsTable} {
 		if _, err := s.db.Exec(ddl); err != nil {
 			return fmt.Errorf("exec ddl: %w", err)
 		}
@@ -309,6 +319,7 @@ func (s *MySQLStore) migrateProfile() error {
 		{"ALTER TABLE users ADD INDEX idx_nickname (nickname)", []uint16{errDupKeyName}},
 		{"ALTER TABLE files ADD COLUMN is_avatar TINYINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
 		{"ALTER TABLE users ADD COLUMN must_change_password TINYINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
+		{"ALTER TABLE users ADD COLUMN signature VARCHAR(255) NOT NULL DEFAULT ''", []uint16{errDupFieldName}},
 	}
 	for _, step := range steps {
 		if _, err := s.db.Exec(step.ddl); err != nil && !isMySQLError(err, step.skipped...) {
@@ -346,7 +357,7 @@ func isDupKey(err error, key string) bool {
 
 // ---------- UserStore 实现 ----------
 
-const userColumns = "uid, nickname, COALESCE(email, ''), avatar_file_id, password_hash, role, is_disabled, must_change_password, created_at, updated_at"
+const userColumns = "uid, nickname, COALESCE(email, ''), avatar_file_id, signature, password_hash, role, is_disabled, must_change_password, created_at, updated_at"
 
 type rowScanner interface {
 	Scan(dest ...interface{}) error
@@ -354,7 +365,7 @@ type rowScanner interface {
 
 func scanUser(row rowScanner) (*User, error) {
 	u := &User{}
-	err := row.Scan(&u.UID, &u.Nickname, &u.Email, &u.AvatarFileID, &u.PasswordHash, &u.Role, &u.IsDisabled,
+	err := row.Scan(&u.UID, &u.Nickname, &u.Email, &u.AvatarFileID, &u.Signature, &u.PasswordHash, &u.Role, &u.IsDisabled,
 		&u.MustChangePassword, &u.CreatedAt, &u.UpdatedAt)
 	return u, err
 }
@@ -485,13 +496,17 @@ func collectUsers(rows *sql.Rows) ([]*User, error) {
 	return users, rows.Err()
 }
 
-// UpdateProfile 修改昵称和/或头像并刷新 updated_at。
-func (s *MySQLStore) UpdateProfile(ctx context.Context, uid string, nickname *string, avatarFileID *int64) error {
+// UpdateProfile 修改昵称、个性签名和/或头像并刷新 updated_at。
+func (s *MySQLStore) UpdateProfile(ctx context.Context, uid string, nickname, signature *string, avatarFileID *int64) error {
 	sets := []string{"updated_at = ?"}
 	args := []interface{}{time.Now().UnixMilli()}
 	if nickname != nil {
 		sets = append(sets, "nickname = ?")
 		args = append(args, *nickname)
+	}
+	if signature != nil {
+		sets = append(sets, "signature = ?")
+		args = append(args, *signature)
 	}
 	if avatarFileID != nil {
 		sets = append(sets, "avatar_file_id = ?")
@@ -995,6 +1010,40 @@ func (s *MySQLStore) RemoveFriend(ctx context.Context, uid, friendUID string) er
 	if n == 0 {
 		return fmt.Errorf("friendship not found between %s and %s", uid, friendUID)
 	}
+	if _, err := s.db.ExecContext(ctx,
+		`DELETE FROM friend_remarks WHERE (uid = ? AND friend_uid = ?) OR (uid = ? AND friend_uid = ?)`,
+		uid, friendUID, friendUID, uid,
+	); err != nil {
+		log.Printf("[mysql] clear remarks %s/%s: %v", uid, friendUID, err)
+	}
+	return nil
+}
+
+// SetRemark 设置 uid 给好友 friendUID 的备注，空串清除；双方不是好友时返回 ErrNotFriends。
+func (s *MySQLStore) SetRemark(ctx context.Context, uid, friendUID, remark string) error {
+	var n int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM friends WHERE ((uid = ? AND friend_uid = ?) OR (uid = ? AND friend_uid = ?)) AND status = ?`,
+		uid, friendUID, friendUID, uid, FriendStatusAccepted,
+	).Scan(&n); err != nil {
+		return fmt.Errorf("check friendship: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFriends
+	}
+	if remark == "" {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM friend_remarks WHERE uid = ? AND friend_uid = ?`, uid, friendUID); err != nil {
+			return fmt.Errorf("clear remark: %w", err)
+		}
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO friend_remarks (uid, friend_uid, remark, updated_at) VALUES (?, ?, ?, ?)
+		 ON DUPLICATE KEY UPDATE remark = VALUES(remark), updated_at = VALUES(updated_at)`,
+		uid, friendUID, remark, timeNow(),
+	); err != nil {
+		return fmt.Errorf("set remark: %w", err)
+	}
 	return nil
 }
 
@@ -1002,12 +1051,14 @@ func (s *MySQLStore) RemoveFriend(ctx context.Context, uid, friendUID string) er
 func (s *MySQLStore) GetFriends(ctx context.Context, uid string) ([]*Friend, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT f.uid, f.friend_uid, f.status, f.created_at,
-		        COALESCE(u.nickname, IF(f.uid = ?, f.friend_uid, f.uid)), COALESCE(u.avatar_file_id, 0)
+		        COALESCE(u.nickname, IF(f.uid = ?, f.friend_uid, f.uid)), COALESCE(u.avatar_file_id, 0),
+		        COALESCE(u.signature, ''), COALESCE(r.remark, '')
 		 FROM friends f
 		 LEFT JOIN users u ON u.uid = IF(f.uid = ?, f.friend_uid, f.uid)
+		 LEFT JOIN friend_remarks r ON r.uid = ? AND r.friend_uid = IF(f.uid = ?, f.friend_uid, f.uid)
 		 WHERE (f.uid = ? OR f.friend_uid = ?) AND f.status = ?
 		 ORDER BY f.created_at DESC`,
-		uid, uid, uid, uid, FriendStatusAccepted,
+		uid, uid, uid, uid, uid, uid, FriendStatusAccepted,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get friends: %w", err)
@@ -1018,7 +1069,7 @@ func (s *MySQLStore) GetFriends(ctx context.Context, uid string) ([]*Friend, err
 	for rows.Next() {
 		f := &Friend{}
 		var status int32
-		if err := rows.Scan(&f.UID, &f.FriendUID, &status, &f.CreatedAt, &f.Nickname, &f.AvatarFileID); err != nil {
+		if err := rows.Scan(&f.UID, &f.FriendUID, &status, &f.CreatedAt, &f.Nickname, &f.AvatarFileID, &f.Signature, &f.Remark); err != nil {
 			return nil, fmt.Errorf("scan friend: %w", err)
 		}
 		f.Status = FriendStatus(status)

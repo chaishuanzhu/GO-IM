@@ -22,6 +22,7 @@ const (
 	minPasswordLen  = 6
 	maxPasswordLen  = 72 // bcrypt 只使用前 72 字节
 	maxNicknameLen  = 32
+	maxSignatureLen = 60
 	maxSearchLimit  = 50
 	maxProfileBatch = 200
 	mailSendTimeout = 15 * time.Second
@@ -406,7 +407,7 @@ func (s *Server) HandleBindEmail(w http.ResponseWriter, r *http.Request) {
 
 // HandleProfile 读取或修改用户资料。
 // GET  /user/profile?uid&token[&target=UID]   不带 target 返回自己的完整资料（含邮箱）
-// POST /user/profile 表单字段：uid、token，可选 nickname、avatar_file_id（"0" 清除头像）
+// POST /user/profile 表单字段：uid、token，可选 nickname、signature（空串清除）、avatar_file_id（"0" 清除头像）
 func (s *Server) HandleProfile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -451,6 +452,15 @@ func (s *Server) HandleProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		nickname = &n
 	}
+	var signature *string
+	if _, ok := r.PostForm["signature"]; ok {
+		sig := strings.TrimSpace(r.PostForm.Get("signature"))
+		if msg := checkSignature(sig); msg != "" {
+			http.Error(w, msg, http.StatusBadRequest)
+			return
+		}
+		signature = &sig
+	}
 	var avatar *int64
 	if raw, ok := r.PostForm["avatar_file_id"]; ok && len(raw) > 0 {
 		id, err := strconv.ParseInt(strings.TrimSpace(raw[0]), 10, 64)
@@ -466,11 +476,11 @@ func (s *Server) HandleProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		avatar = &id
 	}
-	if nickname == nil && avatar == nil {
+	if nickname == nil && signature == nil && avatar == nil {
 		http.Error(w, "nothing to update", http.StatusBadRequest)
 		return
 	}
-	if err := s.userStore.UpdateProfile(ctx, claims.UID, nickname, avatar); err != nil {
+	if err := s.userStore.UpdateProfile(ctx, claims.UID, nickname, signature, avatar); err != nil {
 		if errors.Is(err, repo.ErrUserNotFound) {
 			http.Error(w, "user not found", http.StatusNotFound)
 			return
@@ -659,6 +669,7 @@ func publicProfile(u *repo.User) map[string]interface{} {
 		"uid":        u.UID,
 		"nickname":   u.Nickname,
 		"avatar_url": avatarURL(u.AvatarFileID),
+		"signature":  u.Signature,
 	}
 }
 
@@ -695,6 +706,32 @@ func defaultNickname(email string) string {
 		name = string([]rune(name)[:maxNicknameLen])
 	}
 	return name
+}
+
+// checkSignature 校验个性签名：可为空，最多 maxSignatureLen 个字符，不含换行等控制字符。
+func checkSignature(sig string) string {
+	if utf8.RuneCountInString(sig) > maxSignatureLen {
+		return "signature too long"
+	}
+	for _, r := range sig {
+		if unicode.IsControl(r) {
+			return "signature contains invalid characters"
+		}
+	}
+	return ""
+}
+
+// checkRemark 校验好友备注：可为空（清除），最多 maxNicknameLen 个字符。
+func checkRemark(remark string) string {
+	if utf8.RuneCountInString(remark) > maxNicknameLen {
+		return "remark too long"
+	}
+	for _, r := range remark {
+		if unicode.IsControl(r) {
+			return "remark contains invalid characters"
+		}
+	}
+	return ""
 }
 
 func checkNickname(n string) string {

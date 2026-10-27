@@ -203,6 +203,9 @@ interface FriendRepository {
 
     /** 删除好友（双向解除），对方在线时会收到通知。 */
     suspend fun remove(uid: String)
+
+    /** 设置自己给好友的备注，空串清除。 */
+    suspend fun setRemark(uid: String, remark: String)
 }
 
 /** 用户在线状态：按 UID 订阅，订阅期间定期向网关查询。 */
@@ -224,6 +227,9 @@ interface ProfileRepository {
     suspend fun refreshMe(): UserProfile
 
     suspend fun updateNickname(nickname: String): UserProfile
+
+    /** 空串清除签名。 */
+    suspend fun updateSignature(signature: String): UserProfile
 
     /** 上传图片并设为头像。 */
     suspend fun updateAvatar(bytes: ByteArray, fileName: String, mime: String): UserProfile

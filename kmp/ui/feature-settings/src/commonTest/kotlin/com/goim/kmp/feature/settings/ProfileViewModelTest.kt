@@ -47,6 +47,8 @@ class ProfileViewModelTest {
             require(nickname.isNotBlank()) { "nickname required" }
             return me.value.copy(nickname = nickname).also { me.value = it }
         }
+        override suspend fun updateSignature(signature: String): UserProfile =
+            me.value.copy(signature = signature.trim()).also { me.value = it }
         override suspend fun updateAvatar(bytes: ByteArray, fileName: String, mime: String): UserProfile {
             avatars += fileName to mime
             return me.value.copy(avatarUrl = "/avatar/1").also { me.value = it }

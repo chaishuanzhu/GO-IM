@@ -59,15 +59,15 @@ func TestMySQLUserProfile(t *testing.T) {
 		t.Fatalf("set email unknown user: %v", err)
 	}
 
-	nick, avatar := "Renamed_"+stamp, int64(424242)
-	if err := s.UpdateProfile(ctx, a.UID, &nick, &avatar); err != nil {
+	nick, sig, avatar := "Renamed_"+stamp, "签名 "+stamp, int64(424242)
+	if err := s.UpdateProfile(ctx, a.UID, &nick, &sig, &avatar); err != nil {
 		t.Fatalf("update profile: %v", err)
 	}
 	got, _ = s.GetByUID(ctx, a.UID)
-	if got.Nickname != nick || got.AvatarFileID != avatar || got.UpdatedAt == 0 {
+	if got.Nickname != nick || got.Signature != sig || got.AvatarFileID != avatar || got.UpdatedAt == 0 {
 		t.Fatalf("after update = %+v", got)
 	}
-	if err := s.UpdateProfile(ctx, "no_such_user_"+stamp, &nick, nil); !errors.Is(err, ErrUserNotFound) {
+	if err := s.UpdateProfile(ctx, "no_such_user_"+stamp, &nick, nil, nil); !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("update unknown user: %v", err)
 	}
 

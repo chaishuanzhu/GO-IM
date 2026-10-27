@@ -55,7 +55,8 @@ HTTP /password/reset, /user/email → CodeStore.Verify(reset_password | bind_ema
 HTTP /auth/config → {registration_open}; closed → /register and register email codes return 403 "registration closed", KMP login hides the register tab
 HTTP /admin/users/create (email) → same random-password path as BootstrapAdmin with role user (no code, must_change_password=1) → mail the password; mail unconfigured → 503 before creating; send failure → response carries initial_password for the admin to hand over
 HTTP /admin/users/disable | /admin/users/delete → update user → kick local connections (CmdKick "account disabled" / "account deleted"); WS / TCP connect re-checks the account (Server.accountBlocked) so unexpired tokens can't reconnect
-HTTP /user/profile (GET own or ?target, POST nickname / avatar_file_id), /user/profiles?uids=, /user/search?q=
+HTTP /user/profile (GET own or ?target, POST nickname / signature (≤ 60, empty clears) / avatar_file_id), /user/profiles?uids=, /user/search?q=
+HTTP /friend/remark (friend_uid, remark ≤ 32, empty clears) → friend_remarks row, private to the caller; /friend/list rows carry signature + remark; KMP shows 备注名(昵称) or just the nickname
 HTTP /avatar/{file_id}[?thumb=1] → public, only files marked is_avatar, immutable cache
 
 # Presence (presence.go, server_presence.go)

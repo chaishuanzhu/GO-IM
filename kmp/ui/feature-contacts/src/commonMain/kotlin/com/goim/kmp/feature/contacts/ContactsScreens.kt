@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -76,6 +77,8 @@ import com.goim.kmp.designsystem.UnreadBadge
 import com.goim.kmp.designsystem.PresenceText
 import com.goim.kmp.designsystem.UserAvatar
 import com.goim.kmp.designsystem.rememberDisplayName
+import com.goim.kmp.designsystem.rememberProfile
+import com.goim.kmp.designsystem.TextInputDialog
 import com.goim.kmp.designsystem.GoImSpacing
 import com.goim.kmp.designsystem.GoImSize
 import androidx.compose.ui.focus.FocusRequester
@@ -101,6 +104,7 @@ import com.goim.kmp.model.Friend
 import com.goim.kmp.model.FriendRequest
 import com.goim.kmp.model.FriendRequestStatus
 import com.goim.kmp.model.UserProfile
+import com.goim.kmp.model.friendTitle
 import com.goim.kmp.model.Group
 import com.goim.kmp.designsystem.GoImTextField
 import androidx.compose.ui.semantics.selected
@@ -207,9 +211,10 @@ fun ContactsScreen(
                     )
                 }
                 items(section.friends, key = { "friend-${it.uid}" }) { friend ->
+                    val profile = rememberProfile(friend.uid)
                     PersonRow(
-                        friend.displayName,
-                        subtitle = "ID：${friend.uid}".takeIf { friend.uid != friend.displayName },
+                        friendTitle(friend.remark, profile?.nickname?.ifBlank { null } ?: friend.displayName),
+                        subtitle = friendSignature(friend, profile),
                         uid = friend.uid,
                         avatarUrl = friend.avatarUrl,
                         onClick = { onOpenFriend(friend) },
@@ -417,8 +422,6 @@ fun AddFriendScreen(
     val friendUids by viewModel.friendUids.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val focus = remember { FocusRequester() }
-    @Suppress("DEPRECATION")
-    val clipboard = LocalClipboardManager.current
     MessageSnackbar(viewModel, snackbar)
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
@@ -452,10 +455,6 @@ fun AddFriendScreen(
                     EmptyState(GoImIcons.PersonAdd, "搜索失败", state.error, Modifier.padding(top = GoImSpacing.s6))
                 }
                 !state.searched -> item {
-                    MyIdRow(selfUid) {
-                        clipboard.setText(AnnotatedString(selfUid))
-                        viewModel.copied()
-                    }
                     EmptyState(
                         GoImIcons.PersonAdd,
                         "查找用户",
@@ -488,22 +487,6 @@ fun AddFriendScreen(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun MyIdRow(uid: String, onCopy: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(start = GoImSpacing.s4, end = GoImSpacing.s2),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "我的用户 ID：$uid",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(onClick = onCopy) { Text("复制") }
     }
 }
 
@@ -825,9 +808,14 @@ fun FriendInfoScreen(
     @Suppress("DEPRECATION")
     val clipboard = LocalClipboardManager.current
     var confirmRemove by remember { mutableStateOf(false) }
+    var editRemark by remember { mutableStateOf(false) }
     MessageSnackbar(viewModel, snackbar)
     val name = rememberDisplayName(viewModel.uid, viewModel.displayName)
-    val isFriend = state.friend != null
+    val friend = state.friend
+    val isFriend = friend != null
+    val remark = friend?.remark.orEmpty()
+    val title = friendTitle(remark, name)
+    val signature = friend?.let { friendSignature(it, rememberProfile(it.uid)) }
 
     Scaffold(
 
@@ -848,10 +836,19 @@ fun FriendInfoScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(GoImSpacing.s1),
             ) {
-                UserAvatar(viewModel.uid, name, size = GoImSize.avatar2xl, showPresence = true)
+                UserAvatar(viewModel.uid, remark.ifBlank { name }, size = GoImSize.avatar2xl, showPresence = true)
                 Spacer(Modifier.height(GoImSpacing.s2))
-                Text(name, style = MaterialTheme.typography.headlineSmall)
+                Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
                 PresenceText(viewModel.uid)
+                if (signature != null) {
+                    Text(
+                        signature,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = GoImSpacing.s6),
+                    )
+                }
                 if (state.loaded && !isFriend) {
                     Text(
                         "你们已不是好友",
@@ -861,6 +858,14 @@ fun FriendInfoScreen(
                 }
             }
             SettingsSection(title = "资料") {
+                if (isFriend) {
+                    SettingsRow(
+                        "备注名",
+                        value = remark.ifBlank { "未设置" },
+                        icon = Icons.Filled.Edit,
+                        onClick = { editRemark = true },
+                    )
+                }
                 SettingsRow("用户 ID", value = viewModel.uid, icon = GoImIcons.Link, onClick = {
                     clipboard.setText(AnnotatedString(viewModel.uid))
                     viewModel.copied()
@@ -881,7 +886,7 @@ fun FriendInfoScreen(
 
     if (confirmRemove) {
         ConfirmDialog(
-            text = "确定删除好友「$name」？",
+            text = "确定删除好友「$title」？",
             confirmLabel = "删除",
             onConfirm = {
                 confirmRemove = false
@@ -890,7 +895,28 @@ fun FriendInfoScreen(
             onDismiss = { confirmRemove = false },
         )
     }
+    if (editRemark) {
+        TextInputDialog(
+            title = "设置备注名",
+            message = null,
+            initial = remark,
+            placeholder = "留空则清除",
+            confirmLabel = "保存",
+            validate = { if (it.trim().length > MAX_REMARK) "备注名最多 $MAX_REMARK 个字" else null },
+            onConfirm = {
+                editRemark = false
+                if (it.trim() != remark) viewModel.setRemark(it.trim())
+            },
+            onDismiss = { editRemark = false },
+        )
+    }
 }
+
+/** 好友的个性签名：优先用资料缓存（更新更及时），没有时用好友列表里的。 */
+private fun friendSignature(friend: Friend, profile: UserProfile?): String? =
+    profile?.signature?.ifBlank { null } ?: friend.signature.ifBlank { null }
+
+private const val MAX_REMARK = 32
 
 // endregion
 

@@ -248,6 +248,9 @@ abstract class FriendDao {
     @Query("DELETE FROM friends WHERE uid = :uid")
     abstract suspend fun deleteFriend(uid: String)
 
+    @Query("UPDATE friends SET remark = :remark WHERE uid = :uid")
+    abstract suspend fun setRemark(uid: String, remark: String)
+
     @Query("DELETE FROM friend_requests WHERE to_uid = :toUid AND status = 'pending'")
     protected abstract suspend fun deletePending(toUid: String)
 

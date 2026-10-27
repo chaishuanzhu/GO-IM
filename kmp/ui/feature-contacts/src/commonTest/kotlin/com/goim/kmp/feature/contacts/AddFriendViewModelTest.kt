@@ -44,6 +44,7 @@ class AddFriendViewModelTest {
         }
         override suspend fun respond(fromUid: String, accept: Boolean) = Unit
         override suspend fun remove(uid: String) = Unit
+        override suspend fun setRemark(uid: String, remark: String) = Unit
     }
 
     private class FakeProfiles(private val users: List<UserProfile>) : ProfileRepository {
@@ -53,6 +54,7 @@ class AddFriendViewModelTest {
         override fun prefetch(uids: Collection<String>) = Unit
         override suspend fun refreshMe() = me.value
         override suspend fun updateNickname(nickname: String) = me.value
+        override suspend fun updateSignature(signature: String) = me.value
         override suspend fun updateAvatar(bytes: ByteArray, fileName: String, mime: String) = me.value
         override suspend fun search(query: String): List<UserProfile> {
             queries += query

@@ -562,6 +562,7 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/friend/accept", app.Server.HandleFriendAccept)
 	mux.HandleFunc("/friend/reject", app.Server.HandleFriendReject)
 	mux.HandleFunc("/friend/remove", app.Server.HandleFriendRemove)
+	mux.HandleFunc("/friend/remark", app.Server.HandleFriendRemark)
 	mux.HandleFunc("/friend/list", app.Server.HandleFriendList)
 
 	transport := app.Config.Gateway.Transport

@@ -283,6 +283,7 @@ paths:
               type: object
               properties:
                 nickname: { type: string, minLength: 1, maxLength: 32 }
+                signature: { type: string, maxLength: 60, description: 个性签名，空串清除 }
                 avatar_file_id:
                   type: string
                   description: "`/upload` 或直传得到的 `file_id`；`0` 清除头像"
@@ -573,6 +574,38 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404":
           description: 不是好友
+          content: { text/plain: { schema: { type: string } } }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /friend/remark:
+    post:
+      tags: [好友]
+      summary: 设置好友备注
+      description: 备注只有自己可见，空串清除；删除好友时一并清除。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [friend_uid]
+              properties:
+                friend_uid: { type: string }
+                remark: { type: string, maxLength: 32 }
+      responses:
+        "200":
+          description: 已保存
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  remark: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: "`not friends`"
           content: { text/plain: { schema: { type: string } } }
         "503": { $ref: "#/components/responses/Unavailable" }
 
@@ -1479,6 +1512,7 @@ components:
         uid: { type: string }
         nickname: { type: string }
         avatar_url: { type: string }
+        signature: { type: string, description: 个性签名，空 = 未设置 }
 
     OwnProfile:
       allOf:
@@ -1505,6 +1539,8 @@ components:
         created_at: { type: integer, format: int64 }
         nickname: { type: string }
         avatar_url: { type: string }
+        signature: { type: string }
+        remark: { type: string, description: 自己给该好友的备注，空 = 未设置 }
 
     FriendRequest:
       type: object

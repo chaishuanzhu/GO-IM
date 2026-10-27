@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -56,7 +57,7 @@ import io.github.vinceglb.filekit.readBytes
 import kotlinx.coroutines.launch
 import com.goim.kmp.designsystem.GoImTextField
 
-/** 个人资料：点头像更换，昵称 / 邮箱可修改，用户 ID 可复制。 */
+/** 个人资料：点头像更换，昵称 / 个性签名 / 邮箱可修改，用户 ID 可复制。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
@@ -67,6 +68,7 @@ fun ProfileScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     var editNickname by remember { mutableStateOf(false) }
+    var editSignature by remember { mutableStateOf(false) }
     var bindEmail by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) {
@@ -113,6 +115,12 @@ fun ProfileScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
             SettingsSection(title = "资料") {
                 SettingsRow(title = "昵称", value = profile.displayName, icon = Icons.Filled.Face, onClick = { editNickname = true })
                 SettingsRow(
+                    title = "个性签名",
+                    value = profile.signature.ifEmpty { "未设置" },
+                    icon = Icons.Filled.Edit,
+                    onClick = { editSignature = true },
+                )
+                SettingsRow(
                     title = "用户 ID",
                     value = profile.uid,
                     icon = Icons.Filled.Person,
@@ -152,6 +160,21 @@ fun ProfileScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
                 if (it.trim() != profile.nickname) viewModel.updateNickname(it)
             },
             onDismiss = { editNickname = false },
+        )
+    }
+    if (editSignature) {
+        TextInputDialog(
+            title = "个性签名",
+            message = null,
+            initial = profile.signature,
+            placeholder = "留空则清除",
+            confirmLabel = "保存",
+            validate = { if (it.trim().length > MAX_SIGNATURE) "个性签名最多 $MAX_SIGNATURE 个字" else null },
+            onConfirm = {
+                editSignature = false
+                if (it.trim() != profile.signature) viewModel.updateSignature(it)
+            },
+            onDismiss = { editSignature = false },
         )
     }
     if (bindEmail) {
@@ -220,3 +243,5 @@ private fun BindEmailDialog(viewModel: ProfileViewModel, current: String, onDism
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
+
+private const val MAX_SIGNATURE = 60

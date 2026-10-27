@@ -108,7 +108,7 @@ class FriendRepositoryImpl(
     private val requestResults = MutableSharedFlow<InboundEvent.FriendRequestResult>(extraBufferCapacity = 8)
 
     override fun observeFriends(): Flow<List<Friend>> = dao.observeFriends().map { rows ->
-        rows.map { it.toDomain() }.sortedWith(compareBy({ it.displayName.lowercase() }, { it.uid }))
+        rows.map { it.toDomain() }.sortedWith(compareBy({ it.sortName.lowercase() }, { it.uid }))
     }
 
     override fun observeRequests(): Flow<List<FriendRequest>> =
@@ -217,6 +217,13 @@ class FriendRepositoryImpl(
         runCatching { refresh() }
     }
 
+    override suspend fun setRemark(uid: String, remark: String) {
+        val trimmed = remark.trim()
+        if (trimmed.length > MAX_REMARK) throw DomainError.InvalidState("备注名最多 $MAX_REMARK 个字")
+        api.setFriendRemark(uid, trimmed)
+        persist { dao.setRemark(uid, trimmed) }
+    }
+
     /** 对方接受请求或删除了我：先改本地让列表立即变化，再全量刷新。 */
     internal suspend fun onResponded(event: InboundEvent.FriendResponded) {
         when {
@@ -250,6 +257,10 @@ class FriendRepositoryImpl(
 
     internal fun onRequestResult(event: InboundEvent.FriendRequestResult) {
         requestResults.tryEmit(event)
+    }
+
+    private companion object {
+        const val MAX_REMARK = 32
     }
 }
 

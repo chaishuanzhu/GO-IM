@@ -85,10 +85,10 @@ class ContactsViewModel(private val friends: FriendRepository) : ActionViewModel
         /** 按首字母分组（同 iOS 通讯录），非拉丁字母归入 "#" 并排在最后。 */
         fun sectionize(list: List<Friend>): List<FriendSection> = list
             .groupBy { friend ->
-                val first = friend.displayName.firstOrNull()?.uppercaseChar()
+                val first = friend.sortName.firstOrNull()?.uppercaseChar()
                 if (first != null && first in 'A'..'Z') first.toString() else "#"
             }
-            .map { (letter, items) -> FriendSection(letter, items.sortedBy { it.displayName.lowercase() }) }
+            .map { (letter, items) -> FriendSection(letter, items.sortedBy { it.sortName.lowercase() }) }
             .sortedWith(compareBy({ it.letter == "#" }, { it.letter }))
     }
 }
@@ -142,8 +142,6 @@ class AddFriendViewModel(
     private val _state = MutableStateFlow(AddFriendUiState())
     val state: StateFlow<AddFriendUiState> = _state.asStateFlow()
     private var searchJob: Job? = null
-
-    fun copied() = notify("用户 ID 已复制")
 
     fun onQueryChange(query: String) {
         _state.update { it.copy(query = query, error = null) }
@@ -207,6 +205,11 @@ class FriendInfoViewModel(
     val displayName: String get() = state.value.friend?.displayName ?: fallbackName.ifBlank { uid }
 
     fun remove(onRemoved: () -> Unit) = action(block = { friends.remove(uid) }, then = onRemoved)
+
+    fun setRemark(remark: String) = action(
+        success = if (remark.isBlank()) "已清除备注" else "备注已保存",
+        block = { friends.setRemark(uid, remark) },
+    )
 
     fun copied() = notify("用户 ID 已复制")
 }

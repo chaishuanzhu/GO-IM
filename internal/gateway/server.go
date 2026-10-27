@@ -886,6 +886,43 @@ func (s *Server) HandleFriendRemove(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+// HandleFriendRemark 设置给好友的备注（空串清除），只有自己可见。
+// POST /friend/remark  表单字段：uid、token、friend_uid、remark
+func (s *Server) HandleFriendRemark(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	claims := s.authenticateRequest(w, r)
+	if claims == nil {
+		return
+	}
+	if s.router.friendStore == nil {
+		http.Error(w, "friend system not available", http.StatusServiceUnavailable)
+		return
+	}
+	friendUID := strings.TrimSpace(r.FormValue("friend_uid"))
+	if friendUID == "" {
+		http.Error(w, "friend_uid required", http.StatusBadRequest)
+		return
+	}
+	remark := strings.TrimSpace(r.FormValue("remark"))
+	if msg := checkRemark(remark); msg != "" {
+		http.Error(w, msg, http.StatusBadRequest)
+		return
+	}
+	if err := s.router.friendStore.SetRemark(r.Context(), claims.UID, friendUID, remark); err != nil {
+		if errors.Is(err, repo.ErrNotFriends) {
+			http.Error(w, "not friends", http.StatusNotFound)
+			return
+		}
+		log.Printf("[server] friend remark %s -> %s: %v", claims.UID, friendUID, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok", "remark": remark})
+}
+
 // HandleFriendList 返回用户的好友和待处理请求。
 // GET /friend/list?uid=alice&token=JWT
 func (s *Server) HandleFriendList(w http.ResponseWriter, r *http.Request) {

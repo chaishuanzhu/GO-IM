@@ -43,6 +43,8 @@ func (s *testFriendStore) GetPendingRequests(context.Context, string) ([]*repo.F
 	return nil, nil
 }
 
+func (s *testFriendStore) SetRemark(context.Context, string, string, string) error { return nil }
+
 func (s *testFriendStore) GetRequestHistory(context.Context, string, int) ([]*repo.FriendRequestRecord, error) {
 	return nil, nil
 }
@@ -122,4 +124,17 @@ func TestFriendRequestStoredOfflineWhenTargetOffline(t *testing.T) {
 	if len(offline) != 1 || offline[0].Cmd != proto.CmdFriendRequest {
 		t.Fatalf("expected 1 offline friend request for bob, got %v", offline)
 	}
+}
+
+type remarkFriendStore struct {
+	*testFriendStore
+	remarks map[[2]string]string
+}
+
+func (s *remarkFriendStore) SetRemark(_ context.Context, uid, friendUID, remark string) error {
+	if friendUID != "bob" {
+		return repo.ErrNotFriends
+	}
+	s.remarks[[2]string{uid, friendUID}] = remark
+	return nil
 }

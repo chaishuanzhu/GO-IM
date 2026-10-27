@@ -13,6 +13,8 @@ var (
 	ErrEmailTaken = errors.New("email already registered")
 	// ErrUserNotFound 表示目标用户不存在。
 	ErrUserNotFound = errors.New("user not found")
+	// ErrNotFriends 表示双方不是好友。
+	ErrNotFriends = errors.New("not friends")
 )
 
 // User 表示一个已注册的用户。
@@ -21,6 +23,7 @@ type User struct {
 	Nickname     string `json:"nickname"`
 	Email        string `json:"email,omitempty"` // 空 = 未绑定（早期注册的用户）
 	AvatarFileID int64  `json:"-"`               // 0 = 未设置；对外以 avatar_url 表示
+	Signature    string `json:"signature"`       // 个性签名，空 = 未设置
 	PasswordHash string `json:"-"`
 	Role         string `json:"role"` // "user" 或 "admin"
 	IsDisabled   bool   `json:"is_disabled"`
@@ -42,7 +45,7 @@ type UserStore interface {
 	// GetUsers 批量获取用户，不存在的 UID 直接跳过。
 	GetUsers(ctx context.Context, uids []string) ([]*User, error)
 	// UpdateProfile 修改昵称和/或头像，nil 表示不修改；用户不存在返回 ErrUserNotFound。
-	UpdateProfile(ctx context.Context, uid string, nickname *string, avatarFileID *int64) error
+	UpdateProfile(ctx context.Context, uid string, nickname, signature *string, avatarFileID *int64) error
 	// SetEmail 绑定或更换邮箱；已被他人占用返回 ErrEmailTaken。
 	SetEmail(ctx context.Context, uid, email string) error
 	// SearchUsers 按 UID / 邮箱精确匹配或昵称包含匹配搜索，最多返回 limit 条。
@@ -100,6 +103,8 @@ type Friend struct {
 	Nickname     string       `json:"nickname"`
 	AvatarFileID int64        `json:"-"`
 	AvatarURL    string       `json:"avatar_url"` // 由网关按 AvatarFileID 填充
+	Signature    string       `json:"signature"`
+	Remark       string       `json:"remark"` // 当前用户给该好友的备注，空 = 未设置
 }
 
 // FriendRequest 表示一条收到的好友请求（从接收方的角度）。
@@ -140,6 +145,8 @@ type FriendStore interface {
 	GetPendingRequests(ctx context.Context, uid string) ([]*FriendRequest, error)
 	// GetRequestHistory 返回 uid 发出和收到的请求记录（含已接受 / 已拒绝），新到旧。
 	GetRequestHistory(ctx context.Context, uid string, limit int) ([]*FriendRequestRecord, error)
+	// SetRemark 设置 uid 给好友 friendUID 的备注，空串清除；不是好友返回 ErrNotFriends。
+	SetRemark(ctx context.Context, uid, friendUID, remark string) error
 }
 
 // FileStatus 表示上传文件的状态。

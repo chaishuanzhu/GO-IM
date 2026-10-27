@@ -61,6 +61,8 @@ data class FriendEntity(
     @PrimaryKey val uid: String,
     val nickname: String,
     @ColumnInfo(name = "avatar_url", defaultValue = "") val avatarUrl: String = "",
+    @ColumnInfo(defaultValue = "") val signature: String = "",
+    @ColumnInfo(defaultValue = "") val remark: String = "",
 )
 
 @Entity(tableName = "friend_requests", primaryKeys = ["from_uid", "to_uid"])
@@ -80,6 +82,7 @@ data class ProfileEntity(
     val nickname: String,
     @ColumnInfo(name = "avatar_url", defaultValue = "") val avatarUrl: String,
     @ColumnInfo(name = "fetched_at", defaultValue = "0") val fetchedAt: Long,
+    @ColumnInfo(defaultValue = "") val signature: String = "",
 )
 
 @Entity(tableName = "meta")

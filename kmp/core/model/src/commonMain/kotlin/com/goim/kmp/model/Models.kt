@@ -121,6 +121,7 @@ data class UserProfile(
     val nickname: String,
     val avatarUrl: String = "",
     val email: String = "",
+    val signature: String = "",
 ) {
     val displayName: String get() = nickname.ifBlank { uid }
 }

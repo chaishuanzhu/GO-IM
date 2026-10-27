@@ -68,11 +68,11 @@ fun Group.toEntity() = GroupEntity(groupId = groupId, name = name, ownerUid = ow
 
 fun GroupMemberEntity.toDomain() = GroupMember(groupId = groupId, uid = uid, role = role)
 
-fun FriendEntity.toDomain() = Friend(uid = uid, nickname = nickname, avatarUrl = avatarUrl)
+fun FriendEntity.toDomain() = Friend(uid = uid, nickname = nickname, avatarUrl = avatarUrl, signature = signature, remark = remark)
 
-fun Friend.toEntity() = FriendEntity(uid = uid, nickname = nickname, avatarUrl = avatarUrl)
+fun Friend.toEntity() = FriendEntity(uid = uid, nickname = nickname, avatarUrl = avatarUrl, signature = signature, remark = remark)
 
-fun ProfileEntity.toDomain() = UserProfile(uid = uid, nickname = nickname, avatarUrl = avatarUrl)
+fun ProfileEntity.toDomain() = UserProfile(uid = uid, nickname = nickname, avatarUrl = avatarUrl, signature = signature)
 
 fun FriendRequestEntity.toDomain() = FriendRequest(
     fromUid = fromUid,

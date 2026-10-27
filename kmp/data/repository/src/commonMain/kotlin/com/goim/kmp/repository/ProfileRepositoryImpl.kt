@@ -76,6 +76,12 @@ class ProfileRepositoryImpl(
         return applySelf(api.updateProfile(nickname = trimmed))
     }
 
+    override suspend fun updateSignature(signature: String): UserProfile {
+        val trimmed = signature.trim()
+        if (trimmed.length > MAX_SIGNATURE) throw DomainError.InvalidState("个性签名最多 $MAX_SIGNATURE 个字")
+        return applySelf(api.updateProfile(signature = trimmed))
+    }
+
     override suspend fun updateAvatar(bytes: ByteArray, fileName: String, mime: String): UserProfile {
         if (!mime.startsWith("image/")) throw DomainError.InvalidState("请选择图片")
         if (bytes.size > MAX_AVATAR_BYTES) throw DomainError.InvalidState("图片不能超过 ${MAX_AVATAR_BYTES / 1024 / 1024}MB")
@@ -140,11 +146,12 @@ class ProfileRepositoryImpl(
         }
     }
 
-    private fun UserProfile.toEntity() = ProfileEntity(uid, nickname, avatarUrl, nowMillis())
+    private fun UserProfile.toEntity() = ProfileEntity(uid, nickname, avatarUrl, nowMillis(), signature)
 
     private companion object {
         const val MAX_BATCH = 200
         const val MAX_NICKNAME = 32
+        const val MAX_SIGNATURE = 60
         const val MAX_AVATAR_BYTES = 10 * 1024 * 1024
         const val RETRY_MILLIS = 60_000L
     }

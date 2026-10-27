@@ -69,6 +69,8 @@ internal data class FriendRowDto(
     @SerialName("friend_uid") val friendUid: String = "",
     val nickname: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
+    val signature: String? = null,
+    val remark: String? = null,
 )
 
 @Serializable
@@ -87,6 +89,7 @@ internal data class ProfileDto(
     val nickname: String = "",
     @SerialName("avatar_url") val avatarUrl: String? = null,
     val email: String? = null,
+    val signature: String? = null,
 )
 
 @Serializable
@@ -168,7 +171,13 @@ class GoImUserApi(
         val friends = dto.friends.orEmpty().mapNotNull { row ->
             val peer = row.uid?.takeIf { it.isNotEmpty() } ?: row.friendUid
             peer.takeIf { it.isNotEmpty() && it != user.uid }?.let {
-                Friend(it, nickname = row.nickname.orEmpty().ifEmpty { it }, avatarUrl = absoluteUrl(baseUrl(), row.avatarUrl))
+                Friend(
+                    it,
+                    nickname = row.nickname.orEmpty().ifEmpty { it },
+                    avatarUrl = absoluteUrl(baseUrl(), row.avatarUrl),
+                    signature = row.signature.orEmpty(),
+                    remark = row.remark.orEmpty(),
+                )
             }
         }.distinctBy { it.uid }
         val pending = dto.pendingRequests.orEmpty().map {
@@ -210,6 +219,11 @@ class GoImUserApi(
         post("friend/remove", "friend_uid" to friendUid)
     }
 
+    /** 空串清除备注。 */
+    suspend fun setFriendRemark(friendUid: String, remark: String) {
+        post("friend/remark", "friend_uid" to friendUid, "remark" to remark)
+    }
+
     /** 自己的完整资料（含邮箱）。 */
     suspend fun myProfile(): UserProfile = get("user/profile").decode<ProfileDto>().toDomain()
 
@@ -221,9 +235,10 @@ class GoImUserApi(
     suspend fun presence(uids: Collection<String>): Set<String> =
         get("presence", "uids" to uids.joinToString(",")).decode<PresenceDto>().online.orEmpty().toSet()
 
-    /** [nickname] / [avatarFileId] 为 null 表示不修改；[avatarFileId] 为 "0" 清除头像。 */
-    suspend fun updateProfile(nickname: String? = null, avatarFileId: String? = null): UserProfile =
-        post("user/profile", "nickname" to nickname, "avatar_file_id" to avatarFileId).decode<ProfileDto>().toDomain()
+    /** 参数为 null 表示不修改；[signature] 为空串清除签名，[avatarFileId] 为 "0" 清除头像。 */
+    suspend fun updateProfile(nickname: String? = null, avatarFileId: String? = null, signature: String? = null): UserProfile =
+        post("user/profile", "nickname" to nickname, "avatar_file_id" to avatarFileId, "signature" to signature)
+            .decode<ProfileDto>().toDomain()
 
     /** 按昵称（包含）、邮箱或用户 ID（精确）搜索用户。 */
     suspend fun searchUsers(query: String, limit: Int = 20): List<UserProfile> =
@@ -241,6 +256,7 @@ class GoImUserApi(
         nickname = nickname.ifEmpty { uid },
         avatarUrl = absoluteUrl(baseUrl(), avatarUrl),
         email = email.orEmpty(),
+        signature = signature.orEmpty(),
     )
 
     suspend fun search(query: String, limit: Int): List<SearchHit> =

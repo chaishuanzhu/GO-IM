@@ -19,9 +19,19 @@ data class Friend(
     val uid: String,
     val nickname: String = uid,
     val avatarUrl: String = "",
+    val signature: String = "",
+    /** 自己给该好友的备注，空 = 未设置。 */
+    val remark: String = "",
 ) {
     val displayName: String get() = nickname.ifBlank { uid }
+
+    /** 排序 / 分组用：有备注用备注。 */
+    val sortName: String get() = remark.ifBlank { displayName }
 }
+
+/** 通讯录里的名字：有备注时为「备注(昵称)」，否则为昵称。 */
+fun friendTitle(remark: String, nickname: String): String =
+    if (remark.isBlank()) nickname else "$remark($nickname)"
 
 /** `raw` 与 iOS `FriendRequestStatus` 存库取值一致。 */
 enum class FriendRequestStatus(val raw: String) {

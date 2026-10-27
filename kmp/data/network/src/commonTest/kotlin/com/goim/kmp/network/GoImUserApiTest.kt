@@ -94,6 +94,36 @@ class GoImUserApiTest {
     }
 
     @Test
+    fun friendListCarriesSignatureAndRemark() = runTest {
+        val api = api {
+            respond(
+                """{"uid":"alice","friends":[{"uid":"bob","friend_uid":"alice","status":1,"nickname":"Bob","signature":"hi","remark":"老王"}]}""",
+                HttpStatusCode.OK,
+                jsonHeaders,
+            )
+        }
+
+        val friend = api.friendList().friends.single()
+
+        assertEquals("hi", friend.signature)
+        assertEquals("老王", friend.remark)
+        assertEquals("老王", friend.sortName)
+    }
+
+    @Test
+    fun setFriendRemarkPostsForm() = runTest {
+        val api = api { respond("""{"status":"ok","remark":"老王"}""", HttpStatusCode.OK, jsonHeaders) }
+
+        api.setFriendRemark("bob", "老王")
+
+        val req = requests.single()
+        assertEquals(HttpMethod.Post, req.method)
+        assertEquals("/friend/remark", req.url.encodedPath)
+        val form = req.form()
+        assertTrue("friend_uid=bob" in form && "remark=" in form, form)
+    }
+
+    @Test
     fun friendListNormalizesPeerAndPending() = runTest {
         val api = api {
             respond(

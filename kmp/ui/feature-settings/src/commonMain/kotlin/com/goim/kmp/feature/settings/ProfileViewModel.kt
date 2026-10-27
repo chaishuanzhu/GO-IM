@@ -64,6 +64,8 @@ class ProfileViewModel(
 
     fun updateNickname(nickname: String) = run("昵称已更新") { profiles.updateNickname(nickname) }
 
+    fun updateSignature(signature: String) = run("个性签名已更新") { profiles.updateSignature(signature) }
+
     /** 选图后先解码摆正，再进入裁剪。 */
     fun pickAvatar(bytes: ByteArray) {
         if (_busy.value) return

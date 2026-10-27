@@ -95,7 +95,7 @@ func (f *fakeUserStore) GetUsers(ctx context.Context, uids []string) ([]*repo.Us
 	return out, nil
 }
 
-func (f *fakeUserStore) UpdateProfile(_ context.Context, uid string, nickname *string, avatar *int64) error {
+func (f *fakeUserStore) UpdateProfile(_ context.Context, uid string, nickname, signature *string, avatar *int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	u, ok := f.users[uid]
@@ -104,6 +104,9 @@ func (f *fakeUserStore) UpdateProfile(_ context.Context, uid string, nickname *s
 	}
 	if nickname != nil {
 		u.Nickname = *nickname
+	}
+	if signature != nil {
+		u.Signature = *signature
 	}
 	if avatar != nil {
 		u.AvatarFileID = *avatar
@@ -566,5 +569,59 @@ func TestMemoryCodeStoreRules(t *testing.T) {
 	now = now.Add(codeCooldown)
 	if err := s.Issue(ctx, PurposeRegister, "x@example.com", "ipz", "444444"); !errors.Is(err, ErrCodeQuota) {
 		t.Fatalf("daily quota: %v", err)
+	}
+}
+
+func TestProfileSignature(t *testing.T) {
+	e := newAccountEnv(t, false)
+	ctx := context.Background()
+	e.users.Create(ctx, &repo.User{UID: "100000", Nickname: "a"})
+
+	rec := e.do(t, e.srv.HandleProfile, http.MethodPost, e.auth(t, "100000", url.Values{"signature": {strings.Repeat("签", 61)}}))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("long signature: %d", rec.Code)
+	}
+	rec = e.do(t, e.srv.HandleProfile, http.MethodPost, e.auth(t, "100000", url.Values{"signature": {"a\nb"}}))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("newline in signature: %d", rec.Code)
+	}
+
+	rec = e.do(t, e.srv.HandleProfile, http.MethodPost, e.auth(t, "100000", url.Values{"signature": {" 今天也要开心 "}}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set signature: %d %s", rec.Code, rec.Body.String())
+	}
+	if p := decode(t, rec); p["signature"] != "今天也要开心" || p["nickname"] != "a" {
+		t.Fatalf("profile = %v", p)
+	}
+
+	// 空串清除
+	rec = e.do(t, e.srv.HandleProfile, http.MethodPost, e.auth(t, "100000", url.Values{"signature": {""}}))
+	if p := decode(t, rec); rec.Code != http.StatusOK || p["signature"] != "" {
+		t.Fatalf("clear signature: %d %v", rec.Code, p)
+	}
+}
+
+func TestHandleFriendRemark(t *testing.T) {
+	e := newAccountEnv(t, false)
+	store := &remarkFriendStore{testFriendStore: newTestFriendStore(), remarks: map[[2]string]string{}}
+	e.router.SetFriendStore(store)
+	post := func(form url.Values) *httptest.ResponseRecorder {
+		return e.do(t, e.srv.HandleFriendRemark, http.MethodPost, e.auth(t, "100000", form))
+	}
+
+	if rec := post(url.Values{"friend_uid": {"bob"}, "remark": {" 老同学 "}}); rec.Code != http.StatusOK {
+		t.Fatalf("set remark: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := store.remarks[[2]string{"100000", "bob"}]; got != "老同学" {
+		t.Fatalf("stored remark = %q", got)
+	}
+	if rec := post(url.Values{"friend_uid": {"carol"}, "remark": {"x"}}); rec.Code != http.StatusNotFound {
+		t.Fatalf("non-friend: %d", rec.Code)
+	}
+	if rec := post(url.Values{"friend_uid": {"bob"}, "remark": {strings.Repeat("备", 33)}}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("long remark: %d", rec.Code)
+	}
+	if rec := post(url.Values{"remark": {"x"}}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing friend_uid: %d", rec.Code)
 	}
 }
