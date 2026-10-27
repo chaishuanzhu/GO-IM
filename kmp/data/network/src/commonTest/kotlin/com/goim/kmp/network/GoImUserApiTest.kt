@@ -3,6 +3,7 @@ package com.goim.kmp.network
 import com.goim.kmp.common.DomainError
 import com.goim.kmp.model.AdminSettings
 import com.goim.kmp.model.ChatType
+import com.goim.kmp.model.FriendRequestStatus
 import com.goim.kmp.model.Group
 import com.goim.kmp.model.MultiDevicePolicy
 import com.goim.kmp.model.User
@@ -118,10 +119,32 @@ class GoImUserApiTest {
     }
 
     @Test
+    fun friendListParsesRequestHistory() = runTest {
+        val api = api {
+            respond(
+                """{"friends":[],"pending_requests":[],"request_history":[
+                   {"from_uid":"alice","to_uid":"bob","status":1,"created_at":5,"nickname":"Bob","avatar_url":"/avatar/5"},
+                   {"from_uid":"carol","to_uid":"alice","status":2,"created_at":3,"nickname":"carol"}]}""",
+                HttpStatusCode.OK,
+                jsonHeaders,
+            )
+        }
+
+        val history = api.friendList().history.orEmpty()
+
+        assertEquals(listOf("bob", "carol"), history.map { it.peerUid("alice") })
+        assertEquals(listOf(FriendRequestStatus.ACCEPTED, FriendRequestStatus.REJECTED), history.map { it.status })
+        assertEquals("Bob", history[0].nickname)
+        assertNull(history[1].nickname)
+        assertTrue(history[0].avatarUrl.startsWith("http"))
+    }
+
+    @Test
     fun friendListToleratesNullArrays() = runTest {
         val api = api { respond("""{"uid":"alice","friends":null,"pending_requests":null}""", HttpStatusCode.OK, jsonHeaders) }
         val snapshot = api.friendList()
         assertTrue(snapshot.friends.isEmpty() && snapshot.pending.isEmpty())
+        assertNull(snapshot.history)
     }
 
     @Test

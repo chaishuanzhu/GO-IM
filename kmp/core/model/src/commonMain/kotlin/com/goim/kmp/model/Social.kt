@@ -44,6 +44,9 @@ data class FriendRequest(
     val avatarUrl: String = "",
 ) {
     val displayName: String get() = nickname?.takeIf { it.isNotBlank() } ?: fromUid
+
+    /** 请求的另一方；[nickname] / [avatarUrl] 描述的就是此人。 */
+    fun peerUid(selfUid: String): String = if (fromUid == selfUid) toUid else fromUid
 }
 
 /** 搜索命中；带会话定位信息以便跳转。 */

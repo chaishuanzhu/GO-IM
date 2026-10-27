@@ -192,6 +192,9 @@ interface FriendRepository {
     /** 发给我的待处理请求。 */
     fun observeRequests(): Flow<List<FriendRequest>>
 
+    /** 我发出和收到的请求记录（含已接受 / 已拒绝），新到旧。 */
+    fun observeRequestHistory(): Flow<List<FriendRequest>> = observeRequests()
+
     suspend fun refresh()
 
     suspend fun sendRequest(to: String)

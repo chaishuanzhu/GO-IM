@@ -456,10 +456,10 @@ paths:
   /friend/list:
     get:
       tags: [好友]
-      summary: 好友列表与待处理请求
+      summary: 好友列表与好友请求
       responses:
         "200":
-          description: 好友与收到的待处理请求
+          description: 好友、收到的待处理请求，以及最近 100 条请求记录（发出和收到，含已处理）
           content:
             application/json:
               schema:
@@ -472,6 +472,10 @@ paths:
                   pending_requests:
                     type: array
                     items: { $ref: "#/components/schemas/FriendRequest" }
+                  request_history:
+                    type: array
+                    description: 新到旧；同一方向的同一对用户只保留最近一条，删除好友后记录仍保留
+                    items: { $ref: "#/components/schemas/FriendRequestRecord" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "503": { $ref: "#/components/responses/Unavailable" }
@@ -1509,6 +1513,17 @@ components:
         nickname: { type: string }
         created_at: { type: integer, format: int64 }
         avatar_url: { type: string }
+
+    FriendRequestRecord:
+      type: object
+      properties:
+        from_uid: { type: string }
+        to_uid: { type: string }
+        status: { type: integer, description: "0 待处理，1 已接受，2 已拒绝" }
+        created_at: { type: integer, format: int64 }
+        updated_at: { type: integer, format: int64 }
+        nickname: { type: string, description: 对方昵称 }
+        avatar_url: { type: string, description: 对方头像 }
 
     GroupSummary:
       type: object

@@ -222,7 +222,20 @@ func (s *MySQLStore) migrate() error {
 			updated_at BIGINT       NOT NULL
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
 
-	for _, ddl := range []string{userTable, uidSeqTable, msgTable, groupTable, groupMembersTable, unreadTable, friendsTable, filesTable, fileRefsTable, settingsTable} {
+	// 好友请求记录：每次发起一行，处理后更新状态；删除好友不影响，供「新的朋友」展示历史。
+	friendRequestsTable := `
+		CREATE TABLE IF NOT EXISTS friend_requests (
+			id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+			from_uid   VARCHAR(64) NOT NULL,
+			to_uid     VARCHAR(64) NOT NULL,
+			status     TINYINT     NOT NULL DEFAULT 0,
+			created_at BIGINT      NOT NULL,
+			updated_at BIGINT      NOT NULL,
+			INDEX idx_from (from_uid, created_at),
+			INDEX idx_to (to_uid, created_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
+
+	for _, ddl := range []string{userTable, uidSeqTable, msgTable, groupTable, groupMembersTable, unreadTable, friendsTable, friendRequestsTable, filesTable, fileRefsTable, settingsTable} {
 		if _, err := s.db.Exec(ddl); err != nil {
 			return fmt.Errorf("exec ddl: %w", err)
 		}
@@ -268,6 +281,14 @@ func (s *MySQLStore) migrate() error {
 		} else {
 			log.Printf("[mysql] WARNING: is_disabled column migration failed: %v", err)
 		}
+	}
+
+	// 记录表为空时（首次升级）用现有好友关系 / 请求回填。
+	if _, err := s.db.Exec(`
+		INSERT INTO friend_requests (from_uid, to_uid, status, created_at, updated_at)
+		SELECT uid, friend_uid, status, created_at, updated_at FROM friends
+		WHERE NOT EXISTS (SELECT 1 FROM friend_requests)`); err != nil {
+		log.Printf("[mysql] WARNING: friend request backfill failed: %v", err)
 	}
 
 	return s.migrateProfile()
@@ -913,39 +934,52 @@ func (s *MySQLStore) SendRequest(ctx context.Context, fromUID, toUID string) err
 		}
 		return fmt.Errorf("insert friend request: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO friend_requests (from_uid, to_uid, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		fromUID, toUID, FriendStatusPending, now, now,
+	); err != nil {
+		return fmt.Errorf("record friend request: %w", err)
+	}
 	return tx.Commit()
 }
 
 // AcceptRequest 接受一条待处理的好友请求。
 func (s *MySQLStore) AcceptRequest(ctx context.Context, uid, fromUID string) error {
-	result, err := s.db.ExecContext(ctx,
-		`UPDATE friends SET status = ?, updated_at = ? WHERE uid = ? AND friend_uid = ? AND status = ?`,
-		FriendStatusAccepted, timeNow(), fromUID, uid, FriendStatusPending,
-	)
-	if err != nil {
-		return fmt.Errorf("accept friend request: %w", err)
-	}
-	n, _ := result.RowsAffected()
-	if n == 0 {
-		return fmt.Errorf("no pending friend request from %s to %s", fromUID, uid)
-	}
-	return nil
+	return s.resolveRequest(ctx, uid, fromUID, FriendStatusAccepted)
 }
 
 // RejectRequest 拒绝一条待处理的好友请求。
 func (s *MySQLStore) RejectRequest(ctx context.Context, uid, fromUID string) error {
-	result, err := s.db.ExecContext(ctx,
+	return s.resolveRequest(ctx, uid, fromUID, FriendStatusRejected)
+}
+
+// resolveRequest 把 fromUID → uid 的待处理请求改为 status，并同步最近一条请求记录。
+func (s *MySQLStore) resolveRequest(ctx context.Context, uid, fromUID string, status FriendStatus) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin friend response: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := timeNow()
+	result, err := tx.ExecContext(ctx,
 		`UPDATE friends SET status = ?, updated_at = ? WHERE uid = ? AND friend_uid = ? AND status = ?`,
-		FriendStatusRejected, timeNow(), fromUID, uid, FriendStatusPending,
+		status, now, fromUID, uid, FriendStatusPending,
 	)
 	if err != nil {
-		return fmt.Errorf("reject friend request: %w", err)
+		return fmt.Errorf("respond friend request: %w", err)
 	}
-	n, _ := result.RowsAffected()
-	if n == 0 {
+	if n, _ := result.RowsAffected(); n == 0 {
 		return fmt.Errorf("no pending friend request from %s to %s", fromUID, uid)
 	}
-	return nil
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE friend_requests SET status = ?, updated_at = ?
+		 WHERE from_uid = ? AND to_uid = ? AND status = ? ORDER BY id DESC LIMIT 1`,
+		status, now, fromUID, uid, FriendStatusPending,
+	); err != nil {
+		return fmt.Errorf("record friend response: %w", err)
+	}
+	return tx.Commit()
 }
 
 // RemoveFriend 移除一条好友关系（任意方向）。
@@ -1021,6 +1055,40 @@ func (s *MySQLStore) GetPendingRequests(ctx context.Context, uid string) ([]*Fri
 		requests = append(requests, req)
 	}
 	return requests, rows.Err()
+}
+
+// GetRequestHistory 返回 uid 发出和收到的好友请求记录（新到旧），每个方向的同一对用户只取最近一条。
+func (s *MySQLStore) GetRequestHistory(ctx context.Context, uid string, limit int) ([]*FriendRequestRecord, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT r.from_uid, r.to_uid, r.status, r.created_at, r.updated_at,
+		        COALESCE(u.nickname, IF(r.from_uid = ?, r.to_uid, r.from_uid)), COALESCE(u.avatar_file_id, 0)
+		 FROM friend_requests r
+		 JOIN (SELECT MAX(id) AS id FROM friend_requests WHERE from_uid = ? OR to_uid = ? GROUP BY from_uid, to_uid) latest
+		   ON latest.id = r.id
+		 LEFT JOIN users u ON u.uid = IF(r.from_uid = ?, r.to_uid, r.from_uid)
+		 ORDER BY r.created_at DESC, r.id DESC
+		 LIMIT ?`,
+		uid, uid, uid, uid, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get request history: %w", err)
+	}
+	defer rows.Close()
+
+	records := make([]*FriendRequestRecord, 0)
+	for rows.Next() {
+		rec := &FriendRequestRecord{}
+		var status int32
+		if err := rows.Scan(&rec.FromUID, &rec.ToUID, &status, &rec.CreatedAt, &rec.UpdatedAt, &rec.Nickname, &rec.AvatarFileID); err != nil {
+			return nil, fmt.Errorf("scan request record: %w", err)
+		}
+		rec.Status = FriendStatus(status)
+		records = append(records, rec)
+	}
+	return records, rows.Err()
 }
 
 // ---------- 管理员 UserStore 方法 ----------

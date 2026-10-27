@@ -111,6 +111,18 @@ type FriendRequest struct {
 	AvatarURL    string `json:"avatar_url"` // 由网关按 AvatarFileID 填充
 }
 
+// FriendRequestRecord 是一条好友请求记录（发出或收到，含已处理的）；Nickname / Avatar 是对方的。
+type FriendRequestRecord struct {
+	FromUID      string       `json:"from_uid"`
+	ToUID        string       `json:"to_uid"`
+	Status       FriendStatus `json:"status"`
+	CreatedAt    int64        `json:"created_at"` // 毫秒级 Unix 时间戳
+	UpdatedAt    int64        `json:"updated_at"`
+	Nickname     string       `json:"nickname"`
+	AvatarFileID int64        `json:"-"`
+	AvatarURL    string       `json:"avatar_url"` // 由网关按 AvatarFileID 填充
+}
+
 // FriendStore 管理好友关系与请求。
 type FriendStore interface {
 	// SendRequest 发送一条从 fromUID 到 toUID 的好友请求。
@@ -126,6 +138,8 @@ type FriendStore interface {
 	GetFriends(ctx context.Context, uid string) ([]*Friend, error)
 	// GetPendingRequests 返回一个用户收到的所有待处理好友请求。
 	GetPendingRequests(ctx context.Context, uid string) ([]*FriendRequest, error)
+	// GetRequestHistory 返回 uid 发出和收到的请求记录（含已接受 / 已拒绝），新到旧。
+	GetRequestHistory(ctx context.Context, uid string, limit int) ([]*FriendRequestRecord, error)
 }
 
 // FileStatus 表示上传文件的状态。

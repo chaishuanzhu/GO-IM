@@ -14,6 +14,7 @@ import com.goim.kmp.model.ConversationId
 import com.goim.kmp.model.EmailCodePurpose
 import com.goim.kmp.model.Friend
 import com.goim.kmp.model.FriendRequest
+import com.goim.kmp.model.FriendRequestStatus
 import com.goim.kmp.model.Group
 import com.goim.kmp.model.MultiDevicePolicy
 import com.goim.kmp.model.SearchHit
@@ -95,6 +96,18 @@ internal data class ProfileListDto(val users: List<ProfileDto>? = null)
 internal data class FriendListDto(
     val friends: List<FriendRowDto>? = null,
     @SerialName("pending_requests") val pendingRequests: List<PendingRequestDto>? = null,
+    @SerialName("request_history") val requestHistory: List<RequestRecordDto>? = null,
+)
+
+/** 好友请求记录；`nickname` / `avatar_url` 是对方的，`status` 0 待处理 / 1 已接受 / 2 已拒绝。 */
+@Serializable
+internal data class RequestRecordDto(
+    @SerialName("from_uid") val fromUid: String,
+    @SerialName("to_uid") val toUid: String,
+    val status: Int = 0,
+    @SerialName("created_at") val createdAt: Long = 0,
+    val nickname: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
 )
 
 /** `proto.Message` 的 encoding/json 输出：字段均 omitempty，`msg_id` 为数字。 */
@@ -114,7 +127,12 @@ internal data class SearchResponseDto(val messages: List<SearchMessageDto>? = nu
 @Serializable
 internal data class PresenceDto(val online: List<String>? = null)
 
-data class FriendSnapshot(val friends: List<Friend>, val pending: List<FriendRequest>)
+/** [history] 为 null 表示网关不返回请求记录（旧版本）。 */
+data class FriendSnapshot(
+    val friends: List<Friend>,
+    val pending: List<FriendRequest>,
+    val history: List<FriendRequest>? = null,
+)
 
 /** 已登录用户的 REST 接口：每个请求带 `uid` + `token`（网关 `authenticateRequest`）。 */
 class GoImUserApi(
@@ -162,7 +180,22 @@ class GoImUserApi(
                 avatarUrl = absoluteUrl(baseUrl(), it.avatarUrl),
             )
         }
-        return FriendSnapshot(friends, pending)
+        val history = dto.requestHistory?.map {
+            val peer = if (it.fromUid == user.uid) it.toUid else it.fromUid
+            FriendRequest(
+                fromUid = it.fromUid,
+                toUid = it.toUid,
+                status = when (it.status) {
+                    1 -> FriendRequestStatus.ACCEPTED
+                    2 -> FriendRequestStatus.REJECTED
+                    else -> FriendRequestStatus.PENDING
+                },
+                createdAt = it.createdAt,
+                nickname = it.nickname?.takeIf { name -> name.isNotEmpty() && name != peer },
+                avatarUrl = absoluteUrl(baseUrl(), it.avatarUrl),
+            )
+        }
+        return FriendSnapshot(friends, pending, history)
     }
 
     suspend fun sendFriendRequest(toUid: String) {

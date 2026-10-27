@@ -1,6 +1,7 @@
 package com.goim.kmp.repository
 
 import com.goim.kmp.common.DomainError
+import com.goim.kmp.common.nowMillis
 import com.goim.kmp.database.AppDatabase
 import com.goim.kmp.database.GroupMemberEntity
 import com.goim.kmp.database.toDomain
@@ -18,6 +19,7 @@ import com.goim.kmp.model.Conversation
 import com.goim.kmp.model.ConversationId
 import com.goim.kmp.model.Friend
 import com.goim.kmp.model.FriendRequest
+import com.goim.kmp.model.FriendRequestStatus
 import com.goim.kmp.model.Group
 import com.goim.kmp.model.GroupMember
 import com.goim.kmp.model.SearchHit
@@ -111,18 +113,30 @@ class FriendRepositoryImpl(
     override fun observeRequests(): Flow<List<FriendRequest>> =
         dao.observePending(selfUid).map { rows -> rows.map { it.toDomain() } }
 
+    override fun observeRequestHistory(): Flow<List<FriendRequest>> =
+        dao.observeHistory(selfUid).map { rows -> rows.map { it.toDomain() } }
+
     override suspend fun refresh() {
         val snapshot = api.friendList()
+        val friends = snapshot.friends.map { it.toEntity() }
+        val pending = snapshot.pending.map { it.toEntity() }
         persist {
-            dao.replace(
-                friends = snapshot.friends.map { it.toEntity() },
-                toUid = selfUid,
-                pending = snapshot.pending.map { it.toEntity() },
-            )
+            val history = snapshot.history
+            if (history != null) {
+                dao.replaceWithHistory(friends, selfUid, history.map { it.toEntity() }, pending)
+            } else {
+                dao.replace(friends = friends, toUid = selfUid, pending = pending)
+            }
         }
     }
 
     override suspend fun sendRequest(to: String) {
+        deliverRequest(to)
+        val record = FriendRequest(fromUid = selfUid, toUid = to.trim(), createdAt = nowMillis())
+        persist { dao.upsertRequests(listOf(record.toEntity())) }
+    }
+
+    private suspend fun deliverRequest(to: String) {
         val target = to.trim()
         if (target.isEmpty()) throw DomainError.InvalidState("请输入用户 ID")
         if (target == selfUid) throw DomainError.InvalidState("不能添加自己为好友")
@@ -184,7 +198,8 @@ class FriendRepositoryImpl(
 
     private suspend fun applyResponse(fromUid: String, accept: Boolean) {
         persist {
-            dao.deleteRequest(fromUid, selfUid)
+            val status = if (accept) FriendRequestStatus.ACCEPTED else FriendRequestStatus.REJECTED
+            dao.setRequestStatus(fromUid, selfUid, status.raw)
             if (accept) dao.upsertFriends(listOf(Friend(fromUid).toEntity()))
         }
     }

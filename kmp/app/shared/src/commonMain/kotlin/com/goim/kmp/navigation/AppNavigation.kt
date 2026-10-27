@@ -413,7 +413,7 @@ private fun MainNavContent(session: UserSession) {
                 )
             }
             composable<NewFriendsRoute> {
-                val vm = viewModel { NewFriendsViewModel(session.friends) }
+                val vm = viewModel { NewFriendsViewModel(session.friends, session.user.uid) }
                 NewFriendsScreen(vm, onAddFriend = { nav.navigate(AddFriendRoute) }, onBack = { nav.popBackStack() })
             }
             composable<AddFriendRoute> {
@@ -644,7 +644,7 @@ private fun ContactDetailPane(
 ) {
     when (detail) {
         ContactDetail.NewFriends -> {
-            val vm = viewModel { NewFriendsViewModel(session.friends) }
+            val vm = viewModel { NewFriendsViewModel(session.friends, session.user.uid) }
             NewFriendsScreen(
                 vm,
                 onAddFriend = { onOpenDialog(ContactDialog.ADD_FRIEND) },

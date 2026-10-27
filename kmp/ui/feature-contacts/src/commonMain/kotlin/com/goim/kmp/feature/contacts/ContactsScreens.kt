@@ -99,6 +99,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.Surface
 import com.goim.kmp.model.Friend
 import com.goim.kmp.model.FriendRequest
+import com.goim.kmp.model.FriendRequestStatus
 import com.goim.kmp.model.UserProfile
 import com.goim.kmp.model.Group
 import com.goim.kmp.designsystem.GoImTextField
@@ -259,7 +260,7 @@ fun NewFriendsScreen(
     onBack: () -> Unit,
     presentation: Presentation = Presentation.Page,
 ) {
-    val requests by viewModel.requests.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     MessageSnackbar(viewModel, snackbar)
@@ -288,7 +289,7 @@ fun NewFriendsScreen(
                 )
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = GoImSpacing.s4))
             }
-            if (requests.isEmpty()) {
+            if (state.pending.isEmpty() && state.history.isEmpty()) {
                 item {
                     EmptyState(
                         GoImIcons.PersonAdd,
@@ -297,15 +298,22 @@ fun NewFriendsScreen(
                         Modifier.padding(top = GoImSpacing.s6),
                     )
                 }
-            } else {
-                item { SectionHeader("好友请求 · ${requests.size}") }
-                items(requests, key = { it.fromUid }) { request ->
+            }
+            if (state.pending.isNotEmpty()) {
+                item { SectionHeader("好友请求 · ${state.pending.size}") }
+                items(state.pending, key = { "pending-${it.fromUid}" }) { request ->
                     FriendRequestItem(
                         request,
                         enabled = !busy,
                         onDecline = { viewModel.respond(request, accept = false) },
                         onAccept = { viewModel.respond(request, accept = true) },
                     )
+                }
+            }
+            if (state.history.isNotEmpty()) {
+                item { SectionHeader("历史记录") }
+                items(state.history, key = { "record-${it.fromUid}-${it.toUid}" }) { record ->
+                    FriendRequestRecordItem(record, viewModel.selfUid)
                 }
             }
         }
@@ -366,6 +374,35 @@ private fun FriendRequestItem(request: FriendRequest, enabled: Boolean, onDeclin
             }
         }
     }
+}
+
+@Composable
+private fun FriendRequestRecordItem(record: FriendRequest, selfUid: String) {
+    val peer = record.peerUid(selfUid)
+    val outgoing = record.fromUid == selfUid
+    val name = rememberDisplayName(peer, record.nickname ?: peer)
+    val status = when (record.status) {
+        FriendRequestStatus.ACCEPTED -> "已添加"
+        FriendRequestStatus.REJECTED -> if (outgoing) "对方已拒绝" else "已拒绝"
+        FriendRequestStatus.PENDING -> "等待验证"
+    }
+    ListItem(
+        headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = {
+            Text(
+                buildString {
+                    append(if (outgoing) "你请求添加对方为好友" else "请求添加你为好友")
+                    if (record.createdAt > 0) append(" · ").append(GoImFormat.conversationTime(record.createdAt))
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        leadingContent = { UserAvatar(peer, name, size = GoImSize.avatarMd, avatarUrl = record.avatarUrl.ifEmpty { null }) },
+        trailingContent = {
+            Text(status, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

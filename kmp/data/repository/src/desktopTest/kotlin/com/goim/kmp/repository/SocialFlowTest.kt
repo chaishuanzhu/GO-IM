@@ -10,6 +10,7 @@ import com.goim.kmp.domain.OutboundEnvelope
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.ConnectionState
 import com.goim.kmp.model.ConversationId
+import com.goim.kmp.model.FriendRequestStatus
 import com.goim.kmp.model.Message
 import com.goim.kmp.model.MessageStatus
 import com.goim.kmp.model.MsgType
@@ -160,6 +161,35 @@ class SocialFlowTest {
         assertTrue(friends.observeRequests().first().isEmpty())
         assertEquals(listOf("bob"), friends.observeFriends().first().map { it.uid })
         pumps.cancel()
+    }
+
+    @Test
+    fun requestHistoryKeepsHandledAndSentRecords() = runBlocking<Unit> {
+        val friends = FriendRepositoryImpl(api, db, FakeConnection(connected = false), me.uid)
+        routes = mapOf(
+            "/friend/list" to (
+                HttpStatusCode.OK to
+                    """{"friends":[],"pending_requests":[{"from_uid":"bob","created_at":9}],"request_history":[
+                       {"from_uid":"bob","to_uid":"alice","status":0,"created_at":9},
+                       {"from_uid":"alice","to_uid":"carol","status":1,"created_at":5}]}"""
+                ),
+            "/friend/reject" to (HttpStatusCode.OK to """{"status":"ok"}"""),
+            "/friend/request" to (HttpStatusCode.OK to """{"status":"ok"}"""),
+        )
+        friends.refresh()
+        assertEquals(listOf("bob"), friends.observeRequests().first().map { it.fromUid })
+        assertEquals(2, friends.observeRequestHistory().first().size)
+
+        // 拒绝后从待处理移除，但记录保留并标为已拒绝；新发出的请求也记一条
+        routes = routes - "/friend/list"
+        friends.respond("bob", accept = false)
+        friends.sendRequest("dave")
+        assertTrue(friends.observeRequests().first().isEmpty())
+        val history = friends.observeRequestHistory().first().associateBy { it.peerUid(me.uid) }
+        assertEquals(setOf("bob", "carol", "dave"), history.keys)
+        assertEquals(FriendRequestStatus.REJECTED, history.getValue("bob").status)
+        assertEquals(FriendRequestStatus.ACCEPTED, history.getValue("carol").status)
+        assertEquals(FriendRequestStatus.PENDING, history.getValue("dave").status)
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.goim.kmp.domain.GroupRepository
 import com.goim.kmp.domain.ProfileRepository
 import com.goim.kmp.model.Friend
 import com.goim.kmp.model.FriendRequest
+import com.goim.kmp.model.FriendRequestStatus
 import com.goim.kmp.model.Group
 import com.goim.kmp.model.GroupMember
 import com.goim.kmp.model.UserProfile
@@ -92,10 +93,20 @@ class ContactsViewModel(private val friends: FriendRepository) : ActionViewModel
     }
 }
 
-class NewFriendsViewModel(private val friends: FriendRepository) : ActionViewModel() {
-    val requests: StateFlow<List<FriendRequest>> = friends.observeRequests()
-        .catch { emit(emptyList()) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+/** [pending]：发给我、待处理的请求；[history]：其余记录（我发出的、已处理的）。 */
+data class NewFriendsUiState(
+    val pending: List<FriendRequest> = emptyList(),
+    val history: List<FriendRequest> = emptyList(),
+)
+
+class NewFriendsViewModel(private val friends: FriendRepository, val selfUid: String) : ActionViewModel() {
+    val state: StateFlow<NewFriendsUiState> = friends.observeRequestHistory()
+        .map { records ->
+            val (pending, history) = records.partition { it.status == FriendRequestStatus.PENDING && it.toUid == selfUid }
+            NewFriendsUiState(pending, history)
+        }
+        .catch { emit(NewFriendsUiState()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NewFriendsUiState())
 
     init {
         action(block = { friends.refresh() })

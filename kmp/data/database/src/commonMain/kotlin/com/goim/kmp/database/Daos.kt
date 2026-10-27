@@ -230,6 +230,15 @@ abstract class FriendDao {
     @Query("SELECT * FROM friend_requests WHERE to_uid = :toUid AND status = 'pending'")
     abstract suspend fun pending(toUid: String): List<FriendRequestEntity>
 
+    @Query("SELECT * FROM friend_requests WHERE from_uid = :uid OR to_uid = :uid ORDER BY created_at DESC")
+    abstract fun observeHistory(uid: String): Flow<List<FriendRequestEntity>>
+
+    @Query("UPDATE friend_requests SET status = :status WHERE from_uid = :fromUid AND to_uid = :toUid")
+    abstract suspend fun setRequestStatus(fromUid: String, toUid: String, status: String)
+
+    @Query("DELETE FROM friend_requests WHERE from_uid = :uid OR to_uid = :uid")
+    protected abstract suspend fun deleteRequestsOf(uid: String)
+
     @Query("DELETE FROM friends")
     protected abstract suspend fun deleteFriends()
 
@@ -253,6 +262,21 @@ abstract class FriendDao {
         deleteFriends()
         upsertFriends(friends)
         deletePending(toUid)
+        upsertRequests(pending)
+    }
+
+    /** 以服务端记录为准整体替换；[pending] 最后写入，记录条数受限时待处理请求也不会丢。 */
+    @Transaction
+    open suspend fun replaceWithHistory(
+        friends: List<FriendEntity>,
+        uid: String,
+        history: List<FriendRequestEntity>,
+        pending: List<FriendRequestEntity>,
+    ) {
+        deleteFriends()
+        upsertFriends(friends)
+        deleteRequestsOf(uid)
+        upsertRequests(history)
         upsertRequests(pending)
     }
 }

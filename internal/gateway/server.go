@@ -912,16 +912,27 @@ func (s *Server) HandleFriendList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	history, err := s.router.friendStore.GetRequestHistory(r.Context(), claims.UID, 100)
+	if err != nil {
+		log.Printf("[server] request history error for %s: %v", claims.UID, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
 	for _, f := range friends {
 		f.AvatarURL = avatarURL(f.AvatarFileID)
 	}
 	for _, req := range requests {
 		req.AvatarURL = avatarURL(req.AvatarFileID)
 	}
+	for _, rec := range history {
+		rec.AvatarURL = avatarURL(rec.AvatarFileID)
+	}
 	data, _ := json.Marshal(map[string]interface{}{
 		"uid":              claims.UID,
 		"friends":          friends,
 		"pending_requests": requests,
+		"request_history":  history,
 	})
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data)

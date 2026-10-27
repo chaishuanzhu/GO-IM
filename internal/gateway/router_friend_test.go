@@ -43,6 +43,10 @@ func (s *testFriendStore) GetPendingRequests(context.Context, string) ([]*repo.F
 	return nil, nil
 }
 
+func (s *testFriendStore) GetRequestHistory(context.Context, string, int) ([]*repo.FriendRequestRecord, error) {
+	return nil, nil
+}
+
 func newFriendRouter(t *testing.T) (*Router, *Hub) {
 	t.Helper()
 	h := NewHub(100)
