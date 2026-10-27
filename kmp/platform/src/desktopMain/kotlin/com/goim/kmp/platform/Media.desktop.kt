@@ -39,6 +39,27 @@ actual object ImageCodec {
             drawImage(source, 0, 0, w, h, null)
             dispose()
         }
+        writeJpeg(target, quality)
+    }.getOrNull()
+
+    actual fun cropSquareJpeg(bytes: ByteArray, left: Int, top: Int, size: Int, outSize: Int, quality: Float): EncodedImage? = runCatching {
+        val source = ImageIO.read(ByteArrayInputStream(bytes)) ?: return null
+        val side = size.coerceIn(1, minOf(source.width, source.height))
+        val x = left.coerceIn(0, source.width - side)
+        val y = top.coerceIn(0, source.height - side)
+        val target = BufferedImage(outSize, outSize, BufferedImage.TYPE_INT_RGB)
+        target.createGraphics().apply {
+            setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+            setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+            color = Color.WHITE
+            fillRect(0, 0, outSize, outSize)
+            drawImage(source, 0, 0, outSize, outSize, x, y, x + side, y + side, null)
+            dispose()
+        }
+        writeJpeg(target, quality)
+    }.getOrNull()
+
+    private fun writeJpeg(target: BufferedImage, quality: Float): EncodedImage {
         val writer = ImageIO.getImageWritersByFormatName("jpeg").next()
         val out = ByteArrayOutputStream()
         ImageIO.createImageOutputStream(out).use { stream ->
@@ -50,8 +71,8 @@ actual object ImageCodec {
             writer.write(null, IIOImage(target, null, null), param)
             writer.dispose()
         }
-        EncodedImage(out.toByteArray(), w, h)
-    }.getOrNull()
+        return EncodedImage(out.toByteArray(), target.width, target.height)
+    }
 }
 
 actual fun createVoiceRecorder(context: PlatformContext): VoiceRecorder = WavVoiceRecorder()

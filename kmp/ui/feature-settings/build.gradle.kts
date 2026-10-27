@@ -7,6 +7,8 @@ kotlin {
         commonMain.dependencies {
             implementation(projects.core.domain)
             implementation(projects.ui.designsystem)
+            implementation(projects.platform)
+            implementation(libs.coil.compose)
             implementation(libs.androidx.lifecycle.viewmodel.compose)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(libs.filekit.dialogs.compose)

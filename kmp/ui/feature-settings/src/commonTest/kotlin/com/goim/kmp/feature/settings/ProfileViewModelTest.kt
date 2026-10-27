@@ -2,6 +2,8 @@ package com.goim.kmp.feature.settings
 
 import com.goim.kmp.domain.ProfileRepository
 import com.goim.kmp.model.UserProfile
+import com.goim.kmp.platform.EncodedImage
+import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -72,10 +74,40 @@ class ProfileViewModelTest {
         assertNotNull(vm.message.value)
         assertEquals("Alice W", vm.profile.value.nickname)
 
-        vm.updateAvatar(byteArrayOf(1), "me.PNG")
+    }
+
+    @Test
+    fun avatarIsCroppedBeforeUpload() = runTest(dispatcher) {
+        val profiles = FakeProfiles()
+        val crops = mutableListOf<CropSquare>()
+        val vm = ProfileViewModel(
+            profiles,
+            imageDispatcher = dispatcher,
+            normalize = { bytes -> if (bytes.isEmpty()) null else EncodedImage(bytes, 400, 300) },
+            crop = { _, square -> crops += square; byteArrayOf(9) },
+        )
+
+        vm.pickAvatar(ByteArray(0))
         advanceUntilIdle()
-        assertEquals("me.PNG" to "image/png", profiles.avatars.single())
-        assertEquals("/avatar/1", vm.profile.value.avatarUrl)
+        assertNull(vm.cropSource.value)
+        assertEquals("无法读取这张图片", vm.message.value)
+
+        vm.pickAvatar(byteArrayOf(1))
+        advanceUntilIdle()
+        assertEquals(400, vm.cropSource.value?.width)
+
+        vm.cancelCrop()
+        assertNull(vm.cropSource.value)
+        assertTrue(profiles.avatars.isEmpty())
+
+        vm.pickAvatar(byteArrayOf(1))
+        advanceUntilIdle()
+        vm.confirmCrop(CropSquare(50, 0, 300))
+        advanceUntilIdle()
+        assertNull(vm.cropSource.value)
+        assertEquals(listOf(CropSquare(50, 0, 300)), crops)
+        assertEquals("avatar.jpg" to "image/jpeg", profiles.avatars.single())
+        assertEquals("头像已更新", vm.message.value)
         assertFalse(vm.busy.value)
     }
 
@@ -108,9 +140,22 @@ class ProfileViewModelTest {
     }
 
     @Test
-    fun imageMimeFromName() {
-        assertEquals("image/jpeg", ProfileViewModel.imageMime("x.jpg"))
-        assertEquals("image/webp", ProfileViewModel.imageMime("x.WEBP"))
-        assertEquals("image/jpeg", ProfileViewModel.imageMime("noext"))
+    fun cropStateCoversFrameAndMapsToImagePixels() {
+        // 400×300 的图，取景框 150px：缩放 1 时短边 300 → 150，即 0.5 倍
+        val crop = AvatarCropState(400, 300, 150f)
+        assertEquals(CropSquare(50, 0, 300), crop.result())
+
+        // 拖不出边界：水平最多移动 (400×0.5 − 150) / 2 = 25px
+        crop.transform(Offset(1_000f, 1_000f), 1f)
+        assertEquals(Offset(25f, 0f), crop.offset)
+        assertEquals(CropSquare(0, 0, 300), crop.result())
+
+        // 放大 2 倍：取景框对应原图 150px
+        crop.transform(Offset.Zero, 2f)
+        assertEquals(150, crop.result().size)
+        crop.transform(Offset.Zero, 100f)
+        assertEquals(AvatarCropState.MAX_ZOOM, crop.zoom)
+        crop.transform(Offset.Zero, 0.01f)
+        assertEquals(1f, crop.zoom)
     }
 }

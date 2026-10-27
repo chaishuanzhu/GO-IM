@@ -89,6 +89,30 @@ actual object ImageCodec {
         val data = UIImageJPEGRepresentation(rendered, quality.toDouble()) ?: return@autoreleasepool null
         EncodedImage(data.toByteArray(), tw.toInt(), th.toInt())
     }
+
+    actual fun cropSquareJpeg(bytes: ByteArray, left: Int, top: Int, size: Int, outSize: Int, quality: Float): EncodedImage? =
+        autoreleasepool {
+            val image = UIImage.imageWithData(bytes.toNSData()) ?: return@autoreleasepool null
+            val (w, h) = image.size.useContents { width * image.scale to height * image.scale }
+            if (w <= 0 || h <= 0) return@autoreleasepool null
+            val side = size.toDouble().coerceIn(1.0, minOf(w, h))
+            val x = left.toDouble().coerceIn(0.0, w - side)
+            val y = top.toDouble().coerceIn(0.0, h - side)
+            val k = outSize / side
+            val target = outSize.toDouble()
+            val format = UIGraphicsImageRendererFormat.defaultFormat().apply {
+                setScale(1.0)
+                setOpaque(true)
+            }
+            val renderer = UIGraphicsImageRenderer(size = CGSizeMake(target, target), format = format)
+            val rendered = renderer.imageWithActions { _ ->
+                UIColor.whiteColor.setFill()
+                UIRectFill(CGRectMake(0.0, 0.0, target, target))
+                image.drawInRect(CGRectMake(-x * k, -y * k, w * k, h * k))
+            }
+            val data = UIImageJPEGRepresentation(rendered, quality.toDouble()) ?: return@autoreleasepool null
+            EncodedImage(data.toByteArray(), outSize, outSize)
+        }
 }
 
 private class IosVoiceRecorder : VoiceRecorder {

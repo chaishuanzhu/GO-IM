@@ -52,7 +52,6 @@ import com.goim.kmp.designsystem.GoImSpacing
 import com.goim.kmp.designsystem.GoImSize
 import io.github.vinceglb.filekit.dialogs.FileKitType
 import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
-import io.github.vinceglb.filekit.name
 import io.github.vinceglb.filekit.readBytes
 import kotlinx.coroutines.launch
 import com.goim.kmp.designsystem.GoImTextField
@@ -78,8 +77,9 @@ fun ProfileScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
     }
 
     val picker = rememberFilePickerLauncher(type = FileKitType.Image) { file ->
-        if (file != null) scope.launch { viewModel.updateAvatar(file.readBytes(), file.name) }
+        if (file != null) scope.launch { viewModel.pickAvatar(file.readBytes()) }
     }
+    val cropSource by viewModel.cropSource.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -156,6 +156,9 @@ fun ProfileScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
     }
     if (bindEmail) {
         BindEmailDialog(viewModel, current = profile.email, onDismiss = { bindEmail = false })
+    }
+    cropSource?.let { image ->
+        AvatarCropDialog(image, onCancel = viewModel::cancelCrop, onConfirm = viewModel::confirmCrop)
     }
 }
 

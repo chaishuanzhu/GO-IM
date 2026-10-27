@@ -61,6 +61,28 @@ actual object ImageCodec {
         result
     }.getOrNull()
 
+    actual fun cropSquareJpeg(bytes: ByteArray, left: Int, top: Int, size: Int, outSize: Int, quality: Float): EncodedImage? = runCatching {
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+        val side = size.coerceIn(1, minOf(decoded.width, decoded.height))
+        val x = left.coerceIn(0, decoded.width - side)
+        val y = top.coerceIn(0, decoded.height - side)
+        val out = Bitmap.createBitmap(outSize, outSize, Bitmap.Config.ARGB_8888)
+        Canvas(out).apply {
+            drawColor(Color.WHITE)
+            drawBitmap(
+                decoded,
+                android.graphics.Rect(x, y, x + side, y + side),
+                android.graphics.Rect(0, 0, outSize, outSize),
+                Paint(Paint.FILTER_BITMAP_FLAG),
+            )
+        }
+        val stream = ByteArrayOutputStream()
+        out.compress(Bitmap.CompressFormat.JPEG, (quality * 100).roundToInt().coerceIn(1, 100), stream)
+        decoded.recycle()
+        out.recycle()
+        EncodedImage(stream.toByteArray(), outSize, outSize)
+    }.getOrNull()
+
     private fun bounds(bytes: ByteArray): Pair<Int, Int>? {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)

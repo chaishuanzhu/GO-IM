@@ -2,16 +2,22 @@ package com.goim.kmp.feature.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.goim.kmp.common.DomainError
 import com.goim.kmp.common.userMessage
 import com.goim.kmp.domain.ProfileRepository
 import com.goim.kmp.model.UserProfile
+import com.goim.kmp.platform.EncodedImage
+import com.goim.kmp.platform.ImageCodec
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 绑定邮箱对话框的状态。 */
 data class BindEmailState(
@@ -26,6 +32,11 @@ data class BindEmailState(
 class ProfileViewModel(
     private val profiles: ProfileRepository,
     private val cooldownSeconds: Int = 60,
+    private val imageDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val normalize: (ByteArray) -> EncodedImage? = { ImageCodec.encodeJpeg(it, CROP_SOURCE_MAX, 0.9f) },
+    private val crop: (ByteArray, CropSquare) -> ByteArray? = { bytes, sq ->
+        ImageCodec.cropSquareJpeg(bytes, sq.left, sq.top, sq.size, AVATAR_SIZE, 0.9f)?.bytes
+    },
 ) : ViewModel() {
     val profile: StateFlow<UserProfile> = profiles.me
 
@@ -34,6 +45,10 @@ class ProfileViewModel(
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
+
+    /** 待裁剪的头像（已摆正、缩到 [CROP_SOURCE_MAX] 内）；非 null 时显示裁剪界面。 */
+    private val _cropSource = MutableStateFlow<EncodedImage?>(null)
+    val cropSource: StateFlow<EncodedImage?> = _cropSource.asStateFlow()
 
     private val _bind = MutableStateFlow(BindEmailState())
     val bind: StateFlow<BindEmailState> = _bind.asStateFlow()
@@ -49,8 +64,33 @@ class ProfileViewModel(
 
     fun updateNickname(nickname: String) = run("昵称已更新") { profiles.updateNickname(nickname) }
 
-    fun updateAvatar(bytes: ByteArray, fileName: String) =
-        run("头像已更新") { profiles.updateAvatar(bytes, fileName, imageMime(fileName)) }
+    /** 选图后先解码摆正，再进入裁剪。 */
+    fun pickAvatar(bytes: ByteArray) {
+        if (_busy.value) return
+        _busy.value = true
+        viewModelScope.launch {
+            try {
+                val image = withContext(imageDispatcher) { normalize(bytes) }
+                if (image == null) _message.value = "无法读取这张图片" else _cropSource.value = image
+            } finally {
+                _busy.value = false
+            }
+        }
+    }
+
+    fun cancelCrop() {
+        _cropSource.value = null
+    }
+
+    fun confirmCrop(square: CropSquare) {
+        val source = _cropSource.value ?: return
+        _cropSource.value = null
+        run("头像已更新") {
+            val bytes = withContext(imageDispatcher) { crop(source.bytes, square) }
+                ?: throw DomainError.InvalidState("裁剪失败，请换一张图片")
+            profiles.updateAvatar(bytes, "avatar.jpg", "image/jpeg")
+        }
+    }
 
     fun copied() {
         _message.value = "用户 ID 已复制"
@@ -127,12 +167,8 @@ class ProfileViewModel(
     }
 
     companion object {
-        fun imageMime(fileName: String): String = when (fileName.substringAfterLast('.', "").lowercase()) {
-            "png" -> "image/png"
-            "gif" -> "image/gif"
-            "webp" -> "image/webp"
-            "heic", "heif" -> "image/heic"
-            else -> "image/jpeg"
-        }
+        /** 头像输出边长（像素）。 */
+        const val AVATAR_SIZE = 512
+        private const val CROP_SOURCE_MAX = 2048
     }
 }

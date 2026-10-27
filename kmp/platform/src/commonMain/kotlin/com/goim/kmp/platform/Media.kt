@@ -11,6 +11,9 @@ expect object ImageCodec {
     fun dimensions(bytes: ByteArray): Pair<Int, Int>?
 
     fun encodeJpeg(bytes: ByteArray, maxDimension: Int, quality: Float): EncodedImage?
+
+    /** 从已摆正的图片（[encodeJpeg] 的输出）裁出以 [left], [top] 为左上角、边长 [size] 的正方形，缩放到 [outSize] 输出 JPEG。 */
+    fun cropSquareJpeg(bytes: ByteArray, left: Int, top: Int, size: Int, outSize: Int, quality: Float): EncodedImage?
 }
 
 /** 与 iOS `ImageCompressor` 相同的压缩阶梯；结果总是 JPEG。 */
