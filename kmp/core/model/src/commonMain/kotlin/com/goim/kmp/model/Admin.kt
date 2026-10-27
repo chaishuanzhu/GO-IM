@@ -42,6 +42,8 @@ data class AdminUser(
     val isAdmin: Boolean,
     val isDisabled: Boolean,
     val createdAtMs: Long,
+    /** 头像完整地址，空 = 未设置；null = 服务端未返回（旧版本），由资料缓存补。 */
+    val avatarUrl: String? = null,
 ) {
     val displayName: String get() = nickname.ifBlank { uid }
 }

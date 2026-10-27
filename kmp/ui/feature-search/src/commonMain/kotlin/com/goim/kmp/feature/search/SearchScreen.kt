@@ -44,6 +44,7 @@ import com.goim.kmp.designsystem.SearchField
 import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.MonogramAvatar
 import com.goim.kmp.designsystem.UserAvatar
+import com.goim.kmp.designsystem.rememberContactTitle
 import com.goim.kmp.designsystem.rememberDisplayName
 import com.goim.kmp.designsystem.GoImSpacing
 import com.goim.kmp.model.SearchHit
@@ -93,7 +94,7 @@ private fun HitRow(row: SearchRow, query: String, onClick: () -> Unit) {
         fontWeight = FontWeight.SemiBold,
     )
     val isGroup = row.hit.chatType == ChatType.GROUP
-    val title = if (isGroup) row.conversationTitle else rememberDisplayName(row.hit.peerOrGroupId, row.conversationTitle)
+    val title = if (isGroup) row.conversationTitle else rememberContactTitle(row.hit.peerOrGroupId, row.conversationTitle)
     val sender = rememberDisplayName(row.hit.fromUid)
     ListItem(
         headlineContent = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },

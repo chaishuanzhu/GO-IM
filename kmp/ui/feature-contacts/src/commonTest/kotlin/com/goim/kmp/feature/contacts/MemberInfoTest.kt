@@ -4,7 +4,6 @@ import com.goim.kmp.domain.FriendRepository
 import com.goim.kmp.model.Friend
 import com.goim.kmp.model.FriendRequest
 import com.goim.kmp.model.FriendRequestStatus
-import com.goim.kmp.model.GroupMember
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -47,15 +46,6 @@ class MemberInfoTest {
         override suspend fun respond(fromUid: String, accept: Boolean) = Unit
         override suspend fun remove(uid: String) = Unit
         override suspend fun setRemark(uid: String, remark: String) = Unit
-    }
-
-    @Test
-    fun memberLabelPrefersGroupAliasThenFriendRemark() {
-        val state = GroupInfoUiState(remarks = mapOf("bob" to "老王", "carol" to "同事"))
-
-        assertEquals("小王", state.labelOf(GroupMember("g", "bob", alias = "小王")))
-        assertEquals("同事", state.labelOf(GroupMember("g", "carol")))
-        assertEquals("", state.labelOf(GroupMember("g", "dave")))
     }
 
     @Test

@@ -278,12 +278,7 @@ data class GroupInfoUiState(
     val group: Group? = null,
     val members: List<GroupMember> = emptyList(),
     val isOwner: Boolean = false,
-    /** 我给好友设置的备注，成员没设群昵称时用它。 */
-    val remarks: Map<String, String> = emptyMap(),
-) {
-    /** 成员名字前面的备注：群昵称优先，其次我给他的好友备注。 */
-    fun labelOf(member: GroupMember): String = member.alias.ifBlank { remarks[member.uid].orEmpty() }
-}
+)
 
 class GroupInfoViewModel(
     val groupId: String,
@@ -301,11 +296,9 @@ class GroupInfoViewModel(
     val state: StateFlow<GroupInfoUiState> = combine(
         groups.observeGroups().map { list -> list.firstOrNull { it.groupId == groupId } }.catch { emit(null) },
         members,
-        friendList,
-    ) { group, list, friendRows ->
+    ) { group, list ->
         val shown = group ?: Group(groupId, fallbackName, ownerUid = "", memberCount = list.size)
-        val remarks = friendRows.filter { it.remark.isNotBlank() }.associate { it.uid to it.remark }
-        GroupInfoUiState(shown, list, isOwner = shown.ownerUid == selfUid, remarks = remarks)
+        GroupInfoUiState(shown, list, isOwner = shown.ownerUid == selfUid)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GroupInfoUiState())
 
     /** 我在本群的昵称。 */

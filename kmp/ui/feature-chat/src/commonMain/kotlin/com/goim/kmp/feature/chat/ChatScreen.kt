@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.goim.kmp.designsystem.MonogramAvatar
 import com.goim.kmp.designsystem.PresenceText
 import com.goim.kmp.designsystem.UserAvatar
+import com.goim.kmp.designsystem.rememberContactTitle
 import com.goim.kmp.designsystem.rememberDisplayName
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -152,7 +153,7 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() 
     }
 
     val isGroup = conversation.chatType == ChatType.GROUP
-    val title = if (isGroup) conversation.title else rememberDisplayName(conversation.peerOrGroupId, conversation.title)
+    val title = if (isGroup) conversation.title else rememberContactTitle(conversation.peerOrGroupId, conversation.title)
     Scaffold(
         topBar = {
             TopAppBar(

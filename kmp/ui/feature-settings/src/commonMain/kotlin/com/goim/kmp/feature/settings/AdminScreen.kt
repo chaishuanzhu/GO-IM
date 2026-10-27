@@ -334,7 +334,7 @@ private fun UserRow(user: AdminUser, isSelf: Boolean, onOpen: () -> Unit) {
     }.joinToString(" · ")
     ListItem(
         modifier = Modifier.clickable(role = Role.Button, onClickLabel = "查看详情", onClick = onOpen),
-        leadingContent = { UserAvatar(user.uid, user.displayName, size = GoImSize.avatarMd, avatarUrl = "") },
+        leadingContent = { UserAvatar(user.uid, user.displayName, size = GoImSize.avatarMd, avatarUrl = user.avatarUrl) },
         headlineContent = {
             Row(horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2), verticalAlignment = Alignment.CenterVertically) {
                 Text(user.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))

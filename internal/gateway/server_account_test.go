@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -157,7 +158,14 @@ func (f *fakeUserStore) UpdatePassword(_ context.Context, uid, hash string) erro
 }
 
 func (f *fakeUserStore) ListUsers(context.Context, int, int) ([]*repo.User, int, error) {
-	return nil, 0, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]*repo.User, 0, len(f.users))
+	for _, u := range f.users {
+		out = append(out, u)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].UID < out[j].UID })
+	return out, len(out), nil
 }
 func (f *fakeUserStore) DeleteUser(context.Context, string) error { return nil }
 func (f *fakeUserStore) UpdateUserRole(_ context.Context, uid, role string) error {
@@ -697,5 +705,27 @@ func TestHandleGroupRenameValidation(t *testing.T) {
 	}
 	if got, _ := gs.Get(context.Background(), g.ID); got.Name != "Ops" {
 		t.Fatalf("name = %q", got.Name)
+	}
+}
+
+func TestAdminUsersIncludeAvatarURL(t *testing.T) {
+	e := newAccountEnv(t, false)
+	ctx := context.Background()
+	e.users.Create(ctx, &repo.User{UID: "100001", Nickname: "Bob", AvatarFileID: 7})
+	e.users.Create(ctx, &repo.User{UID: "100002", Nickname: "Carol"})
+
+	rec := e.do(t, e.srv.HandleAdminUsers, http.MethodGet, adminQuery(t, e.jwt, "admin", url.Values{}))
+	var body struct {
+		Users []map[string]interface{} `json:"users"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body %q: %v", rec.Body.String(), err)
+	}
+	got := map[string]interface{}{}
+	for _, u := range body.Users {
+		got[u["uid"].(string)] = u["avatar_url"]
+	}
+	if got["100001"] != "/avatar/7" || got["100002"] != "" {
+		t.Fatalf("avatar_url by uid = %v", got)
 	}
 }

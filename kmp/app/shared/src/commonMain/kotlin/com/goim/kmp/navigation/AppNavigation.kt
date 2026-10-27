@@ -132,6 +132,8 @@ import com.goim.kmp.feature.settings.ProfileScreen
 import com.goim.kmp.feature.settings.ProfileViewModel
 import com.goim.kmp.designsystem.LocalPresenceLookup
 import com.goim.kmp.designsystem.LocalProfileLookup
+import com.goim.kmp.designsystem.LocalRemarkLookup
+import com.goim.kmp.designsystem.RemarkLookup
 import com.goim.kmp.designsystem.PresenceLookup
 import com.goim.kmp.designsystem.ProfileLookup
 import com.goim.kmp.designsystem.GoImSpacing
@@ -150,6 +152,10 @@ import com.goim.kmp.repository.UserSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -221,7 +227,19 @@ private val ContactDetailSaver = Saver<ContactDetail?, String>(
 fun MainNavHost(session: UserSession) {
     val lookup = remember(session) { ProfileLookup(session.profiles::observe) }
     val presence = remember(session) { PresenceLookup(session.presence::observe) }
-    CompositionLocalProvider(LocalProfileLookup provides lookup, LocalPresenceLookup provides presence) {
+    val remarkScope = rememberCoroutineScope()
+    val remarks = remember(session) {
+        val byUid = session.friends.observeFriends()
+            .map { list -> list.filter { it.remark.isNotBlank() }.associate { it.uid to it.remark } }
+            .catch { emit(emptyMap()) }
+            .stateIn(remarkScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+        RemarkLookup { uid -> byUid.map { it[uid].orEmpty() }.distinctUntilChanged() }
+    }
+    CompositionLocalProvider(
+        LocalProfileLookup provides lookup,
+        LocalPresenceLookup provides presence,
+        LocalRemarkLookup provides remarks,
+    ) {
         MainNavContent(session)
     }
 }

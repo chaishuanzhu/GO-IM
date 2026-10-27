@@ -239,7 +239,7 @@ class GoImUserApiTest {
                 )
                 "/admin/users" -> respond(
                     """{"users":[{"uid":"100001","nickname":"Bob","email":"b@x.com","role":"admin","is_disabled":true,""" +
-                        """"created_at":5,"updated_at":0}],"total":7,"offset":0,"limit":50}""",
+                        """"created_at":5,"updated_at":0,"avatar_url":"/avatar/7"}],"total":7,"offset":0,"limit":50}""",
                     HttpStatusCode.OK,
                     jsonHeaders,
                 )
@@ -288,6 +288,7 @@ class GoImUserApiTest {
         val user = page.users.single()
         assertTrue(user.isAdmin && user.isDisabled)
         assertEquals("b@x.com", user.email)
+        assertTrue(user.avatarUrl!!.startsWith("http") && user.avatarUrl!!.endsWith("/avatar/7"))
 
         val messages = api.adminMessages(before = 100, limit = 50)
         assertEquals(373022222882705408L, messages[0].msgId)

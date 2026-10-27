@@ -48,8 +48,12 @@ internal data class AdminUserDto(
     val role: String = "user",
     @SerialName("is_disabled") val isDisabled: Boolean = false,
     @SerialName("created_at") val createdAt: Long = 0,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
 ) {
-    fun toDomain() = AdminUser(uid, nickname, email.orEmpty(), role == "admin", isDisabled, createdAt)
+    fun toDomain(baseUrl: String) = AdminUser(
+        uid, nickname, email.orEmpty(), role == "admin", isDisabled, createdAt,
+        avatarUrl = avatarUrl?.let { absoluteUrl(baseUrl, it) },
+    )
 }
 
 @Serializable

@@ -149,7 +149,7 @@ private fun Header(user: AdminUser, isSelf: Boolean) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(GoImSpacing.s2),
     ) {
-        UserAvatar(user.uid, user.displayName, size = GoImSize.avatar2xl)
+        UserAvatar(user.uid, user.displayName, size = GoImSize.avatar2xl, avatarUrl = user.avatarUrl)
         Text(user.displayName, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Row(horizontalArrangement = Arrangement.spacedBy(GoImSpacing.s2)) {
             if (user.isAdmin) Tag("管理员", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)

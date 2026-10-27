@@ -1646,6 +1646,8 @@ components:
         is_disabled: { type: boolean }
         created_at: { type: integer, format: int64 }
         updated_at: { type: integer, format: int64 }
+        signature: { type: string }
+        avatar_url: { type: string, description: 头像地址，未设置时为空串, example: /avatar/7 }
 
     Health:
       type: object

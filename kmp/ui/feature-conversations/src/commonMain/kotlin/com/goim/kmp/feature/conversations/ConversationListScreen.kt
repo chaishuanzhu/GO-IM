@@ -55,6 +55,7 @@ import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.GoImIcons
 import com.goim.kmp.designsystem.MonogramAvatar
 import com.goim.kmp.designsystem.UserAvatar
+import com.goim.kmp.designsystem.rememberContactTitle
 import com.goim.kmp.designsystem.rememberDisplayName
 import com.goim.kmp.designsystem.TextInputDialog
 import com.goim.kmp.designsystem.UnreadBadge
@@ -205,7 +206,7 @@ private fun ConversationRowContent(conversation: Conversation, selected: Boolean
     val preview = MessagePreview.sanitizedListPreview(conversation.lastMessagePreview)
     val unreadLabel = if (unread) "，${conversation.unreadCount} 条未读" else ""
     val isGroup = conversation.chatType == ChatType.GROUP
-    val title = if (isGroup) conversation.title else rememberDisplayName(conversation.peerOrGroupId, conversation.title)
+    val title = if (isGroup) conversation.title else rememberContactTitle(conversation.peerOrGroupId, conversation.title)
     ListItem(
         headlineContent = {
             Text(

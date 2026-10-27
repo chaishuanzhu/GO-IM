@@ -1402,8 +1402,12 @@ func (s *Server) HandleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	views := make([]adminUserView, 0, len(users))
+	for _, u := range users {
+		views = append(views, newAdminUserView(u))
+	}
 	data, _ := json.Marshal(map[string]interface{}{
-		"users":  users,
+		"users":  views,
 		"total":  total,
 		"offset": offset,
 		"limit":  limit,
@@ -1540,7 +1544,7 @@ func (s *Server) HandleAdminUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("[server] admin %s created uid=%s email=%s", claims.UID, u.UID, maskEmail(email))
 
-	resp := map[string]interface{}{"status": "ok", "user": u, "mailed": true}
+	resp := map[string]interface{}{"status": "ok", "user": newAdminUserView(u), "mailed": true}
 	if err := sendInitialPassword(ctx, s.mailer, u, password); err != nil {
 		log.Printf("[server] WARNING: sending initial password to %s failed: %v", maskEmail(email), err)
 		resp["mailed"] = false
@@ -1782,4 +1786,14 @@ func (s *Server) StartGNet(cfg *configs.Config) error {
 	return gnet.Run(s.gnetHandler, fmt.Sprintf("tcp://%s", cfg.Gateway.TCPAddr),
 		gnet.WithNumEventLoop(numLoops),
 	)
+}
+
+// adminUserView 是管理后台里的用户：repo.User 加上头像地址（未设置时为空）。
+type adminUserView struct {
+	*repo.User
+	AvatarURL string `json:"avatar_url"`
+}
+
+func newAdminUserView(u *repo.User) adminUserView {
+	return adminUserView{User: u, AvatarURL: avatarURL(u.AvatarFileID)}
 }

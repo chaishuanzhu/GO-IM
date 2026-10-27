@@ -57,7 +57,7 @@ HTTP /admin/users/create (email) → same random-password path as BootstrapAdmin
 HTTP /admin/users/disable | /admin/users/delete → update user → kick local connections (CmdKick "account disabled" / "account deleted"); WS / TCP connect re-checks the account (Server.accountBlocked) so unexpired tokens can't reconnect
 HTTP /user/profile (GET own or ?target, POST nickname / signature (≤ 60, empty clears) / avatar_file_id), /user/profiles?uids=, /user/search?q=
 HTTP /friend/remark (friend_uid, remark ≤ 32, empty clears) → friend_remarks row, private to the caller; /friend/list rows carry signature + remark; KMP shows 备注名(昵称) or just the nickname
-HTTP /group/rename (owner only, trimmed, ≤ 32), /group/alias (member's own group nickname, ≤ 32, empty clears) → group_members.alias; /group/members carries aliases; KMP group info shows 群昵称(昵称) (falls back to my friend remark), tapping a member opens their info with an add-friend entry for non-friends
+HTTP /group/rename (owner only, trimmed, ≤ 32), /group/alias (member's own group nickname, ≤ 32, empty clears) → group_members.alias; /group/members carries aliases; KMP group info shows 群昵称(昵称) or the nickname (friend remarks are not used in groups), tapping a member opens their info with an add-friend entry for non-friends
 HTTP /avatar/{file_id}[?thumb=1] → public, only files marked is_avatar, immutable cache
 
 # Presence (presence.go, server_presence.go)

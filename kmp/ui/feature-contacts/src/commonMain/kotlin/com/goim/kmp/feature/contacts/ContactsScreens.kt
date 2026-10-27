@@ -1017,7 +1017,7 @@ fun GroupInfoScreen(
                     val nickname = rememberDisplayName(member.uid)
                     val profile = rememberProfile(member.uid)
                     PersonRow(
-                        friendTitle(state.labelOf(member), nickname),
+                        friendTitle(member.alias, nickname),
                         subtitle = if (member.uid == group?.ownerUid) "群主" else profile?.signature?.ifBlank { null },
                         uid = member.uid,
                         onClick = {

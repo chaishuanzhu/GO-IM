@@ -20,6 +20,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import coil3.compose.AsyncImage
 import com.goim.kmp.model.UserProfile
+import com.goim.kmp.model.friendTitle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
@@ -37,6 +38,13 @@ fun rememberProfile(uid: String): UserProfile? {
     val profile by flow.collectAsState(null)
     return profile
 }
+
+/** 按 UID 订阅我给好友设置的备注（空 = 未设置 / 非好友）；登录后由 app 层提供。 */
+fun interface RemarkLookup {
+    fun observe(uid: String): Flow<String>
+}
+
+val LocalRemarkLookup = staticCompositionLocalOf { RemarkLookup { flowOf("") } }
 
 /** 按 UID 订阅在线状态；登录后由 app 层提供（批量轮询网关 `/presence`）。 */
 fun interface PresenceLookup {
@@ -68,6 +76,15 @@ fun PresenceText(uid: String, style: TextStyle = MaterialTheme.typography.bodyMe
 @Composable
 fun rememberDisplayName(uid: String, fallback: String = uid): String =
     rememberProfile(uid)?.nickname?.takeIf { it.isNotBlank() } ?: fallback.ifBlank { uid }
+
+/** 单聊对象的名字，与通讯录一致：有好友备注时为「备注(昵称)」，否则为昵称。群内不要用它。 */
+@Composable
+fun rememberContactTitle(uid: String, fallback: String = uid): String {
+    val lookup = LocalRemarkLookup.current
+    val flow = remember(uid, lookup) { if (uid.isEmpty()) flowOf("") else lookup.observe(uid) }
+    val remark by flow.collectAsState("")
+    return friendTitle(remark, rememberDisplayName(uid, fallback))
+}
 
 /**
  * 用户头像：有头像图片时显示缩略图，加载前 / 失败时显示首字母。
