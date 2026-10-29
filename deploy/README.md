@@ -12,7 +12,7 @@
 
 消息持久化默认按 200 条或 10ms 聚合后批量写入，队列容量 8192、批量 writer 2 个、失败重试 3 次。可通过 `gateway.persist_*` 参数调优；MySQL 连接池通过 `gateway.mysql.max_*` / `conn_max_*` 配置。设计与容量估算见 [单机持久化批量写入优化方案](../docs/11-persistence-batch-write-optimization.md)。
 
-服务端只提供 API 和长连接，没有网页端。部署完成后在[桌面端 / 移动端客户端](https://blog.chaisz.com/GO-IM/)中把服务器地址填为网关地址，用邮箱注册账号（需先[配置 SMTP](#邮件验证码)）。
+服务端只提供 API 和长连接，没有网页端。部署完成后在[桌面端 / 移动端客户端](https://dl.go-im.chaisz.com/)中把服务器地址填为网关地址，用邮箱注册账号（需先[配置 SMTP](#邮件验证码)）。
 
 ## Docker 最小化部署
 

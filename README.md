@@ -62,6 +62,8 @@ flowchart TD
 - **Logic**：业务层，gRPC 服务 + Kafka Consumer，消息持久化、历史查询、群组管理。
 - **客户端**：[kmp/](kmp/README.md)，Kotlin Multiplatform + Compose Multiplatform，一套代码覆盖 Android、iOS 与桌面端。
 
+> **原生 iOS 客户端**（Swift / UIKit，Tuist 模块化 + Clean Architecture，Network.framework 长连接、Swift Concurrency 消息管道、GRDB 本地存储）已归档在 [`archive/ios-web`](https://github.com/chaishuanzhu/GO-IM/tree/archive/ios-web/ios) 分支，设计文档见该分支 `docs/10–14`。
+
 ## 功能
 
 | 模块 | 说明 |
@@ -106,7 +108,7 @@ docker-compose up -d
 docker-compose ps
 ```
 
-`curl http://localhost:8080/health` 返回 `"status":"ok"` 即就绪；客户端（[下载](https://blog.chaisz.com/GO-IM/)或从 [kmp/](kmp/README.md) 构建）服务器地址填 `http://<本机 IP>:8080`，注册账号即可使用。HTTP 接口文档（Swagger UI）在 <http://localhost:8080/swagger/>。
+`curl http://localhost:8080/health` 返回 `"status":"ok"` 即就绪；客户端（[下载](https://dl.go-im.chaisz.com/)或从 [kmp/](kmp/README.md) 构建）服务器地址填 `http://<本机 IP>:8080`，注册账号即可使用。HTTP 接口文档（Swagger UI）在 <http://localhost:8080/swagger/>。
 
 > **国内网络加速**：如果 `docker-compose build` 拉取依赖缓慢，可通过代理构建：
 > ```bash
