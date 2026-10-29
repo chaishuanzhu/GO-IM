@@ -3,7 +3,7 @@
 [GO-IM](https://github.com/chaishuanzhu/GO-IM) 的业务层：消费 Kafka 中的消息并批量写入 MySQL，同时通过 gRPC 为 Gateway 提供历史消息、用户查询等接口。
 
 - 源码：https://github.com/chaishuanzhu/GO-IM
-- 客户端下载 / 项目介绍：https://dl.go-im.chaisz.com/
+- 客户端下载 / 项目介绍：https://go-im.dl.chaisz.com/
 - 配套镜像：[`870027381/go-im-gateway`](https://hub.docker.com/r/870027381/go-im-gateway)（连接层）
 
 Logic 只在**全量部署**中使用，不对外提供服务；最小化部署不需要它。

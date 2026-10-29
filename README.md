@@ -108,7 +108,7 @@ docker-compose up -d
 docker-compose ps
 ```
 
-`curl http://localhost:8080/health` 返回 `"status":"ok"` 即就绪；客户端（[下载](https://dl.go-im.chaisz.com/)或从 [kmp/](kmp/README.md) 构建）服务器地址填 `http://<本机 IP>:8080`，注册账号即可使用。HTTP 接口文档（Swagger UI）在 <http://localhost:8080/swagger/>。
+`curl http://localhost:8080/health` 返回 `"status":"ok"` 即就绪；客户端（[下载](https://go-im.dl.chaisz.com/)或从 [kmp/](kmp/README.md) 构建）服务器地址填 `http://<本机 IP>:8080`，注册账号即可使用。HTTP 接口文档（Swagger UI）在 <http://localhost:8080/swagger/>。
 
 > **国内网络加速**：如果 `docker-compose build` 拉取依赖缓慢，可通过代理构建：
 > ```bash
