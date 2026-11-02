@@ -142,7 +142,7 @@ paths:
     get:
       tags: [账号]
       summary: 登录页公开设置
-      description: 关闭注册时客户端隐藏注册入口，提示账号由管理员分配。
+      description: 关闭注册时客户端隐藏注册入口，提示账号由管理员分配；`email_verification` 为 false 表示服务端未配置 SMTP，邮箱注册 / 找回密码不可用。
       security: []
       responses:
         "200":
@@ -153,6 +153,7 @@ paths:
                 type: object
                 properties:
                   registration_open: { type: boolean }
+                  email_verification: { type: boolean }
 
   /register:
     post:
@@ -412,6 +413,38 @@ paths:
         "409":
           description: "`email already registered`"
           content: { text/plain: { schema: { type: string } } }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /user/delete:
+    post:
+      tags: [用户]
+      summary: 注销自己的账号
+      description: 校验密码后删除账号，该账号的连接立即下线（CmdKick 内容 `account deleted`），邮箱随即可重新注册。管理员账号不能自助注销。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: 已注销
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+        "401":
+          description: 未登录，或 `invalid password`
+          content: { text/plain: { schema: { type: string } } }
+        "403":
+          description: "`admin accounts cannot be deleted here`"
+          content: { text/plain: { schema: { type: string } } }
+        "404": { $ref: "#/components/responses/NotFound" }
         "503": { $ref: "#/components/responses/Unavailable" }
 
   /avatar/{file_id}:

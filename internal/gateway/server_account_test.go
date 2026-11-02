@@ -167,7 +167,15 @@ func (f *fakeUserStore) ListUsers(context.Context, int, int) ([]*repo.User, int,
 	sort.Slice(out, func(i, j int) bool { return out[i].UID < out[j].UID })
 	return out, len(out), nil
 }
-func (f *fakeUserStore) DeleteUser(context.Context, string) error { return nil }
+func (f *fakeUserStore) DeleteUser(_ context.Context, uid string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.users[uid]; !ok {
+		return repo.ErrUserNotFound
+	}
+	delete(f.users, uid)
+	return nil
+}
 func (f *fakeUserStore) UpdateUserRole(_ context.Context, uid, role string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -339,6 +347,53 @@ func TestRegisterLoginWithEmailCode(t *testing.T) {
 	}
 	if second := e.register(t, "bob@example.com", "secret2"); second["uid"] != "100001" {
 		t.Fatalf("second uid = %v", second["uid"])
+	}
+}
+
+func TestAccountDeleteBySelf(t *testing.T) {
+	e := newAccountEnv(t, false)
+	uid := e.register(t, "dana@example.com", "secret1")["uid"].(string)
+
+	rec := e.do(t, e.srv.HandleAccountDelete, http.MethodPost, e.auth(t, uid, url.Values{"password": {"wrong!!"}}))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password: %d", rec.Code)
+	}
+	rec = e.do(t, e.srv.HandleAccountDelete, http.MethodPost, e.auth(t, uid, url.Values{"password": {"secret1"}}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body.String())
+	}
+	if u, _ := e.users.GetByUID(context.Background(), uid); u != nil {
+		t.Fatal("user still exists")
+	}
+	rec = e.do(t, e.srv.HandleLogin, http.MethodPost, url.Values{"account": {"dana@example.com"}, "password": {"secret1"}})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("login after delete: %d", rec.Code)
+	}
+	// 邮箱释放后可以重新注册（跳过发码冷却）。
+	e.codes.Revoke(context.Background(), PurposeRegister, "dana@example.com")
+	e.register(t, "dana@example.com", "secret2")
+}
+
+func TestAccountDeleteRefusesAdmin(t *testing.T) {
+	e := newAccountEnv(t, false)
+	uid := e.register(t, "root@example.com", "secret1")["uid"].(string)
+	_ = e.users.UpdateUserRole(context.Background(), uid, "admin")
+	rec := e.do(t, e.srv.HandleAccountDelete, http.MethodPost, e.auth(t, uid, url.Values{"password": {"secret1"}}))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("admin self-delete: %d", rec.Code)
+	}
+}
+
+func TestAuthConfigReportsEmailVerification(t *testing.T) {
+	e := newAccountEnv(t, false)
+	got := decode(t, e.do(t, e.srv.HandleAuthConfig, http.MethodGet, nil))
+	if got["registration_open"] != true || got["email_verification"] != true {
+		t.Fatalf("auth config = %v", got)
+	}
+	e.srv.SetAccountServices(nil, nil)
+	got = decode(t, e.do(t, e.srv.HandleAuthConfig, http.MethodGet, nil))
+	if got["email_verification"] != false {
+		t.Fatalf("without mailer = %v", got)
 	}
 }
 

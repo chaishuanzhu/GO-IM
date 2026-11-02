@@ -79,6 +79,8 @@ docker compose down -v                          # 停止并删除所有数据
 
 注册、找回密码、绑定邮箱都通过邮件验证码完成，用户 ID 由服务端从 100000 起自动分配。未配置 SMTP 时这三个功能返回 503，已有账号仍可用 ID + 密码登录。
 
+注册默认开放。要关闭自助注册：在配置文件设 `gateway.auth.disable_registration: true`，或在客户端管理后台（`POST /admin/settings registration_open=false`）关闭——后台改过之后以数据库里的值为准。关闭后管理员仍可添加用户。用户可在客户端里自行注销账号（`POST /user/delete`，需验证密码；管理员账号不能自助注销）。
+
 在配置文件的 `gateway.mail` 中填写 SMTP 服务器并设 `enabled: true`；密码不要写进配置文件，通过环境变量 `GOIM_MAIL_PASSWORD` 传入：
 
 ```json

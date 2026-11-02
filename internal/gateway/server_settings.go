@@ -24,14 +24,18 @@ func (s *Server) registrationOpen() bool {
 	return s.settings == nil || s.settings.Get().RegistrationOpen
 }
 
-// HandleAuthConfig 返回登录页需要的公开设置。
+// HandleAuthConfig 返回登录页需要的公开设置。email_verification 为 false 表示未配置 SMTP，
+// 此时邮箱注册与找回密码都不可用。
 // GET /auth/config
 func (s *Server) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	writeJSON(w, map[string]interface{}{"registration_open": s.registrationOpen()})
+	writeJSON(w, map[string]interface{}{
+		"registration_open":  s.registrationOpen(),
+		"email_verification": s.mailer != nil && s.codes != nil,
+	})
 }
 
 // HandleAdminSettings 查看或修改系统设置。

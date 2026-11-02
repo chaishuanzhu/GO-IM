@@ -544,6 +544,7 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/auth/config", app.Server.HandleAuthConfig)
 	mux.HandleFunc("/password/reset", app.Server.HandlePasswordReset)
 	mux.HandleFunc("/user/email", app.Server.HandleBindEmail)
+	mux.HandleFunc("/user/delete", app.Server.HandleAccountDelete)
 	mux.HandleFunc("/user/profile", app.Server.HandleProfile)
 	mux.HandleFunc("/user/profiles", app.Server.HandleProfiles)
 	mux.HandleFunc("/user/search", app.Server.HandleUserSearch)

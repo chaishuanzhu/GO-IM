@@ -194,6 +194,51 @@ func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	s.writeLoginResponse(w, u)
 }
 
+// HandleAccountDelete 注销自己的账号：校验密码后删除用户记录，并让该账号的连接下线。
+// 管理员账号不能自助注销（避免删掉最后一个管理员），需由其他管理员处理。
+// POST /user/delete 表单字段：uid、token、password
+func (s *Server) HandleAccountDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	claims := s.authenticateRequest(w, r)
+	if claims == nil {
+		return
+	}
+	if s.userStore == nil {
+		http.Error(w, "user store not available", http.StatusServiceUnavailable)
+		return
+	}
+	ctx := r.Context()
+	u, err := s.userStore.GetByUID(ctx, claims.UID)
+	if err != nil {
+		log.Printf("[server] account delete lookup %s: %v", claims.UID, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if u == nil {
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(r.FormValue("password"))) != nil {
+		http.Error(w, "invalid password", http.StatusUnauthorized)
+		return
+	}
+	if u.Role == "admin" {
+		http.Error(w, "admin accounts cannot be deleted here", http.StatusForbidden)
+		return
+	}
+	if err := s.userStore.DeleteUser(ctx, u.UID); err != nil {
+		log.Printf("[server] account delete %s: %v", u.UID, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("[server] account deleted by owner uid=%s", u.UID)
+	s.kickUser(context.WithoutCancel(ctx), u.UID, kickAccountDeleted)
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
 // HandleLogin 登录并签发 JWT。
 // POST /login 表单字段：account（邮箱或 UID，兼容旧字段 uid）、password。
 // 开发模式下可不带密码，仅凭 uid 登录，nickname 可选。
