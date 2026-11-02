@@ -47,6 +47,9 @@ const (
 
 	// 消息编辑。
 	CmdEdit int32 = 24 // 编辑之前发送的消息
+
+	// 瞬时群信令（如同步播放控制）：只投递给在线群成员，不持久化、不进离线队列、不计未读、不回 Ack。
+	CmdGroupSignal int32 = 25
 )
 
 // 聊天类型。
@@ -71,12 +74,17 @@ var (
 	ErrMissingTarget = errors.New("chat message missing target")
 )
 
+// IsTransient 报告该消息是否为瞬时消息:只投递给在线连接,绝不转存离线。
+func (m *Message) IsTransient() bool {
+	return m.Cmd == CmdGroupSignal || m.Cmd == CmdTyping
+}
+
 // Validate 检查消息的命令类型所对应的字段是否有效。
 func (m *Message) Validate() error {
-	if m.Cmd <= CmdNone || m.Cmd > CmdEdit {
+	if m.Cmd <= CmdNone || m.Cmd > CmdGroupSignal {
 		return errors.New("invalid command")
 	}
-	if (m.Cmd == CmdChat || m.Cmd == CmdHistory || m.Cmd == CmdReadReceipt || m.Cmd == CmdFile || m.Cmd == CmdRecall || m.Cmd == CmdFriendRequest || m.Cmd == CmdFriendResponse || m.Cmd == CmdForward || m.Cmd == CmdEdit) && m.To == "" {
+	if (m.Cmd == CmdChat || m.Cmd == CmdHistory || m.Cmd == CmdReadReceipt || m.Cmd == CmdFile || m.Cmd == CmdRecall || m.Cmd == CmdFriendRequest || m.Cmd == CmdFriendResponse || m.Cmd == CmdForward || m.Cmd == CmdEdit || m.Cmd == CmdGroupSignal) && m.To == "" {
 		return ErrMissingTarget
 	}
 	return nil

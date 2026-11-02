@@ -109,6 +109,11 @@ CmdRecall      → Router.handleRecall → validate target + sender + Seq (origi
                → recall notification to peer (local / cross-gateway / offline)
                → sendRecallError on failure — no ACK, no persistence for recall itself
 
+# Transient group signal (e.g. synced playback control)
+CmdGroupSignal → Router.handleGroupSignal → sender must be a member → sendLocal to online members
+               → peer-owned members: forwardTransient (GrpcForwarder) — never StoreOffline
+               → no ACK, no unread, no persistence; GrpcGatewayServer drops transient msgs it can't deliver
+
 # Multi-gateway forwarding (Phase 4)
 routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.Forward(ctx, uid, msg)
                     → GrpcGatewayServer.ForwardMessage → local deliver or StoreOffline

@@ -586,6 +586,8 @@ func (r *Router) Route(ctx context.Context, sender *Client, msg *proto.Message) 
 		r.handleFriendResponse(ctx, sender, msg)
 	case proto.CmdTyping:
 		r.handleTyping(ctx, sender, msg)
+	case proto.CmdGroupSignal:
+		r.handleGroupSignal(ctx, sender, msg)
 	case proto.CmdForward:
 		r.handleForward(ctx, sender, msg)
 	case proto.CmdEdit:
@@ -1941,6 +1943,62 @@ func (r *Router) handleTyping(ctx context.Context, sender *Client, msg *proto.Me
 			continue
 		}
 		r.sendLocal(ctx, memberUID, msg, nil)
+	}
+}
+
+// handleGroupSignal 中继瞬时群信令(如同步播放的播放/暂停/进度心跳)。
+// 仅群成员可发送;只投递给在线成员(跨网关经 forwarder 转发),
+// 不持久化、不进离线队列、不计未读、不回 Ack。发送方自己的设备不回显。
+func (r *Router) handleGroupSignal(ctx context.Context, sender *Client, msg *proto.Message) {
+	if r.groupStore == nil {
+		return
+	}
+	if !r.groupStore.IsMember(ctx, msg.To, sender.UID) {
+		log.Printf("[router] group signal from %s to %s dropped: not a member", sender.UID, msg.To)
+		return
+	}
+	if r.checkRateLimit(sender.UID) {
+		slog.Warn("rate limited", "uid", sender.UID)
+		return
+	}
+	members, err := r.groupStore.GetMembers(ctx, msg.To)
+	if err != nil {
+		return
+	}
+
+	out := &proto.Message{
+		Cmd:       proto.CmdGroupSignal,
+		MsgId:     r.snow.Next(),
+		From:      sender.UID,
+		To:        msg.To,
+		ChatType:  proto.ChatTypeGroup,
+		MsgType:   msg.MsgType,
+		Content:   msg.Content,
+		Timestamp: time.Now().UnixMilli(),
+	}
+	for _, memberUID := range members {
+		if memberUID == sender.UID {
+			continue
+		}
+		if found, _ := r.sendLocal(ctx, memberUID, out, nil); found {
+			continue
+		}
+		r.forwardTransient(ctx, memberUID, out)
+	}
+}
+
+// forwardTransient 把瞬时消息转发给拥有该用户连接的对端网关;
+// 单节点、本节点归属或转发失败时直接丢弃,绝不转存离线。
+func (r *Router) forwardTransient(ctx context.Context, uid string, msg *proto.Message) {
+	if r.hashRing == nil || r.thisNodeID == "" || r.forwarder == nil {
+		return
+	}
+	owner := r.hashRing.Get(uid)
+	if owner == "" || owner == r.thisNodeID {
+		return
+	}
+	if _, err := r.forwarder.Forward(ctx, uid, msg); err != nil {
+		log.Printf("[router] transient forward to %s for %s failed: %v", owner, uid, err)
 	}
 }
 

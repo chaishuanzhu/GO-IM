@@ -50,6 +50,9 @@ func (s *GrpcGatewayServer) ForwardMessage(ctx context.Context, req *proto.Forwa
 				sendErr = err
 			}
 		}
+		if sendErr != nil && req.Message.IsTransient() {
+			return &proto.ForwardResponse{Delivered: false, Error: sendErr.Error()}, nil
+		}
 		if sendErr != nil {
 			// 有设备在线但发送缓冲区已满 —— 转存离线(客户端按 msg_id 去重)。
 			s.offline.StoreOffline(ctx, req.Uid, req.Message)
@@ -58,6 +61,10 @@ func (s *GrpcGatewayServer) ForwardMessage(ctx context.Context, req *proto.Forwa
 			return &proto.ForwardResponse{Delivered: false, Error: sendErr.Error()}, nil
 		}
 		return &proto.ForwardResponse{Delivered: true}, nil
+	}
+
+	if req.Message.IsTransient() {
+		return &proto.ForwardResponse{Delivered: false, Error: "target not locally connected, transient dropped"}, nil
 	}
 
 	// 目标未在本节点连接 —— 转存离线。

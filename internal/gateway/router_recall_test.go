@@ -398,9 +398,9 @@ func TestRecallValidateRejectsBadCmd(t *testing.T) {
 		t.Error("CmdRecall without To should fail validation")
 	}
 
-	// 无效：超过最大有效 Cmd 的值（CmdEdit=24 现在是有效的）
-	msgBad := &proto.Message{Cmd: 25, To: "bob"}
+	// 无效：超过最大有效 Cmd 的值（CmdGroupSignal=25 是当前最大值）
+	msgBad := &proto.Message{Cmd: 26, To: "bob"}
 	if err := msgBad.Validate(); err == nil {
-		t.Error("cmd=25 should fail validation")
+		t.Error("cmd=26 should fail validation")
 	}
 }

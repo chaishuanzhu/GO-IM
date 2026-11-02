@@ -793,6 +793,7 @@ TCP 连接建立后，**第一条消息必须是登录**：
 | CmdGroupList | — | — | |
 | CmdFile | 同 CmdChat，`content` 为文件元数据 JSON；表情包为 `pack_id`/`sticker_id` JSON | 同 CmdChat | `msg_type` 建议为 2/3/4/5/6 |
 | CmdRecall | `to`, `seq`(=原始MsgId) | `msg_id`, `timestamp` | 撤回通知，`seq` 携带原始消息ID |
+| CmdGroupSignal | `to`=group_id, `content`(业务自定义，通常为 JSON), 可选 `msg_type` | `msg_id`, `from`, `timestamp`, `chat_type`=2 | 瞬时群信令：仅群成员可发；只投递给在线成员（含跨网关），不持久化、不进离线队列、不计未读、不回 ACK，发送方不回显 |
 
 ### 6.3 多平台注意事项
 
@@ -827,6 +828,7 @@ TCP 连接建立后，**第一条消息必须是登录**：
 | 🟣 | `CmdGroupList` | 16 | C→S, S→C | 群组列表 |
 | 🟢 | `CmdFile` | 17 | C→S, S→C | 文件消息（经过完整聊天管线） |
 | 🔴 | `CmdRecall` | 19 | C→S, S→C | 消息撤回 |
+| 🟡 | `CmdGroupSignal` | 25 | C→S, S→C | 瞬时群信令（如同步播放控制），不持久化、不离线 |
 
 ---
 
