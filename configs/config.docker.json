@@ -79,6 +79,11 @@
             "presign_download_ttl": "1h"
         },
 
+        "media": {
+            "_comment": "Paircast 媒体库(见 config.example.json 的 _sources_example)。sources 为空即不启用。",
+            "sources": []
+        },
+
         "recall_window_ms": 120000,
         "history_default_limit": 30,
         "search_default_limit": 20,

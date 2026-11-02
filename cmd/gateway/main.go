@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -21,6 +22,7 @@ import (
 	"github.com/im/internal/pkg/jwt"
 	"github.com/im/internal/pkg/snowflake"
 	"github.com/im/internal/repo"
+	"github.com/im/internal/watchroom"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 )
@@ -41,6 +43,7 @@ type App struct {
 	pprofServer   *http.Server            // pprof 禁用时为 nil
 	router        *gateway.Router         // 用于清理（去重缓存、限流器）
 	metrics       *observability.Metrics  // Prometheus 指标记录器
+	rooms         *watchroom.Service      // 媒体库未启用时为 nil
 }
 
 // NewApp 根据配置初始化所有应用组件。
@@ -324,6 +327,17 @@ func NewApp(cfg *configs.Config) (*App, error) {
 	)
 	server.SetSettings(settings)
 
+	// --- 媒体库与观影房间（media.sources 为空则不启用）---
+	var db *sql.DB
+	if mysqlStore != nil {
+		db = mysqlStore.DB()
+	}
+	mediaSvc, roomSvc, err := setupMedia(cfg.Gateway.Media, db, objectStore, groupStore, router, snow)
+	if err != nil {
+		return nil, fmt.Errorf("media: %w", err)
+	}
+	server.SetMedia(mediaSvc, roomSvc)
+
 	// 在线状态:有 Redis 时每个网关维护一张位图(im:online:{node}),查询时合并所有网关。
 	if rdb != nil {
 		node := cfg.Gateway.Grpc.NodeID
@@ -429,6 +443,7 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		clusterMgr:    clusterMgr,
 		router:        router,
 		metrics:       metrics,
+		rooms:         roomSvc,
 	}, nil
 }
 
@@ -556,6 +571,12 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/file/presign", app.Server.HandlePresign)
 	mux.HandleFunc("/file/complete", app.Server.HandleComplete)
 	app.Server.StartFileJanitor(ctx, time.Hour)
+
+	// 媒体库与观影房间（Paircast）。
+	registerMediaRoutes(mux, app.Server)
+	if app.rooms != nil {
+		app.rooms.StartJanitor(ctx, time.Duration(app.Config.Gateway.Media.RoomRetention), time.Hour)
+	}
 
 	// 消息全文搜索。
 	mux.HandleFunc("/search", app.Server.HandleSearch)

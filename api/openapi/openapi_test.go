@@ -38,9 +38,13 @@ func TestHandlerServesSpecAndUI(t *testing.T) {
 
 // 网关在 main.go 注册的每个 HTTP 路由都必须出现在文档里。
 func TestSpecCoversGatewayRoutes(t *testing.T) {
-	src, err := os.ReadFile("../../cmd/gateway/main.go")
-	if err != nil {
-		t.Fatal(err)
+	var src []byte
+	for _, f := range []string{"../../cmd/gateway/main.go", "../../cmd/gateway/media.go"} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		src = append(src, b...)
 	}
 	spec := string(Spec)
 	routes := regexp.MustCompile(`mux\.Handle(?:Func)?\("(/[^"]*)"`).FindAllStringSubmatch(string(src), -1)

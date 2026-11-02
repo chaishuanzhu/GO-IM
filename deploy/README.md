@@ -182,6 +182,29 @@ RustFS 的 S3 端口对外暴露后，务必修改默认的 `RUSTFS_SECRET_KEY`�
 
 文件按会话鉴权：只有上传者和文件被发送到的会话成员可以下载。
 
+## 媒体库（Paircast）
+
+网关可以托管 Paircast 的视频库：客户端只配置网关地址，视频源的密钥留在服务端。接口是 `/media/*`（影片列表、播放直链、字幕、贴纸）和 `/room/*`（观影房间），详见 Swagger（`/swagger/`）的「媒体库」「观影房间」两组。
+
+1. 在 `gateway.media.sources` 里添加视频源（字段见 `configs/config.example.json` 的 `_sources_example`）。目前支持 `type: "s3"`：阿里云 OSS、腾讯云 COS、七牛、MinIO 等 S3 兼容存储；`prefix` 限定只列出某个目录。
+2. 密钥用环境变量注入，不要写进配置文件：
+
+   | 环境变量 | 作用 |
+   |----------|------|
+   | `GOIM_MEDIA_<ID>_ACCESS_KEY` / `GOIM_MEDIA_<ID>_SECRET_KEY` | 视频源密钥，`<ID>` 为源 `id` 的大写（非字母数字转 `_`），如 `GOIM_MEDIA_OSS_SECRET_KEY` |
+   | `GOIM_TMDB_ACCESS_TOKEN` | 可选，TMDB 刮削海报和简介 |
+   | `GOIM_OPENSUBTITLES_API_KEY` | 可选，在线字幕搜索 |
+
+3. 重启 gateway，日志出现 `media library enabled` 即生效。
+
+说明：
+
+- 播放直链是视频桶的预签名 URL（默认 6 小时，`play_url_ttl`），视频流不经过网关，网关只需要视频桶的**只读**权限。
+- 影片 ID 为 `<源 id>:<对象 key>`，源 `id` 上线后不要修改；不带前缀的旧 ID 按 `default_source` 解析。
+- 观影房间存在 MySQL 表 `watch_rooms`（未启用 MySQL 时在内存），结束超过 `room_retention`（默认 72 小时）后清理；刮削结果缓存在 `media_metadata`。
+- 房主共享的字幕、在线下载的字幕存在上面的 `object_storage`（`paircast/subtitles/`）。
+- 贴纸：设置 `stickers_source`（源 id）和 `stickers_prefix`（默认 `stickers/`），目录下放 `catalog.json` 与 `<pack>/pack.json`。
+
 ## 端口
 
 | 端口 | 服务 | 说明 |

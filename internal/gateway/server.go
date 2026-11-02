@@ -17,9 +17,11 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/im/api/proto"
 	"github.com/im/configs"
+	"github.com/im/internal/media"
 	"github.com/im/internal/pkg/jwt"
 	"github.com/im/internal/pkg/snowflake"
 	"github.com/im/internal/repo"
+	"github.com/im/internal/watchroom"
 	"github.com/panjf2000/gnet/v2"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -59,6 +61,10 @@ type Server struct {
 
 	// 在线状态(nil = 只看本网关的连接)。
 	presence Presence
+
+	// 媒体库与观影房间(nil = /media/*、/room/* 返回 503)。
+	media *media.Service
+	rooms *watchroom.Service
 
 	// WebSocket
 	upgrader websocket.Upgrader

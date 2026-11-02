@@ -1966,18 +1966,34 @@ func (r *Router) handleGroupSignal(ctx context.Context, sender *Client, msg *pro
 		return
 	}
 
+	r.fanoutSignal(ctx, sender.UID, msg.To, msg.MsgType, msg.Content, members)
+}
+
+// SendGroupSignal 由服务端发出瞬时群信令（例如观影房间状态变化），跳过 fromUID 本人，不落库。
+func (r *Router) SendGroupSignal(ctx context.Context, fromUID, groupID, content string) {
+	if r.groupStore == nil {
+		return
+	}
+	members, err := r.groupStore.GetMembers(ctx, groupID)
+	if err != nil {
+		return
+	}
+	r.fanoutSignal(ctx, fromUID, groupID, proto.MsgTypeText, content, members)
+}
+
+func (r *Router) fanoutSignal(ctx context.Context, fromUID, groupID string, msgType int32, content string, members []string) {
 	out := &proto.Message{
 		Cmd:       proto.CmdGroupSignal,
 		MsgId:     r.snow.Next(),
-		From:      sender.UID,
-		To:        msg.To,
+		From:      fromUID,
+		To:        groupID,
 		ChatType:  proto.ChatTypeGroup,
-		MsgType:   msg.MsgType,
-		Content:   msg.Content,
+		MsgType:   msgType,
+		Content:   content,
 		Timestamp: time.Now().UnixMilli(),
 	}
 	for _, memberUID := range members {
-		if memberUID == sender.UID {
+		if memberUID == fromUID {
 			continue
 		}
 		if found, _ := r.sendLocal(ctx, memberUID, out, nil); found {
