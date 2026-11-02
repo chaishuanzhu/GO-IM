@@ -195,6 +195,8 @@ RustFS 的 S3 端口对外暴露后，务必修改默认的 `RUSTFS_SECRET_KEY`�
    | `GOIM_TMDB_ACCESS_TOKEN` | 可选，TMDB 刮削海报和简介 |
    | `GOIM_OPENSUBTITLES_API_KEY` | 可选，在线字幕搜索 |
 
+   Docker 部署的 compose 已把 `.env` 里的 `MEDIA_OSS_ACCESS_KEY` / `MEDIA_OSS_SECRET_KEY`（对应源 `id: "oss"`）、`TMDB_ACCESS_TOKEN`、`OPENSUBTITLES_API_KEY` 传给 gateway；源 id 不是 `oss` 时在 compose 的 gateway `environment` 里按同样格式添加。Kubernetes 部署把这些变量加到 gateway Deployment 的 `env`（建议放进 `goim-infra` Secret）。
+
 3. 重启 gateway，日志出现 `media library enabled` 即生效。
 
 说明：

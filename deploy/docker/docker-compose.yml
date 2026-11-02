@@ -102,6 +102,11 @@ services:
     image: 870027381/go-im-gateway:${GOIM_TAG:-latest}
     environment:
       GOIM_MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      # Paircast 媒体库：源 id 为 oss 时的密钥（其它 id 按 GOIM_MEDIA_<ID>_* 自行添加）
+      GOIM_MEDIA_OSS_ACCESS_KEY: ${MEDIA_OSS_ACCESS_KEY:-}
+      GOIM_MEDIA_OSS_SECRET_KEY: ${MEDIA_OSS_SECRET_KEY:-}
+      GOIM_TMDB_ACCESS_TOKEN: ${TMDB_ACCESS_TOKEN:-}
+      GOIM_OPENSUBTITLES_API_KEY: ${OPENSUBTITLES_API_KEY:-}
     ports:
       - "${HTTP_PORT:-8080}:8080"  # HTTP API + WebSocket
       - "${TCP_PORT:-8081}:8081"   # 原生 TCP 长连接 (移动端/桌面端可选)
