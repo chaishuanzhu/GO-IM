@@ -153,18 +153,20 @@ func (m *Metadata) Enrich(ctx context.Context, src Source, item Item) Item {
 			art = fillMissing(art, t)
 		}
 	}
-	if art != (Artwork{}) {
-		_ = m.cache.Put(ctx, item.ID, art)
-		merge(&item, art)
-	}
+	_ = m.cache.Put(ctx, item.ID, art)
+	merge(&item, art)
 	return item
 }
 
 // 源自带的海报是预签名地址（最长 7 天），缓存超过 6 天就重新取，避免返回过期链接。
+// 没刮到任何内容的空结果只缓存 1 小时（可能是 TMDB 暂时不可用）。
 func (m *Metadata) fresh(at time.Time, art Artwork) bool {
 	age := m.now().Sub(at)
 	if age >= m.ttl {
 		return false
+	}
+	if art == (Artwork{}) {
+		return age < time.Hour
 	}
 	signed := strings.Contains(art.PosterURL, "X-Amz-Signature") || strings.Contains(art.BackdropURL, "X-Amz-Signature")
 	return !signed || age < 6*24*time.Hour
