@@ -82,14 +82,19 @@ func NewApp(cfg *configs.Config) (*App, error) {
 	var mysqlStore *repo.MySQLStore
 	if cfg.Gateway.MySQL.Enabled {
 		var err error
-		mysqlStore, err = repo.NewMySQLStoreWithPool(cfg.Gateway.MySQL.DSN, repo.MySQLPoolConfig{
+		mysqlStore, err = repo.ConnectMySQLWithRetry(cfg.Gateway.MySQL.DSN, repo.MySQLPoolConfig{
 			MaxOpenConns:    cfg.Gateway.MySQL.MaxOpenConns,
 			MaxIdleConns:    cfg.Gateway.MySQL.MaxIdleConns,
 			ConnMaxLifetime: time.Duration(cfg.Gateway.MySQL.ConnMaxLifetime),
 			ConnMaxIdleTime: time.Duration(cfg.Gateway.MySQL.ConnMaxIdleTime),
-		})
+		}, time.Duration(cfg.Gateway.MySQL.StartupTimeout))
 		if err != nil {
+			if !cfg.Gateway.MySQL.Optional {
+				return nil, fmt.Errorf("mysql enabled but unavailable: %w", err)
+			}
 			log.Printf("[main] MySQL init failed (%v), continuing without persistence", err)
+			initErr := fmt.Errorf("init failed, running without persistence: %w", err)
+			gateway.RegisterHealthCheck("mysql", func(context.Context) error { return initErr })
 		} else {
 			log.Printf("[main] MySQL connected at %s", repo.RedactDSN(cfg.Gateway.MySQL.DSN))
 		}

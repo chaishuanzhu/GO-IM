@@ -104,6 +104,10 @@ type MySQLConfig struct {
 	MaxIdleConns    int      `json:"max_idle_conns"`     // 默认 16
 	ConnMaxLifetime Duration `json:"conn_max_lifetime"`  // 默认 "30m"
 	ConnMaxIdleTime Duration `json:"conn_max_idle_time"` // 默认 "5m"
+	StartupTimeout  Duration `json:"startup_timeout"`    // 启动时等待 MySQL 就绪的时长，默认 "60s"
+	// Optional=true：启动超时后网关不带持久化继续运行（/health 报 degraded）；
+	// 默认 false：超时即退出，交给容器重启策略重试。
+	Optional bool `json:"optional"`
 }
 
 // AuthConfig 保存认证设置。
@@ -262,6 +266,7 @@ func Default() *Config {
 				MaxIdleConns:    16,
 				ConnMaxLifetime: Duration(30 * time.Minute),
 				ConnMaxIdleTime: Duration(5 * time.Minute),
+				StartupTimeout:  Duration(60 * time.Second),
 			},
 			Auth: AuthConfig{
 				DevMode: true, // 开发环境跳过密码

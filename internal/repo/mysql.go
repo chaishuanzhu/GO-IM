@@ -104,6 +104,26 @@ func NewMySQLStoreWithPool(dsn string, pool MySQLPoolConfig) (*MySQLStore, error
 	return s, nil
 }
 
+// mysqlRetryInterval 是 ConnectMySQLWithRetry 两次尝试之间的间隔。
+var mysqlRetryInterval = 2 * time.Second
+
+// ConnectMySQLWithRetry 在 timeout 内反复尝试 NewMySQLStoreWithPool，
+// 应对主机重启后容器同时拉起、MySQL 尚未就绪的情况。timeout <= 0 只尝试一次。
+func ConnectMySQLWithRetry(dsn string, pool MySQLPoolConfig, timeout time.Duration) (*MySQLStore, error) {
+	deadline := time.Now().Add(timeout)
+	for attempt := 1; ; attempt++ {
+		s, err := NewMySQLStoreWithPool(dsn, pool)
+		if err == nil {
+			return s, nil
+		}
+		if time.Now().Add(mysqlRetryInterval).After(deadline) {
+			return nil, fmt.Errorf("after %d attempts: %w", attempt, err)
+		}
+		log.Printf("[mysql] connect attempt %d failed (%v), retrying in %s", attempt, err, mysqlRetryInterval)
+		time.Sleep(mysqlRetryInterval)
+	}
+}
+
 // DB 返回底层的 *sql.DB，供共享同一连接池的其他 MySQL 存储
 // （例如 MySQLGroupStore）使用。
 func (s *MySQLStore) DB() *sql.DB {

@@ -42,7 +42,9 @@
             "max_open_conns": 32,
             "max_idle_conns": 16,
             "conn_max_lifetime": "30m",
-            "conn_max_idle_time": "5m"
+            "conn_max_idle_time": "5m",
+            "startup_timeout": "60s",
+            "optional": false
         },
 
         "mail": {

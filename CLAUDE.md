@@ -274,7 +274,7 @@ Default config values:
 - Rate limit: enabled, 10 msg/s per user, burst 20
 - WebSocket origins: empty list = allow all (development mode)
 - gnet: num_event_loops 0 (auto), worker_pool_size 0 (auto)
-- MySQL: `enabled: false`, `dsn: ""` — enable for message history (CmdHistory) and user persistence
+- MySQL: `enabled: false`, `dsn: ""` — enable for message history (CmdHistory) and user persistence. When enabled the gateway retries the connection for `startup_timeout` (60s; host reboots start all containers at once) and then exits so the restart policy retries; `optional: true` instead continues without persistence and `/health` reports `mysql` unhealthy (`status: degraded`)
 - Kafka: `enabled: false`, `brokers: ["localhost:9092"]`, `topic: "im.message.persist"`
 - Logic gRPC: `addr: ""` (empty = Gateway uses local MessageStore), `listen_addr: ""` (empty = Logic binds `:50051`)
 - gRPC server: `addr: ""` (empty = disabled, set `:50050` with node_id + peer_addrs for multi-gateway)
