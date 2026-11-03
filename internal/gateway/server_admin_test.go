@@ -229,7 +229,7 @@ func TestAdminUserDisable(t *testing.T) {
 	srv, users, mgr := newAdminServer(t, &testMsgStore{})
 	ctx := context.Background()
 	users.Create(ctx, &repo.User{UID: "100001", Nickname: "alice"})
-	alice, tr := newDeviceClient(t, "100001", "d1", "ios")
+	alice, _ := newDeviceClient(t, "100001", "d1", "ios")
 	srv.clients.Register(ctx, alice)
 	e := &accountEnv{}
 	disable := func(role, target, value string) int {
@@ -261,10 +261,7 @@ func TestAdminUserDisable(t *testing.T) {
 	if u, _ := users.GetByUID(ctx, "100001"); !u.IsDisabled {
 		t.Fatal("user not disabled")
 	}
-	if !isClosed(alice) || !tr.closed.Load() {
-		t.Fatal("disabled user's connection should be closed")
-	}
-	if kick := readMessageFromChan(t, alice.send); kick.Cmd != proto.CmdKick || kick.Content != kickAccountDisabled {
+	if kick := readMessageFromChan(t, alice.kick); kick.Cmd != proto.CmdKick || kick.Content != kickAccountDisabled {
 		t.Fatalf("kick = %+v", kick)
 	}
 

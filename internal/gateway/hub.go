@@ -124,11 +124,7 @@ func (h *Hub) Register(ctx context.Context, c *Client) {
 	if len(existing) == 0 && h.maxConnections > 0 && len(h.clients) >= h.maxConnections {
 		h.mu.Unlock()
 		// 拒绝:发送踢出消息并关闭连接(尽力而为)。
-		c.Send(&proto.Message{
-			Cmd:     proto.CmdKick,
-			Content: errServerFull,
-		})
-		c.Close()
+		c.Kick(errServerFull)
 		log.Printf("[hub] connection rejected for %s: server at capacity (%d)", c.UID, h.maxConnections)
 		return
 	}
@@ -158,11 +154,7 @@ func (h *Hub) Register(ctx context.Context, c *Client) {
 		old.Close()
 	}
 	for _, old := range kicked {
-		old.Send(&proto.Message{
-			Cmd:     proto.CmdKick,
-			Content: kickedByOtherDevice,
-		})
-		old.Close()
+		old.Kick(kickedByOtherDevice)
 	}
 	if len(kept) > 0 {
 		log.Printf("[hub] uid=%s device=%s platform=%s online on %d devices", c.UID, c.DeviceID, c.Platform, len(kept)+1)

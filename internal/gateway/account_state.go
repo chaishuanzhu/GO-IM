@@ -3,8 +3,6 @@ package gateway
 import (
 	"context"
 	"log"
-
-	"github.com/im/api/proto"
 )
 
 // CmdKick 的内容：账号被管理员禁用 / 删除。客户端据此提示原因并停止重连。
@@ -40,8 +38,7 @@ func (s *Server) accountBlocked(ctx context.Context, uid string) string {
 func (s *Server) kickUser(ctx context.Context, uid, reason string) int {
 	conns := s.clients.GetAll(ctx, uid)
 	for _, c := range conns {
-		c.Send(&proto.Message{Cmd: proto.CmdKick, Content: reason})
-		c.Close()
+		c.Kick(reason)
 	}
 	if len(conns) > 0 {
 		log.Printf("[server] kicked %d connection(s) of %s: %s", len(conns), uid, reason)

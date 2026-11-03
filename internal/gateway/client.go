@@ -32,6 +32,7 @@ type Client struct {
 	clients   ClientRegistry
 	send      chan []byte // 出站消息的缓冲通道
 	ping      chan struct{}
+	kick      chan []byte // 待写出的 CmdKick;写出后由写循环关闭连接
 	closed    chan struct{}
 	closeOnce sync.Once
 
@@ -49,6 +50,7 @@ func NewClient(uid, nickname string, transport Transport, clients ClientRegistry
 		clients:       clients,
 		send:          make(chan []byte, sendBufSize),
 		ping:          make(chan struct{}, 1),
+		kick:          make(chan []byte, 1),
 		closed:        make(chan struct{}),
 		lastHeartbeat: time.Now(),
 	}
@@ -113,6 +115,27 @@ func (c *Client) Close() {
 	})
 }
 
+// kickFlushTimeout 是 Kick 等写循环送出 CmdKick 的上限,超时直接关闭连接。
+const kickFlushTimeout = 2 * time.Second
+
+// Kick 通知客户端下线(CmdKick,reason 为内容)并关闭连接。
+// 通知由写循环写出后再关闭:Send 后立即 Close 会让通知还在队列里连接就断了,
+// 客户端只看到断线、拿着仍有效的 token 重连,多设备互踢就变成了来回静默顶号。
+func (c *Client) Kick(reason string) {
+	data, err := pb.Marshal(&proto.Message{Cmd: proto.CmdKick, Content: reason})
+	if err != nil {
+		c.Close()
+		return
+	}
+	select {
+	case <-c.closed:
+	case c.kick <- data:
+		time.AfterFunc(kickFlushTimeout, c.Close)
+	default:
+		// 已在踢下线流程中。
+	}
+}
+
 // SendPing 请求写循环发送一次传输层保活信号(WebSocket 为 Ping 帧)。
 // 非阻塞:若写循环忙则跳过本次 ping(保活是尽力而为的)。
 func (c *Client) SendPing() {
@@ -130,6 +153,12 @@ func (c *Client) WriteLoop() {
 	for {
 		select {
 		case <-c.closed:
+			return
+		case data := <-c.kick:
+			if err := c.transport.Write(data); err != nil {
+				log.Printf("[client] kick write error uid=%s: %v", c.UID, err)
+			}
+			c.Close()
 			return
 		case data, ok := <-c.send:
 			if !ok {

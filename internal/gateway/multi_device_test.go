@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"github.com/im/api/proto"
 	"github.com/im/internal/pkg/snowflake"
 	"github.com/redis/go-redis/v9"
+	pb "google.golang.org/protobuf/proto"
 )
 
 type fakeTransport struct{ closed atomic.Bool }
@@ -53,11 +56,7 @@ func TestHubSinglePolicyKicksOtherDevice(t *testing.T) {
 	h.Register(context.Background(), phone)
 	h.Register(context.Background(), desktop)
 
-	if !isClosed(phone) {
-		t.Fatal("single policy: phone should be kicked")
-	}
-	kick := readMessageFromChan(t, phone.send)
-	if kick.Cmd != proto.CmdKick {
+	if kick := readMessageFromChan(t, phone.kick); kick.Cmd != proto.CmdKick {
 		t.Fatalf("expected CmdKick, got cmd=%d", kick.Cmd)
 	}
 	if got := h.GetAll(context.Background(), "alice"); len(got) != 1 || got[0] != desktop {
@@ -86,10 +85,7 @@ func TestHubPerPlatformKeepsPhoneAndDesktop(t *testing.T) {
 	// 另一台手机(Android 与 iOS 同属手机类)挤掉旧手机,电脑不受影响。
 	android, _ := newDeviceClient(t, "alice", "p2", "android")
 	h.Register(context.Background(), android)
-	if !isClosed(phone) {
-		t.Fatal("new phone should kick the old phone")
-	}
-	if kick := readMessageFromChan(t, phone.send); kick.Cmd != proto.CmdKick {
+	if kick := readMessageFromChan(t, phone.kick); kick.Cmd != proto.CmdKick {
 		t.Fatalf("expected CmdKick, got cmd=%d", kick.Cmd)
 	}
 	if isClosed(desktop) {
@@ -121,8 +117,68 @@ func TestHubLegacyClientsStillKickEachOther(t *testing.T) {
 	b, _ := newDeviceClient(t, "alice", "", "")
 	h.Register(context.Background(), a)
 	h.Register(context.Background(), b)
-	if !isClosed(a) {
+	if kick := readMessageFromChan(t, a.kick); kick.Cmd != proto.CmdKick {
 		t.Fatal("legacy clients without device info should keep the single-login behaviour")
+	}
+}
+
+type recordingTransport struct {
+	mu     sync.Mutex
+	writes [][]byte
+	closed bool
+}
+
+func (r *recordingTransport) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
+	return nil
+}
+
+func (r *recordingTransport) Write(p []byte) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return errors.New("write on closed transport")
+	}
+	r.writes = append(r.writes, p)
+	return nil
+}
+
+func (r *recordingTransport) Ping() error { return nil }
+
+func TestKickIsWrittenBeforeClose(t *testing.T) {
+	tr := &recordingTransport{}
+	c := NewClient("alice", "alice", tr, nil, 8)
+	done := make(chan struct{})
+	go func() { c.WriteLoop(); close(done) }()
+
+	c.Kick(kickedByOtherDevice)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("write loop should exit after the kick")
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if !tr.closed || len(tr.writes) != 1 {
+		t.Fatalf("closed=%v writes=%d, want the kick written then closed", tr.closed, len(tr.writes))
+	}
+	msg := &proto.Message{}
+	if err := pb.Unmarshal(tr.writes[0], msg); err != nil || msg.Cmd != proto.CmdKick || msg.Content != kickedByOtherDevice {
+		t.Fatalf("unexpected frame %+v err=%v", msg, err)
+	}
+}
+
+func TestKickClosesWithoutWriteLoop(t *testing.T) {
+	c, tr := newDeviceClient(t, "alice", "p1", "ios")
+	c.Kick("bye")
+	deadline := time.Now().Add(kickFlushTimeout + time.Second)
+	for !tr.closed.Load() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !isClosed(c) || !tr.closed.Load() {
+		t.Fatal("kick must close the connection even if the write loop is gone")
 	}
 }
 
