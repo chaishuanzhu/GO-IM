@@ -161,13 +161,29 @@ func TestAdminUserCreate(t *testing.T) {
 	srv, users, mgr := newAdminServer(t, &testMsgStore{})
 	ctx := context.Background()
 	e := &accountEnv{}
-	create := func(role, email string) *httptest.ResponseRecorder {
-		return e.do(t, srv.HandleAdminUserCreate, http.MethodPost, adminQuery(t, mgr, role, url.Values{"email": {email}}))
+	createNamed := func(role, email, nickname string) *httptest.ResponseRecorder {
+		return e.do(t, srv.HandleAdminUserCreate, http.MethodPost, adminQuery(t, mgr, role, url.Values{"email": {email}, "nickname": {nickname}}))
+	}
+	create := func(role, email string) *httptest.ResponseRecorder { return createNamed(role, email, "") }
+
+	rec := createNamed("admin", "dave@example.com", "Dave")
+	var noMail struct {
+		User            repo.User `json:"user"`
+		Mailed          bool      `json:"mailed"`
+		InitialPassword string    `json:"initial_password"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &noMail); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("without mailer: %d %s", rec.Code, rec.Body)
+	}
+	dave, _ := users.GetByUID(ctx, noMail.User.UID)
+	if noMail.Mailed || dave == nil || dave.Nickname != "Dave" || !dave.MustChangePassword ||
+		bcrypt.CompareHashAndPassword([]byte(dave.PasswordHash), []byte(noMail.InitialPassword)) != nil {
+		t.Fatalf("without mailer: resp = %+v", noMail)
+	}
+	if got := createNamed("admin", "eve@example.com", strings.Repeat("x", 100)).Code; got != http.StatusBadRequest {
+		t.Fatalf("long nickname: %d", got)
 	}
 
-	if got := create("admin", "bob@example.com").Code; got != http.StatusServiceUnavailable {
-		t.Fatalf("without mailer: %d", got)
-	}
 	mail := &captureMailer{}
 	srv.SetAccountServices(mail, NewMemoryCodeStore())
 	for _, c := range []struct {
@@ -182,7 +198,7 @@ func TestAdminUserCreate(t *testing.T) {
 		}
 	}
 
-	rec := create("admin", " Bob@Example.com ")
+	rec = create("admin", " Bob@Example.com ")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("create: %d %s", rec.Code, rec.Body)
 	}

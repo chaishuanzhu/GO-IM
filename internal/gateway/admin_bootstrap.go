@@ -44,7 +44,7 @@ func BootstrapAdmin(ctx context.Context, users repo.UserStore, mailer Mailer, ra
 		return nil
 	}
 
-	u, password, err := createWithRandomPassword(ctx, users, email, "admin")
+	u, password, err := createWithRandomPassword(ctx, users, email, "", "admin")
 	if err != nil {
 		if errors.Is(err, repo.ErrEmailTaken) {
 			return nil
@@ -68,7 +68,8 @@ func BootstrapAdmin(ctx context.Context, users repo.UserStore, mailer Mailer, ra
 
 // createWithRandomPassword 以随机初始密码创建账号（跳过邮箱验证码，首次登录须改密码），返回明文密码供发信。
 // 邮箱已占用返回 repo.ErrEmailTaken。
-func createWithRandomPassword(ctx context.Context, users repo.UserStore, email, role string) (*repo.User, string, error) {
+// nickname 为空时取邮箱 @ 前部分。
+func createWithRandomPassword(ctx context.Context, users repo.UserStore, email, nickname, role string) (*repo.User, string, error) {
 	password, err := randomPassword(bootstrapPasswordLen)
 	if err != nil {
 		return nil, "", fmt.Errorf("generate password: %w", err)
@@ -77,9 +78,12 @@ func createWithRandomPassword(ctx context.Context, users repo.UserStore, email, 
 	if err != nil {
 		return nil, "", fmt.Errorf("hash password: %w", err)
 	}
+	if nickname == "" {
+		nickname = defaultNickname(email)
+	}
 	now := time.Now().UnixMilli()
 	u := &repo.User{
-		Nickname:           defaultNickname(email),
+		Nickname:           nickname,
 		Email:              email,
 		PasswordHash:       string(hash),
 		Role:               role,

@@ -1746,9 +1746,10 @@ paths:
       tags: [管理]
       summary: 添加用户
       description: |
-        按邮箱创建普通用户：跳过邮箱验证码，随机生成初始密码并发到该邮箱，首次登录须先改密码
-        （登录响应 `must_change_password: true`）。昵称默认取邮箱 @ 前部分。
-        邮件发送失败时账号仍已创建，响应 `mailed: false` 并带 `initial_password`，由管理员转交。
+        按邮箱创建普通用户：跳过邮箱验证码，随机生成初始密码，首次登录须先改密码
+        （登录响应 `must_change_password: true`）。昵称可选，默认取邮箱 @ 前部分。
+        配置了邮件时把初始密码发到该邮箱；未配置邮件或发送失败时账号仍已创建，
+        响应 `mailed: false` 并带 `initial_password`，由管理员转交。
       requestBody:
         required: true
         content:
@@ -1758,6 +1759,7 @@ paths:
               required: [email]
               properties:
                 email: { type: string, format: email }
+                nickname: { type: string, description: 可选，最长 32 字符 }
       responses:
         "200":
           description: 已创建
@@ -1779,7 +1781,7 @@ paths:
                   mailed: { type: boolean, description: 初始密码邮件是否发送成功 }
                   initial_password: { type: string, description: 仅 `mailed` 为 false 时返回 }
         "400":
-          description: "`invalid email`"
+          description: "`invalid email` / `nickname too long` / `nickname contains invalid characters`"
           content: { text/plain: { schema: { type: string } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/AdminRequired" }
