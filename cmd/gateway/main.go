@@ -669,20 +669,7 @@ func (app *App) Run(ctx context.Context) error {
 
 	// 接入方业务后端调用的服务端 API(app_id + HMAC 签名)。
 	if app.serverAPI != nil {
-		for _, route := range []string{
-			"/server/v1/users/import",
-			"/server/v1/users/token",
-			"/server/v1/users/revoke",
-			"/server/v1/users/disable",
-			"/server/v1/users/delete",
-			"/server/v1/groups/create",
-			"/server/v1/groups/members/add",
-			"/server/v1/groups/members/remove",
-			"/server/v1/groups/dismiss",
-			"/server/v1/messages/send",
-			"/server/v1/signals/send",
-			"/server/v1/tokens/verify",
-		} {
+		for _, route := range app.serverAPI.Routes() {
 			mux.Handle(route, app.serverAPI)
 		}
 		app.serverApps.StartRefresh(ctx)

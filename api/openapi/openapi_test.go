@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/im/internal/serverapi"
 )
 
 func get(t *testing.T, h http.Handler, path string) (*http.Response, string) {
@@ -62,6 +64,23 @@ func TestSpecCoversGatewayRoutes(t *testing.T) {
 		}
 		if !strings.Contains(spec, key) {
 			t.Errorf("route %s is not documented in openapi.yaml", route)
+		}
+	}
+}
+
+// 服务端 API 的路由与文档一一对应（main.go 按 Routes() 注册）。
+func TestSpecMatchesServerAPIRoutes(t *testing.T) {
+	spec := string(Spec)
+	mounted := map[string]bool{}
+	for _, route := range serverapi.New(serverapi.Deps{}).Routes() {
+		mounted[route] = true
+		if !strings.Contains(spec, "\n  "+route+":") {
+			t.Errorf("server api route %s is not documented in openapi.yaml", route)
+		}
+	}
+	for _, m := range regexp.MustCompile(`\n  (`+serverapi.Prefix+`[^:]+):`).FindAllStringSubmatch(spec, -1) {
+		if !mounted[m[1]] {
+			t.Errorf("openapi.yaml documents %s but the server api has no such route", m[1])
 		}
 	}
 }
