@@ -447,6 +447,104 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "503": { $ref: "#/components/responses/Unavailable" }
 
+  /user/block:
+    post:
+      tags: [用户]
+      summary: 屏蔽用户
+      description: 幂等。屏蔽只影响自己客户端的展示（Paircast 隐藏对方的聊天消息），对方无感知。每人最多屏蔽 1000 个。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [target_uid]
+              properties:
+                target_uid: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/StatusOK" }
+        "400":
+          description: "`target_uid required` 或 `cannot target yourself`"
+          content: { text/plain: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: "`block list full`"
+          content: { text/plain: { schema: { type: string } } }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /user/unblock:
+    post:
+      tags: [用户]
+      summary: 取消屏蔽
+      description: 幂等。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [target_uid]
+              properties:
+                target_uid: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/StatusOK" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /user/blocks:
+    get:
+      tags: [用户]
+      summary: 我屏蔽的用户
+      responses:
+        "200":
+          description: 屏蔽列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blocked:
+                    type: array
+                    items: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /user/report:
+    post:
+      tags: [用户]
+      summary: 举报用户
+      description: |
+        通常带上被举报的消息：`content` 为消息摘要（截断到 500 字），`message_id` 为消息 ID，`context` 为房间 ID。
+        同一举报人对同一条消息的待处理举报只保留一条（返回已有的 `id`）。管理员在 `/admin/reports` 处理。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [target_uid]
+              properties:
+                target_uid: { type: string }
+                content: { type: string }
+                message_id: { type: string }
+                context: { type: string }
+      responses:
+        "200":
+          description: 已记录
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  id: { type: integer, format: int64 }
+        "400":
+          description: "`target_uid required` 或 `cannot target yourself`"
+          content: { text/plain: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
   /avatar/{file_id}:
     get:
       tags: [用户]
@@ -1841,6 +1939,91 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/AdminRequired" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /admin/reports:
+    get:
+      tags: [管理]
+      summary: 用户举报列表
+      description: 从新到旧分页，附带举报人 / 被举报人的昵称，以及被举报人当前是否已被禁用。`pending` 为待处理总数。
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, handled, all], default: pending } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        "200":
+          description: 举报列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reports:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer, format: int64 }
+                        reporter_uid: { type: string }
+                        reporter_nickname: { type: string }
+                        target_uid: { type: string }
+                        target_nickname: { type: string }
+                        target_disabled: { type: boolean }
+                        message_id: { type: string }
+                        context: { type: string, description: 房间 ID }
+                        content: { type: string }
+                        status: { type: string, enum: [pending, ignored, banned] }
+                        handled_by: { type: string }
+                        created_at: { type: integer, format: int64, description: 毫秒 }
+                        handled_at: { type: integer, format: int64, description: 毫秒 }
+                  total: { type: integer }
+                  pending: { type: integer }
+                  offset: { type: integer }
+                  limit: { type: integer }
+        "400":
+          description: "`status must be pending, handled or all`"
+          content: { text/plain: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminRequired" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /admin/reports/resolve:
+    post:
+      tags: [管理]
+      summary: 处理举报
+      description: |
+        `ignore` 只把这条标记为已忽略。`ban` 禁用被举报账号（同 `/admin/users/disable`：立即下线、无法登录），
+        并把针对该用户的其他待处理举报一并标记为已封禁；管理员账号不能被封禁。解封用 `/admin/users/disable`。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [id, action]
+              properties:
+                id: { type: integer, format: int64 }
+                action: { type: string, enum: [ignore, ban] }
+      responses:
+        "200":
+          description: 已处理
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  report_status: { type: string, enum: [ignored, banned] }
+        "400":
+          description: "`id required`、`action must be ignore or ban` 或 `cannot ban yourself`"
+          content: { text/plain: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: 非管理员，或 `cannot ban an admin`
+          content: { text/plain: { schema: { type: string } } }
+        "404":
+          description: "`report not found` 或 `user not found`"
+          content: { text/plain: { schema: { type: string } } }
         "503": { $ref: "#/components/responses/Unavailable" }
 
 components:

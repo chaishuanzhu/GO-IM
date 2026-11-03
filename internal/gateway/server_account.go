@@ -576,6 +576,9 @@ func (s *Server) writeOwnProfile(w http.ResponseWriter, r *http.Request, uid str
 	p := publicProfile(u)
 	p["email"] = u.Email
 	p["role"] = u.Role
+	if s.adminUIDs[uid] {
+		p["role"] = "admin"
+	}
 	p["created_at"] = u.CreatedAt
 	writeJSON(w, p)
 }

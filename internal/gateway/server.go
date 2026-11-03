@@ -21,6 +21,7 @@ import (
 	"github.com/im/internal/pkg/jwt"
 	"github.com/im/internal/pkg/snowflake"
 	"github.com/im/internal/repo"
+	"github.com/im/internal/moderation"
 	"github.com/im/internal/watchroom"
 	"github.com/panjf2000/gnet/v2"
 	"golang.org/x/crypto/bcrypt"
@@ -65,6 +66,9 @@ type Server struct {
 	// 媒体库与观影房间(nil = /media/*、/room/* 返回 503)。
 	media *media.Service
 	rooms *watchroom.Service
+
+	// 屏蔽与举报(nil = /user/block*、/user/report、/admin/reports* 返回 503)。
+	moderation *moderation.Service
 
 	// WebSocket
 	upgrader websocket.Upgrader

@@ -17,6 +17,7 @@ import (
 	"github.com/im/api/openapi"
 	"github.com/im/configs"
 	"github.com/im/internal/gateway"
+	"github.com/im/internal/moderation"
 	"github.com/im/internal/mq"
 	"github.com/im/internal/observability"
 	"github.com/im/internal/pkg/jwt"
@@ -338,6 +339,19 @@ func NewApp(cfg *configs.Config) (*App, error) {
 	}
 	server.SetMedia(mediaSvc, roomSvc)
 
+	// --- 屏蔽与举报 ---
+	var modStore moderation.Store = moderation.NewMemoryStore()
+	if db != nil {
+		mysqlMod, err := moderation.NewMySQLStore(db)
+		if err != nil {
+			return nil, fmt.Errorf("moderation: %w", err)
+		}
+		modStore = mysqlMod
+	} else {
+		log.Printf("[main] moderation: in-memory store (no MySQL), blocks and reports are lost on restart")
+	}
+	server.SetModeration(moderation.NewService(modStore))
+
 	// 在线状态:有 Redis 时每个网关维护一张位图(im:online:{node}),查询时合并所有网关。
 	if rdb != nil {
 		node := cfg.Gateway.Grpc.NodeID
@@ -548,6 +562,10 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/user/profile", app.Server.HandleProfile)
 	mux.HandleFunc("/user/profiles", app.Server.HandleProfiles)
 	mux.HandleFunc("/user/search", app.Server.HandleUserSearch)
+	mux.HandleFunc("/user/block", app.Server.HandleUserBlock)
+	mux.HandleFunc("/user/unblock", app.Server.HandleUserUnblock)
+	mux.HandleFunc("/user/blocks", app.Server.HandleUserBlocks)
+	mux.HandleFunc("/user/report", app.Server.HandleUserReport)
 	mux.HandleFunc("/avatar/", app.Server.HandleAvatar)
 	mux.HandleFunc("/online", app.Server.HandleOnlineUsers)
 
@@ -629,6 +647,8 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/admin/messages/delete", app.Server.HandleAdminMessageDelete)
 	mux.HandleFunc("/admin/conversations", app.Server.HandleAdminConversations)
 	mux.HandleFunc("/admin/conversations/messages", app.Server.HandleAdminConversationMessages)
+	mux.HandleFunc("/admin/reports", app.Server.HandleAdminReports)
+	mux.HandleFunc("/admin/reports/resolve", app.Server.HandleAdminReportResolve)
 
 	// 使用 panic 恢复中间件包装
 	handler := gateway.Recovery(mux)

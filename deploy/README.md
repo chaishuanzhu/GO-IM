@@ -81,6 +81,8 @@ docker compose down -v                          # 停止并删除所有数据
 
 注册默认开放。要关闭自助注册：在配置文件设 `gateway.auth.disable_registration: true`，或在客户端管理后台（`POST /admin/settings registration_open=false`）关闭——后台改过之后以数据库里的值为准。关闭后管理员仍可添加用户。用户可在客户端里自行注销账号（`POST /user/delete`，需验证密码；管理员账号不能自助注销）。
 
+聊天里的屏蔽与举报也存在服务端（MySQL 表 `user_blocks` / `user_reports`，启动时自动建表；未接 MySQL 时存在内存里，重启丢失）。管理员在 Paircast「设置 → 举报处理」里查看待处理举报，可以忽略，或封禁被举报用户（等同 `POST /admin/users/disable`：立即下线、无法再登录；解封也用这个接口）。
+
 在配置文件的 `gateway.mail` 中填写 SMTP 服务器并设 `enabled: true`；密码不要写进配置文件，通过环境变量 `GOIM_MAIL_PASSWORD` 传入：
 
 ```json

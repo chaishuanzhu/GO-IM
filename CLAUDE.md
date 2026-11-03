@@ -53,6 +53,8 @@ Startup with admin_email → BootstrapAdmin: email not registered → create adm
 HTTP /change-password (old + new) → UpdatePassword clears must_change_password (as does /password/reset); KMP login holds the session unsaved until the forced change succeeds
 HTTP /password/reset, /user/email → CodeStore.Verify(reset_password | bind_email) → update password / bind email
 HTTP /user/delete (password) → self-service account deletion (admins refused 403) → DeleteUser + kick "account deleted"
+HTTP /user/block | /user/unblock (target_uid), GET /user/blocks → internal/moderation (user_blocks table; display-only, clients hide blocked senders); /user/report (target_uid, content ≤ 500 runes, message_id, context=room) → user_reports (pending; same reporter + message deduped)
+HTTP /admin/reports?status=pending|handled|all → reports + nicknames + target_disabled + pending count; /admin/reports/resolve (id, action=ignore|ban) → ban = UpdateUserDisabled + kick "account disabled" + mark every pending report on that user banned (admins can't be banned)
 HTTP /auth/config → {registration_open, email_verification (mailer + code store configured)}; closed → /register and register email codes return 403 "registration closed", KMP login hides the register tab
 HTTP /admin/users/create (email) → same random-password path as BootstrapAdmin with role user (no code, must_change_password=1) → mail the password; mail unconfigured → 503 before creating; send failure → response carries initial_password for the admin to hand over
 HTTP /admin/users/disable | /admin/users/delete → update user → kick local connections (CmdKick "account disabled" / "account deleted"); WS / TCP connect re-checks the account (Server.accountBlocked) so unexpired tokens can't reconnect
