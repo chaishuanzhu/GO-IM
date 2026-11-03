@@ -39,7 +39,7 @@ func TestHandlerServesSpecAndUI(t *testing.T) {
 // 网关在 main.go 注册的每个 HTTP 路由都必须出现在文档里。
 func TestSpecCoversGatewayRoutes(t *testing.T) {
 	var src []byte
-	for _, f := range []string{"../../cmd/gateway/main.go", "../../internal/paircast/server.go"} {
+	for _, f := range []string{"../../cmd/gateway/main.go"} {
 		b, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)

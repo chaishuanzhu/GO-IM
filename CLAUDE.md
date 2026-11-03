@@ -11,9 +11,6 @@ go run ./cmd/gateway/
 # Run the logic service (reads configs/config.json, requires MySQL)
 go run ./cmd/logic/
 
-# Run the Paircast service (reads $CONFIG_PATH, default configs/paircast.json; needs an IM app secret)
-PAIRCAST_IM_SECRET=... go run ./cmd/paircast/
-
 # Run integration tests (spins up a real server on :18080)
 go test ./cmd/gateway/ -v
 
@@ -25,7 +22,7 @@ go build -o gateway.exe ./cmd/gateway/
 go build -o logic.exe ./cmd/logic/
 ```
 
-Unit tests live next to the code in `internal/...`, `api/...`, `configs/` and `pkg/...`; `cmd/gateway/` has the WebSocket + gnet TCP integration tests. Run `go test ./internal/... ./api/... ./configs/... ./pkg/... ./cmd/gateway/ -count=1`; MySQL / Kafka tests skip when those aren't running. Current counts are under "Current test coverage" below.
+Unit tests live next to the code in `internal/...`, `api/...` and `configs/`; `cmd/gateway/` has the WebSocket + gnet TCP integration tests. Run `go test ./internal/... ./api/... ./configs/... ./cmd/gateway/ -count=1`; MySQL / Kafka tests skip when those aren't running. Current counts are under "Current test coverage" below.
 
 ## Architecture
 
@@ -139,13 +136,10 @@ presence hook → user.online / offline; moderation.OnReport → report.created
                → non-2xx / 5 s timeout → retry ZSET + payload HASH (Lua claim), backoff 2^n s capped at 1 h, for 24 h → dead LIST
 before_send_url → Router.rejectedByHook (after the block check in chat / forward) → sync POST, {"allow":false} → ACK {"error":"rejected"}; fails open
 
-# Paircast (cmd/paircast, internal/paircast) — the reference app built on the server API
-Client (IM token) → paircast /media/*, /room/* → IMAuth (tokens/verify, 60 s cache) → media.Service / watchroom.Service
-               → room = IM group via IMGroups (groups/create|members/add|remove|dismiss); IMNotifier → signals/send paircast.room_updated
-               → /im/webhook (WebhookHandler) ← group.member_left / group.dismissed → rooms.GroupMemberLeft / GroupDismissed
-               → janitor deletes stale rooms and dismisses their groups
-Gateway legacy mode (deprecated, removed next release): gateway.media.sources set → cmd/gateway/media.go mounts the same paircast.Server
-               with in-process adapters (gatewayAuth → Server.AuthenticateHTTP, roomGroups over GroupStore, roomSignals → Router.SendSignal)
+# Integrating apps — e.g. Paircast (server lives in the Paircast repo, server/)
+App backend → pkg/imserver (separate Go module github.com/chaishuanzhu/GO-IM/pkg/imserver, stdlib only; main module uses it via replace ./pkg/imserver)
+               → users/import + users/token → client connects with the IM token; app backend verifies it with tokens/verify
+               → groups/* for app-level rooms; signals/send "<app>.<name>" for realtime state; webhooks for IM-side changes
 
 # Multi-gateway forwarding (Phase 4)
 routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.Forward(ctx, uid, msg)
@@ -174,8 +168,7 @@ routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.
 | `proto.Message` | `api/proto/message.pb.go` (generated) | Protobuf-generated message struct for all communication — control (heartbeat/ACK/login) and data (chat) share the same shape. `Cmd` field discriminates. Constants and `Validate()` in `api/proto/message.go`. |
 | `serverapi.API` | `internal/serverapi/` | Server API for embedding apps (`/server/v1/*`): HMAC auth + nonce store (`auth.go`), app registry + `apps` table (`apps.go`), handlers (`api.go`). |
 | `webhook` | `internal/webhook/` | `Publisher` + `Queue` (Redis Stream / memory) + `Dispatcher` (signed POST, retries, dead letters) + event adapters (`events.go`) + synchronous `BeforeSend`. |
-| `imserver.Client` | `pkg/imserver/` | Public Go SDK for the server API (signing, every endpoint) and webhook verification (`VerifyWebhook`, `ParseWebhook`). |
-| `paircast.Server` | `internal/paircast/` | Paircast HTTP layer (`/media/*`, `/room/*`) over `media.Service` + `watchroom.Service` (`internal/paircast/{media,watchroom}`); IM adapters in `imadapter.go`. Served by `cmd/paircast` (and, deprecated, by the gateway). |
+| `imserver.Client` | `pkg/imserver/` | Public Go SDK (own module `github.com/chaishuanzhu/GO-IM/pkg/imserver`, stdlib only) for the server API (signing, every endpoint) and webhook verification (`VerifyWebhook`, `ParseWebhook`). |
 | `snowflake.Generator` | `internal/pkg/snowflake/snowflake.go` | Globally unique, time-sortable message IDs |
 | `jwt.Manager` | `internal/pkg/jwt/jwt.go` | HS256 token issue/validate for auth |
 | `configs.Config` | `configs/config.go` | JSON config loading with `Default()` fallback |
@@ -287,13 +280,12 @@ GO-IM as an IM channel for other apps; see `docs/16-integration-guide.md`.
 | 2 | **Server API** — `internal/serverapi` (app_id + HMAC, external users, tokens, groups, messages, signals) + OpenAPI | ✅ |
 | 3 | **Go SDK** — `pkg/imserver` | ✅ |
 | 4 | **Webhooks** — Redis Stream / memory queue, signed delivery, retries, dead letters, optional `before_send` (Kafka transport not implemented) | ✅ |
-| 5 | **Paircast split** — `cmd/paircast` service, `internal/paircast/{media,watchroom}`; gateway `media` kept one release as legacy mode | ✅ |
-| 6 | **Deploy** — `Dockerfile.paircast` (`go-im-paircast`), `deploy/k8s/paircast/` overlay (ingress `/media`, `/room`), compose profile `paircast`, Jenkins image + optional rollout | ✅ |
+| 5 | **Paircast split** — media library + watch rooms moved out of GO-IM into the Paircast repo (`server/`), built on the server API; `gateway.media` removed | ✅ |
 
 ### Current test coverage
 
 ```
-380 passed, 0 failed, 21 skipped (MySQL / Kafka not running)
+358 passed, 0 failed, 21 skipped (MySQL / Kafka not running)
 ```
 
 | Package | Tests | Notes |
@@ -301,7 +293,6 @@ GO-IM as an IM channel for other apps; see `docs/16-integration-guide.md`.
 | `internal/gateway` | 288 | hub + router + gnet_handler + redis_store + grpc_client + grpc_gateway + hashring + group_store + unread_tracker + object_store + thumbnail + router_read_receipt + router_group + server + cluster + router_recall + multi_device(14) + signal + hooks + block |
 | `internal/serverapi` | 4 | signed API end to end + SDK round trip |
 | `internal/webhook` | 6 | publish / dispatch / retry / dead letter / before_send (miniredis) |
-| `internal/paircast` | 22 | HTTP layer (7) + media (4) + s3source (6) + watchroom (5) |
 | `internal/moderation` | 3 | blocks + reports |
 | `internal/logic` | 4 | gRPC server + consumer (1 skipped without MySQL) |
 | `internal/mq` | 15 | producer + consumer (2 skipped without Kafka) |
@@ -338,7 +329,6 @@ Default config values:
 - Mail: `enabled: false`; SMTP host/port/username/from in config, password only via env `GOIM_MAIL_PASSWORD` (k8s Secret `goim-infra` key `MAIL_PASSWORD`). Port 465 = implicit TLS, others STARTTLS. Without mail, codes are logged in dev_mode and the code endpoints return 503 otherwise
 - Object storage: `enabled: false` (in-memory fallback), endpoint `localhost:9000`, bucket `im-files`, max_upload 10MB
 - Server API: `server_api.apps: []` (empty, or no app with a secret = `/server/v1/*` not mounted); each app has `app_id`, optional `webhook_url` / `webhook_events` / `before_send_url` / `before_send_timeout`; secrets only via env `GOIM_APP_<ID>_SECRET` / `GOIM_APP_<ID>_WEBHOOK_SECRET`; `max_token_ttl` defaults to `jwt.expiration`. Needs MySQL
-- Media (deprecated): `gateway.media` runs the Paircast media library inside the gateway for one more release; new deployments use `cmd/paircast` with `configs/paircast.example.json` (k8s: `deploy/k8s/paircast/`)
 - Stability: `max_connections: 0` (unlimited), HTTP timeouts (read 10s, write 10s, idle 120s), `shutdown_timeout: 30s`, `pprof_enabled: false`, `swagger_enabled: true` (Swagger UI at `/swagger/`, spec embedded from `api/openapi/openapi.yaml`; off in the deploy configs). Every route added in `cmd/gateway/main.go` must also be added to the spec — `go test ./api/openapi/` fails otherwise
 
 ### Wire formats summary

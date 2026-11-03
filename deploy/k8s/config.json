@@ -90,12 +90,8 @@
             "presign_download_ttl": "1h"
         },
 
-        "media": {
-            "_comment": "[已弃用] 网关内置的 Paircast 媒体库,改用 paircast/ 叠加层部署独立服务。sources 为空即不启用。",
-            "sources": []
-        },
         "server_api": {
-            "_comment": "接入方。密钥由 Secret goim-paircast 注入(GOIM_APP_PAIRCAST_SECRET / _WEBHOOK_SECRET);未部署 paircast/ 叠加层时没有密钥,服务端 API 不启用。",
+            "_comment": "接入方 Paircast(服务端在 Paircast 仓库 server/,部署清单 server/deploy/k8s)。密钥由 Secret goim-paircast 注入(GOIM_APP_PAIRCAST_SECRET / _WEBHOOK_SECRET);未部署时没有密钥,服务端 API 不启用。",
             "apps": [
                 {
                     "app_id": "paircast",

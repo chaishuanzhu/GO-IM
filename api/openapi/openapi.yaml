@@ -25,10 +25,6 @@ tags:
     description: 上传（直传对象存储或经网关中转）与下载
   - name: 消息
     description: 全文搜索、未读数、实时连接
-  - name: 媒体库
-    description: 视频源（S3 兼容存储等）、播放直链、字幕、贴纸。由独立的 Paircast 服务（cmd/paircast，令牌为 IM 用户令牌）提供；网关内置版本（`gateway.media`）已弃用，下个版本移除
-  - name: 观影房间
-    description: 一起看房间（同时建群），变化通过群信令 `paircast.room_updated` 推送。由独立的 Paircast 服务（cmd/paircast）提供；网关内置版本已弃用，下个版本移除
   - name: 系统
   - name: 服务端 API
     description: |
@@ -456,7 +452,7 @@ paths:
     post:
       tags: [用户]
       summary: 屏蔽用户
-      description: 幂等。屏蔽只影响自己客户端的展示（Paircast 隐藏对方的聊天消息），对方无感知。每人最多屏蔽 1000 个。
+      description: 幂等。屏蔽后对方的消息不再投递给自己（客户端也会隐藏已有消息），对方无感知。每人最多屏蔽 1000 个。
       requestBody:
         required: true
         content:
@@ -467,7 +463,7 @@ paths:
               properties:
                 target_uid: { type: string }
       responses:
-        "200": { $ref: "#/components/responses/StatusOK" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StatusOK" } } } }
         "400":
           description: "`target_uid required` 或 `cannot target yourself`"
           content: { text/plain: { schema: { type: string } } }
@@ -492,7 +488,7 @@ paths:
               properties:
                 target_uid: { type: string }
       responses:
-        "200": { $ref: "#/components/responses/StatusOK" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StatusOK" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { $ref: "#/components/responses/Unavailable" }
@@ -1158,360 +1154,6 @@ paths:
           description: 文件不存在、未完成上传或无权访问
           content: { text/plain: { schema: { type: string } } }
         "503": { $ref: "#/components/responses/Unavailable" }
-
-  /media/sources:
-    get:
-      tags: [媒体库]
-      summary: 已配置的视频源与服务端能力
-      responses:
-        "200":
-          description: 视频源列表
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  sources:
-                    type: array
-                    items: { $ref: "#/components/schemas/MediaSource" }
-                  online_subtitles: { type: boolean, description: 服务端是否配置了在线字幕（OpenSubtitles） }
-                  stickers: { type: boolean, description: 是否配置了贴纸目录 }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /media/items:
-    get:
-      tags: [媒体库]
-      summary: 影片列表
-      description: |
-        合并多个视频源时按 `source` 过滤；`next_cursor` 为空表示没有更多。列表只附带已缓存的元数据，
-        `enrich=1` 会在返回前刮削本页缺失的元数据（较慢）。
-      parameters:
-        - { name: source, in: query, description: 视频源 ID，默认 `gateway.media.default_source`, schema: { type: string } }
-        - { name: q, in: query, description: 按标题 / 文件名过滤, schema: { type: string } }
-        - { name: cursor, in: query, schema: { type: string } }
-        - { name: limit, in: query, schema: { type: integer, default: 500 } }
-        - { name: refresh, in: query, description: "`1` 忽略列表缓存", schema: { type: string, enum: ["1"] } }
-        - { name: enrich, in: query, schema: { type: string, enum: ["1"] } }
-      responses:
-        "200":
-          description: 一页影片
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items: { $ref: "#/components/schemas/MediaItem" }
-                  next_cursor: { type: string }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "502": { $ref: "#/components/responses/Upstream" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /media/item:
-    get:
-      tags: [媒体库]
-      summary: 单部影片（含元数据）
-      description: "`id` 形如 `<source>:<native>`；不带已知前缀时视为默认视频源下的原生 ID。"
-      parameters:
-        - { name: id, in: query, required: true, schema: { type: string, example: "oss:films/Inception.2010.mkv" } }
-      responses:
-        "200":
-          description: 影片
-          content: { application/json: { schema: { $ref: "#/components/schemas/MediaItem" } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /media/play:
-    get:
-      tags: [媒体库]
-      summary: 播放直链
-      description: S3 兼容源返回预签名 URL（默认 6 小时），视频流不经过网关。客户端在 `expires_at` 前重新获取。
-      parameters:
-        - { name: id, in: query, required: true, schema: { type: string } }
-      responses:
-        "200":
-          description: 播放信息
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  url: { type: string, format: uri }
-                  expires_at: { type: integer, format: int64 }
-                  format: { type: string, example: mkv }
-                  headers: { type: object, additionalProperties: { type: string }, description: 播放时需附带的请求头（可选） }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /media/subtitles:
-    get:
-      tags: [媒体库]
-      summary: 影片的字幕列表
-      description: 返回与影片同目录的外挂字幕；带 `room_id`（且调用者是成员）时把房主共享的字幕放在第一位。
-      parameters:
-        - { name: id, in: query, required: true, schema: { type: string } }
-        - { name: room_id, in: query, schema: { type: string } }
-      responses:
-        "200":
-          description: 字幕列表
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  subtitles:
-                    type: array
-                    items: { $ref: "#/components/schemas/SubtitleRef" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /media/subtitle:
-    get:
-      tags: [媒体库]
-      summary: 读取字幕文件
-      description: "`ref` 来自字幕列表 / 共享 / 在线下载（`src:` 或 `blob:` 前缀）。响应头 `X-Subtitle-Format` 为扩展名。"
-      parameters:
-        - { name: ref, in: query, required: true, schema: { type: string } }
-      responses:
-        "200":
-          description: 字幕内容（最大 2 MB）
-          content: { text/plain: { schema: { type: string } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /media/subtitles/search:
-    get:
-      tags: [媒体库]
-      summary: 在线搜索字幕
-      description: 经服务端调用 OpenSubtitles（API Key 只在服务端）。结果的 `ref` 为 `os:<file_id>`，需先 `POST /media/subtitles/fetch`。
-      parameters:
-        - { name: q, in: query, required: true, schema: { type: string } }
-        - { name: year, in: query, schema: { type: string } }
-      responses:
-        "200":
-          description: 搜索结果
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  subtitles:
-                    type: array
-                    items: { $ref: "#/components/schemas/SubtitleRef" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "501": { description: 未配置在线字幕, content: { text/plain: { schema: { type: string } } } }
-        "502": { $ref: "#/components/responses/Upstream" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /media/subtitles/fetch:
-    post:
-      tags: [媒体库]
-      summary: 下载在线字幕到服务器
-      requestBody:
-        required: true
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              required: [ref]
-              properties:
-                ref: { type: string, example: "os:123456" }
-      responses:
-        "200":
-          description: 可用 `/media/subtitle` 读取的 ref
-          content:
-            application/json:
-              schema: { type: object, properties: { ref: { type: string } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "429": { description: 每个用户每分钟最多下载 10 个在线字幕, content: { text/plain: { schema: { type: string } } } }
-        "501": { description: 未配置在线字幕或对象存储, content: { text/plain: { schema: { type: string } } } }
-        "502": { $ref: "#/components/responses/Upstream" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /media/subtitles/share:
-    post:
-      tags: [媒体库]
-      summary: 房主共享字幕
-      description: 字幕保存到对象存储（`paircast/subtitles/…`）并记到房间上，随后推送 `paircast.room_updated`。仅房主可调用。
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [room_id, file]
-              properties:
-                uid: { type: string }
-                token: { type: string }
-                room_id: { type: string }
-                label: { type: string }
-                file: { type: string, format: binary, description: srt / ass / ssa / vtt，最大 2 MB }
-      responses:
-        "200":
-          description: 共享后的 ref
-          content:
-            application/json:
-              schema: { type: object, properties: { ref: { type: string } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { description: 不是房主或不是成员, content: { text/plain: { schema: { type: string } } } }
-        "410": { $ref: "#/components/responses/RoomEnded" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /media/stickers:
-    get:
-      tags: [媒体库]
-      summary: 贴纸目录
-      description: 原样返回贴纸目录下的 `catalog.json`。
-      responses:
-        "200":
-          description: catalog.json
-          content: { application/json: { schema: { type: object } } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /media/stickers/pack:
-    get:
-      tags: [媒体库]
-      summary: 贴纸包
-      description: 返回 `{id}/pack.json`，每张贴纸附带 `url`、封面附带 `cover_url`（预签名 7 天）。
-      parameters:
-        - { name: id, in: query, required: true, schema: { type: string } }
-      responses:
-        "200":
-          description: pack.json
-          content: { application/json: { schema: { type: object } } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /room:
-    get:
-      tags: [观影房间]
-      summary: 房间状态
-      parameters:
-        - { name: room_id, in: query, required: true, schema: { type: string } }
-      responses:
-        "200":
-          description: 房间
-          content: { application/json: { schema: { $ref: "#/components/schemas/WatchRoom" } } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { description: 不是成员, content: { text/plain: { schema: { type: string } } } }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /room/create:
-    post:
-      tags: [观影房间]
-      summary: 新建房间
-      description: 同时创建一个群（房主为群主），房间 ID 为 UUID。
-      requestBody:
-        required: true
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              required: [movie_id]
-              properties:
-                movie_id: { type: string }
-      responses:
-        "200":
-          description: 新房间
-          content: { application/json: { schema: { $ref: "#/components/schemas/WatchRoom" } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /room/join:
-    post:
-      tags: [观影房间]
-      summary: 加入房间
-      requestBody:
-        required: true
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              required: [room_id]
-              properties:
-                room_id: { type: string }
-      responses:
-        "200":
-          description: 加入后的房间
-          content: { application/json: { schema: { $ref: "#/components/schemas/WatchRoom" } } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "410": { $ref: "#/components/responses/RoomEnded" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /room/leave:
-    post:
-      tags: [观影房间]
-      summary: 离开房间
-      description: 房主离开时按加入顺序转让（`transfer_seq` 为客户端的信令序号）；最后一人离开时房间结束。
-      requestBody:
-        required: true
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              required: [room_id]
-              properties:
-                room_id: { type: string }
-                transfer_seq: { type: integer, format: int64 }
-      responses:
-        "200":
-          description: 离开后的房间
-          content: { application/json: { schema: { $ref: "#/components/schemas/WatchRoom" } } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
-
-  /room/update:
-    post:
-      tags: [观影房间]
-      summary: 修改房间
-      description: |
-        换片、转让房主、结束房间仅房主可做；`last_applied_seq` / `host_transfer_seq` 只增不减。
-        带 `if_revision` 时版本不一致返回 409。成功后向其他成员推送 `paircast.room_updated`。
-      requestBody:
-        required: true
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              required: [room_id]
-              properties:
-                room_id: { type: string }
-                movie_id: { type: string }
-                host_uid: { type: string }
-                host_transfer_seq: { type: integer, format: int64 }
-                last_applied_seq: { type: integer, format: int64 }
-                status: { type: string, enum: [ended] }
-                if_revision: { type: integer, format: int64 }
-      responses:
-        "200":
-          description: 修改后的房间
-          content: { application/json: { schema: { $ref: "#/components/schemas/WatchRoom" } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { description: 不是房主或不是成员, content: { text/plain: { schema: { type: string } } } }
-        "409": { description: "`if_revision` 与当前版本不一致", content: { text/plain: { schema: { type: string } } } }
-        "410": { $ref: "#/components/responses/RoomEnded" }
-        "503": { $ref: "#/components/responses/MediaUnavailable" }
 
   /search:
     get:
@@ -2487,15 +2129,6 @@ components:
     Unavailable:
       description: 依赖未启用或不可用（MySQL、对象存储、邮件等）
       content: { text/plain: { schema: { type: string } } }
-    MediaUnavailable:
-      description: 未配置媒体库（`gateway.media.sources` 为空）
-      content: { text/plain: { schema: { type: string } } }
-    Upstream:
-      description: 视频源 / TMDB / OpenSubtitles 请求失败
-      content: { text/plain: { schema: { type: string } } }
-    RoomEnded:
-      description: "`room ended`"
-      content: { text/plain: { schema: { type: string } } }
 
   schemas:
     UserRef:
@@ -2530,55 +2163,9 @@ components:
       properties:
         status: { type: string, example: ok }
 
-    MediaSource:
-      type: object
-      properties:
-        id: { type: string, example: oss }
-        name: { type: string }
-        type: { type: string, example: s3 }
-        capabilities: { type: array, items: { type: string }, example: [sidecar_subtitles, artwork, stickers] }
 
-    MediaItem:
-      type: object
-      properties:
-        id: { type: string, description: "`<source>:<native>`", example: "oss:films/Inception.2010.mkv" }
-        source_id: { type: string }
-        title: { type: string }
-        year: { type: string }
-        overview: { type: string }
-        poster_url: { type: string }
-        backdrop_url: { type: string }
-        format: { type: string }
-        size: { type: integer, format: int64 }
 
-    SubtitleRef:
-      type: object
-      properties:
-        ref: { type: string }
-        label: { type: string }
-        language: { type: string }
-        badge: { type: string }
-        format: { type: string }
-        origin: { type: string, enum: [sidecar, shared, online] }
-        detail: { type: string }
 
-    WatchRoom:
-      type: object
-      properties:
-        id: { type: string }
-        group_id: { type: string }
-        movie_id: { type: string }
-        host_uid: { type: string }
-        members: { type: array, items: { type: string } }
-        join_order: { type: array, items: { type: string } }
-        status: { type: string, enum: [active, ended] }
-        last_applied_seq: { type: integer, format: int64 }
-        host_transfer_seq: { type: integer, format: int64 }
-        subtitle_ref: { type: string }
-        subtitle_label: { type: string }
-        revision: { type: integer, format: int64 }
-        created_at: { type: integer, format: int64 }
-        updated_at: { type: integer, format: int64 }
 
     LoginResponse:
       type: object

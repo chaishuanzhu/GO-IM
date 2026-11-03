@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"net/http"
 	"sync"
 	"time"
 
@@ -202,14 +201,4 @@ func (s *Server) DeleteAccount(ctx context.Context, uid string) error {
 	s.kickUser(ctx, uid, kickAccountDeleted)
 	s.purgeUserState(ctx, uid)
 	return nil
-}
-
-// AuthenticateHTTP 用网关的令牌规则认证请求（uid + token 参数，校验账号状态），失败时已写好响应。
-// 供进程内挂载的业务接口（Paircast 兼容模式）使用。
-func (s *Server) AuthenticateHTTP(w http.ResponseWriter, r *http.Request) (string, bool) {
-	claims := s.authenticateRequest(w, r)
-	if claims == nil {
-		return "", false
-	}
-	return claims.UID, true
 }

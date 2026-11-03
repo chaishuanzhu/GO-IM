@@ -75,11 +75,9 @@ services:
     image: 870027381/go-im-gateway:${GOIM_TAG:-latest}
     environment:
       GOIM_MAIL_PASSWORD: ${MAIL_PASSWORD:-}
-      # Paircast 媒体库：源 id 为 oss 时的密钥（其它 id 按 GOIM_MEDIA_<ID>_* 自行添加）
-      GOIM_MEDIA_OSS_ACCESS_KEY: ${MEDIA_OSS_ACCESS_KEY:-}
-      GOIM_MEDIA_OSS_SECRET_KEY: ${MEDIA_OSS_SECRET_KEY:-}
-      GOIM_TMDB_ACCESS_TOKEN: ${TMDB_ACCESS_TOKEN:-}
-      GOIM_OPENSUBTITLES_API_KEY: ${OPENSUBTITLES_API_KEY:-}
+      # 接入方 Paircast 的密钥（服务端见 Paircast 仓库 server/deploy/docker；不用可删）
+      GOIM_APP_PAIRCAST_SECRET: ${PAIRCAST_IM_SECRET:-}
+      GOIM_APP_PAIRCAST_WEBHOOK_SECRET: ${PAIRCAST_IM_WEBHOOK_SECRET:-}
     mem_limit: 512m
     ports:
       - "${HTTP_PORT:-8080}:8080"  # HTTP API + WebSocket

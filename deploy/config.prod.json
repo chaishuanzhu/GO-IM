@@ -107,11 +107,6 @@
             "presign_download_ttl": "1h"
         },
 
-        "media": {
-            "_comment": "Paircast 媒体库(见 configs/config.example.json 的 _sources_example)。sources 为空即不启用;密钥用环境变量 GOIM_MEDIA_<ID>_ACCESS_KEY / _SECRET_KEY、GOIM_TMDB_ACCESS_TOKEN、GOIM_OPENSUBTITLES_API_KEY 注入,不要写进此文件。",
-            "sources": [],
-            "room_retention": "72h"
-        },
 
         "recall_window_ms": 120000,
         "history_default_limit": 30,

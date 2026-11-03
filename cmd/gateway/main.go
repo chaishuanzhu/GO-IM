@@ -20,8 +20,6 @@ import (
 	"github.com/im/internal/moderation"
 	"github.com/im/internal/mq"
 	"github.com/im/internal/observability"
-	"github.com/im/internal/paircast/media"
-	"github.com/im/internal/paircast/watchroom"
 	"github.com/im/internal/pkg/jwt"
 	"github.com/im/internal/pkg/snowflake"
 	"github.com/im/internal/repo"
@@ -47,8 +45,6 @@ type App struct {
 	pprofServer   *http.Server            // pprof 禁用时为 nil
 	router        *gateway.Router         // 用于清理（去重缓存、限流器）
 	metrics       *observability.Metrics  // Prometheus 指标记录器
-	media         *media.Service          // 媒体库未启用时为 nil
-	rooms         *watchroom.Service      // 媒体库未启用时为 nil
 	serverAPI     *serverapi.API          // 未配置 server_api.apps 时为 nil
 	serverApps    *serverapi.Registry
 	webhooks      *webhook.Publisher // 没有接入方配置 webhook_url 时为 nil
@@ -345,14 +341,9 @@ func NewApp(cfg *configs.Config) (*App, error) {
 	)
 	server.SetSettings(settings)
 
-	// --- 媒体库与观影房间（media.sources 为空则不启用）---
 	var db *sql.DB
 	if mysqlStore != nil {
 		db = mysqlStore.DB()
-	}
-	mediaSvc, roomSvc, err := setupMedia(cfg.Gateway.Media, db, objectStore, groupStore, router, snow)
-	if err != nil {
-		return nil, fmt.Errorf("media: %w", err)
 	}
 
 	// --- 屏蔽与举报 ---
@@ -498,8 +489,6 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		clusterMgr:    clusterMgr,
 		router:        router,
 		metrics:       metrics,
-		media:         mediaSvc,
-		rooms:         roomSvc,
 		serverAPI:     serverAPI,
 		serverApps:    serverApps,
 		webhooks:      webhooks,
@@ -636,12 +625,6 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/file/presign", app.Server.HandlePresign)
 	mux.HandleFunc("/file/complete", app.Server.HandleComplete)
 	app.Server.StartFileJanitor(ctx, time.Hour)
-
-	// 媒体库与观影房间（Paircast）。
-	registerMediaRoutes(mux, app.Server, app.media, app.rooms)
-	if app.rooms != nil {
-		app.rooms.StartJanitor(ctx, time.Duration(app.Config.Gateway.Media.RoomRetention), time.Hour)
-	}
 
 	// 消息全文搜索。
 	mux.HandleFunc("/search", app.Server.HandleSearch)

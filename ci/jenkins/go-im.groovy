@@ -223,11 +223,11 @@ if (params.BUILD_IMAGES) {
                             set -eu
                             echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
                             # 编译阶段固定在构建机架构上（Go 按 TARGETARCH 交叉编译），避免在 QEMU 模拟的 arm64 里跑 go build。
-                            for f in Dockerfile.gateway Dockerfile.logic Dockerfile.paircast; do
+                            for f in Dockerfile.gateway Dockerfile.logic; do
                                 sed -i -E 's#^FROM golang:([^ ]+) AS builder#FROM --platform=$BUILDPLATFORM golang:\\1 AS builder\\nARG TARGETOS TARGETARCH#' "$f"
                                 sed -i -E 's#CGO_ENABLED=0 go build#CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build#' "$f"
                             done
-                            for svc in gateway:Dockerfile.gateway logic:Dockerfile.logic paircast:Dockerfile.paircast; do
+                            for svc in gateway:Dockerfile.gateway logic:Dockerfile.logic; do
                                 name=${svc%%:*}; file=${svc#*:}
                                 for i in 1 2 3; do
                                     docker buildx build --platform linux/amd64,linux/arm64 -f "$file" \
@@ -244,7 +244,7 @@ if (params.BUILD_IMAGES) {
                             fi
                         '''
                     }
-                    images = ['gateway', 'logic', 'paircast'].collect { "${ns}/go-im-${it}:${version}" }
+                    images = ['gateway', 'logic'].collect { "${ns}/go-im-${it}:${version}" }
                     imageNs = ns
                 }
             } finally {
@@ -321,9 +321,7 @@ stage('Deploy test') {
                     set -eu
                     k() { kubectl -n "$K8S_NS" "$@"; }
                     changed=""
-                    for d in logic gateway paircast; do
-                        # paircast 是可选叠加层（deploy/k8s/paircast），未部署则跳过
-                        if [ "$d" = paircast ] && ! k get deployment/paircast >/dev/null 2>&1; then continue; fi
+                    for d in logic gateway; do
                         k set image "deployment/$d" "$d=$NS/go-im-$d:$TAG"
                         changed="$changed $d"
                         if ! k rollout status "deployment/$d" --timeout=5m; then

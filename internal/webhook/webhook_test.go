@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/chaishuanzhu/GO-IM/pkg/imserver"
 	"github.com/im/api/proto"
 	"github.com/im/internal/gateway"
 	"github.com/im/internal/pkg/snowflake"
-	"github.com/im/pkg/imserver"
 	"github.com/redis/go-redis/v9"
 )
 

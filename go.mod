@@ -24,6 +24,7 @@ require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/chaishuanzhu/GO-IM/pkg/imserver v0.0.0-00010101000000-000000000000
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.19.1 // indirect
@@ -56,3 +57,5 @@ require (
 	gopkg.in/ini.v1 v1.67.2 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
+
+replace github.com/chaishuanzhu/GO-IM/pkg/imserver => ./pkg/imserver

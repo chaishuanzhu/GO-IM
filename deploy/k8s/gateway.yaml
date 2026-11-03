@@ -58,7 +58,7 @@ spec:
             - name: GOIM_MAIL_PASSWORD
               valueFrom:
                 secretKeyRef: { name: goim-infra, key: MAIL_PASSWORD, optional: true }
-            # 接入方 paircast 的密钥（由 paircast/ 叠加层创建；未部署时不存在，服务端 API 不启用）
+            # 接入方 paircast 的密钥（Secret 由 Paircast 仓库的 server/deploy/k8s 创建；未部署时不存在，服务端 API 不启用）
             - name: GOIM_APP_PAIRCAST_SECRET
               valueFrom:
                 secretKeyRef: { name: goim-paircast, key: IM_SECRET, optional: true }

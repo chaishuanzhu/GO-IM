@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chaishuanzhu/GO-IM/pkg/imserver"
 	"github.com/im/api/proto"
-	"github.com/im/pkg/imserver"
 )
 
 func TestSDKAgainstAPI(t *testing.T) {

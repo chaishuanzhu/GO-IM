@@ -20,6 +20,7 @@ ENV GOSUMDB=sum.golang.org
 
 # 缓存依赖。
 COPY go.mod go.sum ./
+COPY pkg/imserver/go.mod pkg/imserver/
 RUN go mod download
 
 # 构建二进制文件。

@@ -16,7 +16,7 @@ IM 只负责连接、消息、群和在线状态。两边的边界：
 - 接入方后端用 `tokens/verify` 校验客户端提交的 IM 令牌，以此认证自己的业务接口——不需要再发一套令牌。
 - IM 侧的事件（消息、成员变化、上下线、举报）通过 **webhook** 推给接入方后端。
 
-参考实现：Paircast（一起看，`cmd/paircast`）就是这样一个接入方，见文末。
+参考实现：Paircast（一起看）的服务端就是这样一个接入方，见文末。
 
 ## 1. 登记接入方
 
@@ -159,14 +159,12 @@ http.HandleFunc("/im/webhook", func(w http.ResponseWriter, r *http.Request) {
 
 ## 8. 参考实现：Paircast
 
-`cmd/paircast` 是独立部署的一起看服务（媒体库 `/media/*` + 观影房间 `/room/*`），完全通过上面的能力使用 IM：
+Paircast（一起看）的服务端（媒体库 `/media/*` + 观影房间 `/room/*`）在 [Paircast 仓库](https://github.com/chaishuanzhu/Paircast) 的 `server/`，完全通过上面的能力使用 IM：
 
 - 认证：客户端带 IM 令牌调用 Paircast，Paircast 用 `tokens/verify` 校验（缓存 60 秒）。
 - 房间 = 一个 IM 群：建房 `groups/create`，进出房 `groups/members/add|remove`，房间清理 `groups/dismiss`。
-- 房间变化用群信令 `paircast.room_updated` 推送；播放同步由客户端之间直接发 `paircast.*` 信令。
+- 房间变化用群信令 `paircast.room_updated` 推送；播放同步由客户端之间直接发 `paircast.playback` 信令。
 - 订阅 `group.member_left` / `group.dismissed`，用户在 IM 里退群或群被解散时同步房间成员。
+- 与 GO-IM 同域名部署时，反向代理把 `/media`、`/room` 转给 Paircast，其余路径转网关。
 
-部署：`Dockerfile.paircast`（镜像 `go-im-paircast`）、`deploy/k8s/paircast/`（可选叠加层，Ingress 把 `/media`、`/room` 转给它）、
-`docker compose --profile paircast up -d`。配置见 `configs/paircast.example.json`。
-
-网关内置的旧版实现（`gateway.media`）在本版本仍可用，作为过渡；它与独立服务共用 `internal/paircast` 的接口代码，下个版本移除。
+SDK 引用：`go get github.com/chaishuanzhu/GO-IM/pkg/imserver`（独立的 Go 模块，只依赖标准库）。

@@ -75,7 +75,6 @@ type GatewayConfig struct {
 	LogicGateway  LogicConfig         `json:"logic"`          // Gateway→Logic 的 gRPC 客户端（Addr）；与顶层 Config.Logic 不同
 	Grpc          GrpcConfig          `json:"grpc"`           // 网关自身的 gRPC 服务器（用于跨网关，未来扩展）
 	ObjectStorage ObjectStorageConfig `json:"object_storage"` // 用于文件/图片消息的 S3 兼容存储（RustFS）
-	Media         MediaConfig         `json:"media"`          // 已弃用：网关内置的 Paircast 媒体库，改用 cmd/paircast；下个版本移除
 	ServerAPI     ServerAPIConfig     `json:"server_api"`     // 接入方后端调用的服务端 API（/server/v1/*）与 webhook
 
 	// 运行参数（之前为硬编码常量）。
@@ -197,49 +196,6 @@ type ServerAppConfig struct {
 	// BeforeSendURL 非空时，用户发消息前同步回调该地址，可拒绝消息；超时或出错放行。
 	BeforeSendURL     string   `json:"before_send_url"`
 	BeforeSendTimeout Duration `json:"before_send_timeout"` // 默认 "500ms"
-}
-
-// MediaConfig 保存媒体库设置（cmd/paircast 与网关兼容模式共用）。Sources 为空 = 不提供 /media/* 与 /room/* 接口。
-// 访问密钥只存在服务端，客户端只拿到预签名播放直链。
-type MediaConfig struct {
-	Sources       []MediaSourceConfig `json:"sources"`
-	DefaultSource string              `json:"default_source"` // 空 = 第一个源；无前缀的旧影片 ID 按此源解析
-	PlayURLTTL    Duration            `json:"play_url_ttl"`   // 播放直链有效期，默认 "6h"
-	ListCacheTTL  Duration            `json:"list_cache_ttl"` // 影片列表缓存，默认 "60s"
-
-	// 刮削与在线字幕。可由环境变量 GOIM_TMDB_ACCESS_TOKEN / GOIM_OPENSUBTITLES_API_KEY 覆盖。
-	TMDBAccessToken     string   `json:"tmdb_access_token"`
-	TMDBLanguage        string   `json:"tmdb_language"` // 默认 "zh-CN"
-	OpenSubtitlesAPIKey string   `json:"opensubtitles_api_key"`
-	MetadataTTL         Duration `json:"metadata_ttl"` // 刮削结果缓存，默认 "168h"
-
-	// 贴纸目录所在的源与路径前缀（catalog.json / {pack}/pack.json / 图片）。空 = 默认源的 "stickers/"。
-	StickersSource string `json:"stickers_source"`
-	StickersPrefix string `json:"stickers_prefix"`
-
-	// 房间：超过该时长未更新的房间由清理任务删除，默认 "72h"。
-	RoomRetention Duration `json:"room_retention"`
-}
-
-// MediaSourceConfig 描述一个视频源。Type 目前仅支持 "s3"（阿里云 OSS / 七牛 / COS / MinIO 等 S3 兼容存储）；
-// 后续扩展 "openlist" / "emby" / "jellyfin"。
-type MediaSourceConfig struct {
-	ID   string        `json:"id"` // 稳定标识，出现在影片 ID 中（"<id>:<key>"），不要随意修改
-	Name string        `json:"name"`
-	Type string        `json:"type"`
-	S3   MediaS3Config `json:"s3"`
-}
-
-// MediaS3Config 为 S3 兼容视频源设置。SecretKey 可由环境变量 GOIM_MEDIA_<ID>_SECRET_KEY 覆盖（ID 大写）。
-type MediaS3Config struct {
-	Endpoint  string `json:"endpoint"` // host[:port]，不含协议
-	Bucket    string `json:"bucket"`
-	Region    string `json:"region"`
-	Prefix    string `json:"prefix"` // 只列出该前缀下的影片，例如 "films/"
-	AccessKey string `json:"access_key"`
-	SecretKey string `json:"secret_key"`
-	UseSSL    bool   `json:"use_ssl"`
-	PathStyle bool   `json:"path_style"`
 }
 
 // GrpcConfig 保存网关自身的 gRPC 服务器设置，用于跨网关转发。
@@ -377,8 +333,6 @@ func Default() *Config {
 				LegacyMaxUpload:    10 * 1024 * 1024,
 			},
 
-			Media: DefaultMedia(),
-
 			// 运行参数。
 			RecallWindowMs:        120_000,
 			HistoryDefaultLimit:   30,
@@ -431,7 +385,6 @@ func Load(path string) (*Config, error) {
 	if pw := os.Getenv("GOIM_MAIL_PASSWORD"); pw != "" {
 		cfg.Gateway.Mail.Password = pw
 	}
-	ApplyMediaEnv(&cfg.Gateway.Media)
 	applyServerAPIEnv(&cfg.Gateway.ServerAPI)
 	return cfg, nil
 }
@@ -455,36 +408,6 @@ func applyServerAPIEnv(c *ServerAPIConfig) {
 		}
 		if v := os.Getenv("GOIM_APP_" + id + "_WEBHOOK_SECRET"); v != "" {
 			c.Apps[i].WebhookSecret = v
-		}
-	}
-}
-
-// DefaultMedia 返回媒体库默认设置（网关兼容模式与 cmd/paircast 共用）。
-func DefaultMedia() MediaConfig {
-	return MediaConfig{
-		PlayURLTTL:    Duration(6 * time.Hour),
-		ListCacheTTL:  Duration(60 * time.Second),
-		TMDBLanguage:  "zh-CN",
-		MetadataTTL:   Duration(7 * 24 * time.Hour),
-		RoomRetention: Duration(72 * time.Hour),
-	}
-}
-
-// ApplyMediaEnv 用环境变量覆盖媒体库密钥，避免写进配置文件。
-func ApplyMediaEnv(m *MediaConfig) {
-	if v := os.Getenv("GOIM_TMDB_ACCESS_TOKEN"); v != "" {
-		m.TMDBAccessToken = v
-	}
-	if v := os.Getenv("GOIM_OPENSUBTITLES_API_KEY"); v != "" {
-		m.OpenSubtitlesAPIKey = v
-	}
-	for i := range m.Sources {
-		id := envID(m.Sources[i].ID)
-		if v := os.Getenv("GOIM_MEDIA_" + id + "_ACCESS_KEY"); v != "" {
-			m.Sources[i].S3.AccessKey = v
-		}
-		if v := os.Getenv("GOIM_MEDIA_" + id + "_SECRET_KEY"); v != "" {
-			m.Sources[i].S3.SecretKey = v
 		}
 	}
 }

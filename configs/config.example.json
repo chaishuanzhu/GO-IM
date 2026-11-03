@@ -107,37 +107,6 @@
             "presign_download_ttl": "1h"
         },
 
-        "media": {
-            "_comment": "[已弃用,下个版本移除:改用独立的 cmd/paircast 服务,见 configs/paircast.example.json] Paircast 媒体库 + 观影房间(/media/*、/room/*)。sources 为空即不启用。密钥建议用环境变量覆盖:GOIM_MEDIA_<ID>_ACCESS_KEY / GOIM_MEDIA_<ID>_SECRET_KEY(ID 大写,非字母数字转 _)、GOIM_TMDB_ACCESS_TOKEN、GOIM_OPENSUBTITLES_API_KEY。网关只需要视频桶的只读权限;共享字幕存到上面的 object_storage(paircast/subtitles/)。",
-            "sources": [],
-            "_sources_example": [
-                {
-                    "id": "oss",
-                    "name": "My Library",
-                    "type": "s3",
-                    "s3": {
-                        "endpoint": "oss-cn-hangzhou.aliyuncs.com",
-                        "bucket": "my-videos",
-                        "region": "cn-hangzhou",
-                        "prefix": "films/",
-                        "access_key": "CHANGE_ME_MEDIA_ACCESS_KEY",
-                        "secret_key": "CHANGE_ME_MEDIA_SECRET_KEY",
-                        "use_ssl": true,
-                        "path_style": false
-                    }
-                }
-            ],
-            "default_source": "",
-            "play_url_ttl": "6h",
-            "list_cache_ttl": "60s",
-            "tmdb_access_token": "",
-            "tmdb_language": "zh-CN",
-            "opensubtitles_api_key": "",
-            "metadata_ttl": "168h",
-            "stickers_source": "",
-            "stickers_prefix": "stickers/",
-            "room_retention": "72h"
-        },
 
         "server_api": {
             "_comment": "接入方业务后端调用的 /server/v1/*(app_id + HMAC 签名)与 webhook,需要 MySQL。apps 为空即不启用。密钥用环境变量 GOIM_APP_<APP_ID>_SECRET / GOIM_APP_<APP_ID>_WEBHOOK_SECRET 提供(APP_ID 大写,非字母数字转 _),不要写进配置文件。见 docs/16-integration-guide.md。",

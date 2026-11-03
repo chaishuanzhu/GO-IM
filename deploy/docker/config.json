@@ -90,9 +90,16 @@
             "presign_download_ttl": "1h"
         },
 
-        "media": {
-            "_comment": "Paircast 媒体库(见 configs/config.example.json 的 _sources_example)。sources 为空即不启用;密钥用环境变量 GOIM_MEDIA_<ID>_ACCESS_KEY / _SECRET_KEY 注入。",
-            "sources": []
+
+        "server_api": {
+            "_comment": "接入方 Paircast(服务端在 Paircast 仓库 server/,Docker 部署见 server/deploy/docker)。密钥由 .env 的 PAIRCAST_IM_SECRET / PAIRCAST_IM_WEBHOOK_SECRET 提供;不设密钥时服务端 API 不启用。",
+            "apps": [
+                {
+                    "app_id": "paircast",
+                    "webhook_url": "http://paircast:8090/im/webhook",
+                    "webhook_events": ["group.member_left", "group.dismissed"]
+                }
+            ]
         },
 
         "recall_window_ms": 120000,
