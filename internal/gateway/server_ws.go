@@ -27,7 +27,7 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocked := s.accountBlocked(r.Context(), claims.UID)
+	blocked := s.claimsBlocked(r.Context(), claims)
 
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {

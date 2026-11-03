@@ -188,7 +188,14 @@ RustFS 的 S3 端口对外暴露后，务必修改默认的 `RUSTFS_SECRET_KEY`�
 
 ## 媒体库（Paircast）
 
-网关可以托管 Paircast 的视频库：客户端只配置网关地址，视频源的密钥留在服务端。接口是 `/media/*`（影片列表、播放直链、字幕、贴纸）和 `/room/*`（观影房间），详见 Swagger（`/swagger/`）的「媒体库」「观影房间」两组。
+Paircast 的视频库与观影房间（`/media/*`、`/room/*`，详见 Swagger 的「媒体库」「观影房间」两组）现在是独立服务 `cmd/paircast`（镜像 `go-im-paircast`），作为接入方通过服务端 API 使用 IM（见 `docs/16-integration-guide.md`）：
+
+- Docker：同目录放 `paircast.json`（参考 `configs/paircast.example.json`），在 `config.json` 的 `gateway.server_api.apps` 登记 `app_id: "paircast"`（`webhook_url: http://paircast:8090/im/webhook`），`.env` 里设 `PAIRCAST_IM_SECRET` / `PAIRCAST_IM_WEBHOOK_SECRET`，然后 `docker compose --profile paircast up -d`；反向代理把 `/media`、`/room` 转到 8090。
+- Kubernetes：改好 `deploy/k8s/paircast/` 里的密钥与 `paircast.json` 后 `kubectl apply -k deploy/k8s/paircast`，再 `kubectl -n go-im rollout restart deployment/gateway`；Ingress 自动把 `/media`、`/room` 转给 paircast。
+
+视频源、密钥环境变量与下面的说明对独立服务同样适用（独立服务的字幕存储为 `paircast.json` 的 `blob_store`）。
+
+**兼容模式（已弃用，下个版本移除）**：网关仍可在进程内托管同一套接口——
 
 1. 在 `gateway.media.sources` 里添加视频源（字段见 `configs/config.example.json` 的 `_sources_example`）。目前支持 `type: "s3"`：阿里云 OSS、腾讯云 COS、七牛、MinIO 等 S3 兼容存储；`prefix` 限定只列出某个目录。
 2. 密钥用环境变量注入，不要写进配置文件：

@@ -277,6 +277,11 @@ func (e *accountEnv) auth(t *testing.T, uid string, form url.Values) url.Values 
 	if form == nil {
 		form = url.Values{}
 	}
+	if e.users != nil {
+		if u, _ := e.users.GetByUID(context.Background(), uid); u == nil {
+			e.users.Create(context.Background(), &repo.User{UID: uid, Nickname: uid})
+		}
+	}
 	form.Set("uid", uid)
 	form.Set("token", jwtToken(t, e.jwt, uid, uid))
 	return form
@@ -768,6 +773,7 @@ func TestAdminUsersIncludeAvatarURL(t *testing.T) {
 	ctx := context.Background()
 	e.users.Create(ctx, &repo.User{UID: "100001", Nickname: "Bob", AvatarFileID: 7})
 	e.users.Create(ctx, &repo.User{UID: "100002", Nickname: "Carol"})
+	e.users.Create(ctx, &repo.User{UID: "root", Nickname: "root", Role: "admin"})
 
 	rec := e.do(t, e.srv.HandleAdminUsers, http.MethodGet, adminQuery(t, e.jwt, "admin", url.Values{}))
 	var body struct {

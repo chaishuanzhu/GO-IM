@@ -42,6 +42,7 @@ func newAdminServer(t *testing.T, msgs repo.MessageStore) (*Server, *fakeUserSto
 	mgr := jwt.New("test-secret", time.Hour)
 	srv := NewServer(hub, router, mgr, users, msgs, nil, configs.AuthConfig{},
 		time.Second, 3, configs.GatewayConnConfig{}, nil, sg, NewInMemoryObjectStore(), 10<<20, nil)
+	users.Create(context.Background(), &repo.User{UID: "root", Nickname: "root"})
 	return srv, users, mgr
 }
 

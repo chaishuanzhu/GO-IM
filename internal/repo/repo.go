@@ -11,6 +11,8 @@ import (
 var (
 	// ErrEmailTaken 表示邮箱已被其他用户使用。
 	ErrEmailTaken = errors.New("email already registered")
+	// ErrExternalIDTaken 表示接入方用户 ID 已绑定到其他用户。
+	ErrExternalIDTaken = errors.New("external id already bound")
 	// ErrUserNotFound 表示目标用户不存在。
 	ErrUserNotFound = errors.New("user not found")
 	// ErrNotFriends 表示双方不是好友。
@@ -31,6 +33,21 @@ type User struct {
 	MustChangePassword bool  `json:"-"`
 	CreatedAt          int64 `json:"created_at"` // 毫秒级 Unix 时间戳
 	UpdatedAt          int64 `json:"updated_at"` // 资料最后修改时间（毫秒），0 = 未修改过
+	// ExternalID 是接入方业务系统里的用户 ID（服务端 API 导入的用户），空 = IM 自有账号。
+	ExternalID string `json:"external_id,omitempty"`
+	// TokenVersion 随吊销递增；JWT 中的版本低于它即失效。
+	TokenVersion int64 `json:"-"`
+}
+
+// ExternalUserStore 是服务端 API（接入方后台）需要的用户能力，*MySQLStore 实现。
+type ExternalUserStore interface {
+	// UpsertExternalUser 按 externalID 创建或更新用户（分配自增 UID），返回用户与是否新建。
+	// nickname / avatarFileID 为 nil 表示不修改。
+	UpsertExternalUser(ctx context.Context, externalID string, nickname *string, avatarFileID *int64) (*User, bool, error)
+	// GetByExternalID 按接入方用户 ID 查询，未找到返回 (nil, nil)。
+	GetByExternalID(ctx context.Context, externalID string) (*User, error)
+	// BumpTokenVersion 递增令牌版本（吊销已签发的令牌），返回新版本；用户不存在返回 ErrUserNotFound。
+	BumpTokenVersion(ctx context.Context, uid string) (int64, error)
 }
 
 // UserStore 管理用户持久化。

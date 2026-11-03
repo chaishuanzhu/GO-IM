@@ -1,10 +1,11 @@
-// Package moderation 保存用户之间的屏蔽关系与举报，并提供管理员处理举报的流程（Paircast 聊天安全）。
+// Package moderation 保存用户之间的屏蔽关系与举报，并提供管理员处理举报的流程（新举报可通过 OnReport 通知接入方）。
 package moderation
 
 import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -66,15 +67,60 @@ type Store interface {
 	ResolveTarget(ctx context.Context, target, status, by string, at int64) (int, error)
 }
 
+// blockCacheTTL 是屏蔽列表的本地缓存时长;本节点的屏蔽/取消屏蔽立即生效,其他网关最多滞后这么久。
+const blockCacheTTL = 30 * time.Second
+
+type blockEntry struct {
+	set     map[string]struct{}
+	expires time.Time
+}
+
 // Service 校验输入后读写 Store。
 type Service struct {
 	store Store
 	now   func() time.Time
+
+	mu     sync.Mutex
+	blocks map[string]blockEntry
+
+	onReport func(ctx context.Context, r Report)
 }
+
+// OnReport 设置新举报的回调（webhook 发布用），在举报写入成功后同步调用，须快速返回。
+func (s *Service) OnReport(fn func(ctx context.Context, r Report)) { s.onReport = fn }
 
 // NewService 创建服务。
 func NewService(store Store) *Service {
-	return &Service{store: store, now: time.Now}
+	return &Service{store: store, now: time.Now, blocks: map[string]blockEntry{}}
+}
+
+// IsBlocked 报告 owner 是否屏蔽了 target,供投递路径调用;读存储失败时按未屏蔽处理。
+func (s *Service) IsBlocked(ctx context.Context, owner, target string) bool {
+	now := s.now()
+	s.mu.Lock()
+	e, ok := s.blocks[owner]
+	s.mu.Unlock()
+	if !ok || now.After(e.expires) {
+		list, err := s.store.Blocked(ctx, owner)
+		if err != nil {
+			return false
+		}
+		e = blockEntry{set: make(map[string]struct{}, len(list)), expires: now.Add(blockCacheTTL)}
+		for _, id := range list {
+			e.set[id] = struct{}{}
+		}
+		s.mu.Lock()
+		s.blocks[owner] = e
+		s.mu.Unlock()
+	}
+	_, blocked := e.set[target]
+	return blocked
+}
+
+func (s *Service) invalidateBlocks(owner string) {
+	s.mu.Lock()
+	delete(s.blocks, owner)
+	s.mu.Unlock()
 }
 
 func cleanID(v string) (string, error) {
@@ -114,6 +160,7 @@ func (s *Service) Block(ctx context.Context, owner, target string) error {
 	if len(list) >= maxBlocks {
 		return ErrTooManyBlock
 	}
+	defer s.invalidateBlocks(owner)
 	return s.store.Block(ctx, owner, target, s.now().UnixMilli())
 }
 
@@ -123,6 +170,7 @@ func (s *Service) Unblock(ctx context.Context, owner, target string) error {
 	if err != nil {
 		return err
 	}
+	defer s.invalidateBlocks(owner)
 	return s.store.Unblock(ctx, owner, target)
 }
 
@@ -143,7 +191,7 @@ func (s *Service) Report(ctx context.Context, reporter, target, messageID, roomC
 	if len(messageID) > maxFieldLen || len(roomContext) > maxFieldLen {
 		return 0, ErrInvalid
 	}
-	return s.store.AddReport(ctx, &Report{
+	r := &Report{
 		ReporterUID: reporter,
 		TargetUID:   target,
 		MessageID:   strings.TrimSpace(messageID),
@@ -151,7 +199,13 @@ func (s *Service) Report(ctx context.Context, reporter, target, messageID, roomC
 		Content:     truncateRunes(content, maxContentRunes),
 		Status:      StatusPending,
 		CreatedAt:   s.now().UnixMilli(),
-	})
+	}
+	id, err := s.store.AddReport(ctx, r)
+	if err == nil && s.onReport != nil {
+		r.ID = id
+		s.onReport(ctx, *r)
+	}
+	return id, err
 }
 
 // Reports 分页列出举报（新的在前）及待处理总数。

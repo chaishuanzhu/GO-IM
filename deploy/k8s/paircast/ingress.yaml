@@ -1,0 +1,24 @@
+# 与主 ingress 同域名，只接管 /media 与 /room（路径更长的规则优先，其余仍由 gateway 处理）。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: go-im-paircast
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 4m
+spec:
+  # ingressClassName: nginx
+  # tls:
+  #   - hosts: [im.example.com]
+  #     secretName: go-im-tls
+  rules:
+    - host: im.example.com
+      http:
+        paths:
+          - path: /media
+            pathType: Prefix
+            backend:
+              service: { name: paircast, port: { name: http } }
+          - path: /room
+            pathType: Prefix
+            backend:
+              service: { name: paircast, port: { name: http } }

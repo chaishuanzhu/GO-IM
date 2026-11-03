@@ -1,5 +1,6 @@
 // Package watchroom 管理 Paircast 观影房间：成员、房主、当前影片与共享字幕。
-// 每个房间绑定一个 GO-IM 群（聊天与播控信令走群），房间状态以服务端为准。
+// 每个房间绑定一个 GO-IM 群（聊天与播控信令走群），房间状态以 Paircast 服务端为准；
+// 群在 IM 侧被改动时（成员退群、群解散）由 webhook 同步回来。
 package watchroom
 
 import (
@@ -82,6 +83,8 @@ type Store interface {
 	Create(ctx context.Context, room *Room) error
 	Get(ctx context.Context, id string) (*Room, error)
 	Update(ctx context.Context, id string, fn func(*Room) error) (*Room, error)
-	// DeleteStale 删除 UpdatedAt 早于 before 的房间，返回删除数量。
-	DeleteStale(ctx context.Context, before time.Time) (int, error)
+	// GetByGroup 按绑定的群 ID 查房间，没有返回 ErrNotFound。
+	GetByGroup(ctx context.Context, groupID string) (*Room, error)
+	// DeleteStale 删除 UpdatedAt 早于 before 的房间，返回被删房间绑定的群 ID。
+	DeleteStale(ctx context.Context, before time.Time) ([]string, error)
 }

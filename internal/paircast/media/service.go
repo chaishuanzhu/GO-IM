@@ -115,3 +115,13 @@ func (s *Service) List(ctx context.Context, sourceID string, opt ListOptions, en
 	}
 	return page, nil
 }
+
+// Exists 检查影片 ID 是否存在于数据源（不刮削元数据），不存在返回 ErrNotFound。
+func (s *Service) Exists(ctx context.Context, id string) error {
+	src, native, err := s.Registry.Resolve(id)
+	if err != nil {
+		return err
+	}
+	_, err = src.Get(ctx, native)
+	return err
+}

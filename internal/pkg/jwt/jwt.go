@@ -21,6 +21,8 @@ type Claims struct {
 	UID      string `json:"uid"`
 	Nickname string `json:"nickname"`
 	Role     string `json:"role"` // "user" 或 "admin"
+	// Ver 是签发时用户的令牌版本；吊销会递增用户版本，低于当前版本的令牌失效。
+	Ver int64 `json:"ver,omitempty"`
 	jwtlib.RegisteredClaims
 }
 
@@ -38,14 +40,23 @@ func New(secret string, expiration time.Duration) *Manager {
 	}
 }
 
-// Generate 为用户创建带签名的 JWT 令牌。
+// Generate 为用户创建带签名的 JWT 令牌（令牌版本 0）。
 func (m *Manager) Generate(uid, nickname, role string) (string, error) {
+	return m.GenerateVersioned(uid, nickname, role, 0, 0)
+}
+
+// GenerateVersioned 创建带令牌版本的 JWT；ttl <= 0 时使用默认有效期。
+func (m *Manager) GenerateVersioned(uid, nickname, role string, ver int64, ttl time.Duration) (string, error) {
+	if ttl <= 0 {
+		ttl = m.expiration
+	}
 	claims := Claims{
 		UID:      uid,
 		Nickname: nickname,
 		Role:     role,
+		Ver:      ver,
 		RegisteredClaims: jwtlib.RegisteredClaims{
-			ExpiresAt: jwtlib.NewNumericDate(time.Now().Add(m.expiration)),
+			ExpiresAt: jwtlib.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwtlib.NewNumericDate(time.Now()),
 			Issuer:    "im-server",
 		},

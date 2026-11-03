@@ -1,0 +1,40 @@
+# Paircast（一起看）业务服务多阶段构建。
+# Build:   docker build -f Dockerfile.paircast -t im-paircast .
+# Run:     docker run -p 8090:8090 -v $(pwd)/configs/paircast.json:/etc/paircast/paircast.json -e PAIRCAST_IM_SECRET=... im-paircast
+
+FROM golang:1.26.5-alpine AS builder
+
+WORKDIR /app
+
+# 从构建参数接受代理设置（供 VPN/加速器用户使用）。
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV NO_PROXY=${NO_PROXY}
+
+# 优先使用 Go 代理镜像 (goproxy.cn)；若已开启 VPN 则直接回退到官方源。
+ENV GOPROXY=https://goproxy.cn,direct
+ENV GOSUMDB=sum.golang.org
+
+# 缓存依赖。
+COPY go.mod go.sum ./
+RUN go mod download
+
+# 构建二进制文件。
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o paircast ./cmd/paircast/
+
+# 最小化运行时镜像。
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=builder /app/paircast /usr/local/bin/paircast
+
+EXPOSE 8090
+
+ENV CONFIG_PATH=/etc/paircast/paircast.json
+
+CMD ["paircast"]

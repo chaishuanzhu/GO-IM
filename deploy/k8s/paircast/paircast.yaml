@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: paircast
+spec:
+  selector:
+    app: paircast
+  ports:
+    - name: http
+      port: 8090
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paircast
+spec:
+  # 房间状态在 MySQL，可以多副本；在线字幕下载的限流按副本计。
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  minReadySeconds: 5
+  selector:
+    matchLabels:
+      app: paircast
+  template:
+    metadata:
+      labels:
+        app: paircast
+    spec:
+      terminationGracePeriodSeconds: 30
+      initContainers:
+        - name: wait-deps
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - for d in mysql:3306 gateway:8080; do until nc -z -w 2 ${d%:*} ${d#*:}; do echo "waiting for $d"; sleep 2; done; done
+          resources:
+            requests: { cpu: 5m, memory: 8Mi }
+            limits: { cpu: 100m, memory: 32Mi }
+      containers:
+        - name: paircast
+          image: 870027381/go-im-paircast
+          env:
+            - { name: CONFIG_PATH, value: /etc/paircast/paircast.json }
+            - { name: TZ, value: Asia/Shanghai }
+            - name: PAIRCAST_IM_SECRET
+              valueFrom: { secretKeyRef: { name: goim-paircast, key: IM_SECRET } }
+            - name: PAIRCAST_IM_WEBHOOK_SECRET
+              valueFrom: { secretKeyRef: { name: goim-paircast, key: IM_WEBHOOK_SECRET } }
+            - name: PAIRCAST_MYSQL_DSN
+              valueFrom: { secretKeyRef: { name: goim-paircast, key: MYSQL_DSN } }
+            - name: PAIRCAST_BLOB_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: goim-paircast, key: BLOB_ACCESS_KEY } }
+            - name: PAIRCAST_BLOB_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: goim-paircast, key: BLOB_SECRET_KEY } }
+            # 媒体源 id 为 oss 时的密钥（其它 id 按 GOIM_MEDIA_<ID>_* 自行添加）
+            - name: GOIM_MEDIA_OSS_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: goim-paircast, key: MEDIA_OSS_ACCESS_KEY } }
+            - name: GOIM_MEDIA_OSS_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: goim-paircast, key: MEDIA_OSS_SECRET_KEY } }
+            - name: GOIM_TMDB_ACCESS_TOKEN
+              valueFrom: { secretKeyRef: { name: goim-paircast, key: TMDB_ACCESS_TOKEN } }
+            - name: GOIM_OPENSUBTITLES_API_KEY
+              valueFrom: { secretKeyRef: { name: goim-paircast, key: OPENSUBTITLES_API_KEY } }
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          ports:
+            - name: http
+              containerPort: 8090
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: "1", memory: 256Mi }
+          volumeMounts:
+            - name: config
+              mountPath: /etc/paircast
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: goim-paircast-config

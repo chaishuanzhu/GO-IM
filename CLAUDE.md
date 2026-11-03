@@ -11,6 +11,9 @@ go run ./cmd/gateway/
 # Run the logic service (reads configs/config.json, requires MySQL)
 go run ./cmd/logic/
 
+# Run the Paircast service (reads $CONFIG_PATH, default configs/paircast.json; needs an IM app secret)
+PAIRCAST_IM_SECRET=... go run ./cmd/paircast/
+
 # Run integration tests (spins up a real server on :18080)
 go test ./cmd/gateway/ -v
 
@@ -22,7 +25,7 @@ go build -o gateway.exe ./cmd/gateway/
 go build -o logic.exe ./cmd/logic/
 ```
 
-Unit tests (183 tests across 9 packages, all passing) are in `internal/pkg/snowflake/`, `internal/pkg/jwt/`, `internal/gateway/` (hub, router, redis_store, gnet_handler, grpc_client, hashring, grpc_gateway, group_store, unread_tracker, object_store, thumbnail, read_receipt, server), `internal/mq/` (producer, consumer), `internal/logic/` (gRPC server + consumer), `internal/repo/` (MySQL, skipped when not running), plus `cmd/gateway/` (5 integration tests: 2 WebSocket + 3 gnet TCP). Use `go test ./internal/...` to run them all, plus `go test ./cmd/gateway/ -v` for integration tests. See `docs/06-phase4-completion.md` for the full test breakdown.
+Unit tests live next to the code in `internal/...`, `api/...`, `configs/` and `pkg/...`; `cmd/gateway/` has the WebSocket + gnet TCP integration tests. Run `go test ./internal/... ./api/... ./configs/... ./pkg/... ./cmd/gateway/ -count=1`; MySQL / Kafka tests skip when those aren't running. Current counts are under "Current test coverage" below.
 
 ## Architecture
 
@@ -112,10 +115,37 @@ CmdRecall      → Router.handleRecall → validate target + sender + Seq (origi
                → recall notification to peer (local / cross-gateway / offline)
                → sendRecallError on failure — no ACK, no persistence for recall itself
 
-# Transient group signal (e.g. synced playback control)
-CmdGroupSignal → Router.handleGroupSignal → sender must be a member → sendLocal to online members
-               → peer-owned members: forwardTransient (GrpcForwarder) — never StoreOffline
+# Transient signal (online-only; e.g. synced playback control, app-defined notifications)
+CmdSignal (25, formerly CmdGroupSignal) → Router.handleSignal → chat_type=1: to = uid (all online devices); otherwise to = group ID, sender must be a member
+               → Router.SendSignal (also the server-side entry point) → deliverTransient: sendLocal, else forwardTransient (GrpcForwarder) — never StoreOffline
+               → content must be {"type":"<ns>.<name>","data":{...}} (proto.EncodeSignal / ParseSignal); untyped signals are dropped
+               → group members come from a 3 s per-node cache (memberCache, cleared on local join/leave/invite/kick)
+               → CmdTyping shares deliverTransient, so typing also crosses gateways
                → no ACK, no unread, no persistence; GrpcGatewayServer drops transient msgs it can't deliver
+
+# Server API — embeddable IM channel (internal/serverapi, docs/16-integration-guide.md; needs MySQL)
+POST /server/v1/<path> → API.ServeHTTP → authenticate: X-App-Id + X-Timestamp (±5 min) + X-Nonce (Redis SETNX im:serverapi:nonce:<app>:<nonce>, or memory)
+               + X-Signature = hex(HMAC-SHA256(secret, METHOD\nPATH\nTS\nNONCE\nBODY)) → JSON, errors {"error":...}
+               → users/import|token|revoke|disable|delete, groups/create|members/add|members/remove|dismiss, messages/send, signals/send, tokens/verify
+               → users referenced by {uid} or {external_id} (users.external_id, per app); system sender = sys:<app_id> (skips block / membership checks)
+               → secrets only from env GOIM_APP_<ID>_SECRET / _WEBHOOK_SECRET; apps table (secret hash + status, 0 = disabled) refreshed every 30 s
+               → Server.IssueToken / VerifyToken / RevokeTokens (token_version) / SetAccountDisabled / DeleteAccount; Router.SendMessage / SendSignal / NotifyGroup
+
+# Webhooks (internal/webhook; Kafka transport not implemented)
+Router persistAsync → MessageEvents.MessageSent; recall → MessageRecalled; WrapGroupStore → member_joined / member_left / dismissed;
+presence hook → user.online / offline; moderation.OnReport → report.created
+               → Publisher (non-blocking, 10k buffer) → Queue: Redis Stream im:webhook:{app} (group "dispatch", XAUTOCLAIM after 2 min) or memory
+               → Dispatcher POST, headers X-IM-Event / X-IM-Delivery / X-IM-Timestamp / X-IM-Signature = hex(HMAC(secret, TS\nBODY))
+               → non-2xx / 5 s timeout → retry ZSET + payload HASH (Lua claim), backoff 2^n s capped at 1 h, for 24 h → dead LIST
+before_send_url → Router.rejectedByHook (after the block check in chat / forward) → sync POST, {"allow":false} → ACK {"error":"rejected"}; fails open
+
+# Paircast (cmd/paircast, internal/paircast) — the reference app built on the server API
+Client (IM token) → paircast /media/*, /room/* → IMAuth (tokens/verify, 60 s cache) → media.Service / watchroom.Service
+               → room = IM group via IMGroups (groups/create|members/add|remove|dismiss); IMNotifier → signals/send paircast.room_updated
+               → /im/webhook (WebhookHandler) ← group.member_left / group.dismissed → rooms.GroupMemberLeft / GroupDismissed
+               → janitor deletes stale rooms and dismisses their groups
+Gateway legacy mode (deprecated, removed next release): gateway.media.sources set → cmd/gateway/media.go mounts the same paircast.Server
+               with in-process adapters (gatewayAuth → Server.AuthenticateHTTP, roomGroups over GroupStore, roomSignals → Router.SendSignal)
 
 # Multi-gateway forwarding (Phase 4)
 routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.Forward(ctx, uid, msg)
@@ -142,6 +172,10 @@ routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.
 | `GnetHandler` | `internal/gateway/gnet_handler.go` | gnet `EventHandler`: `OnOpen` (pending state), `OnClose` (cleanup), `OnTraffic` (frame decode + dispatch). Also: `WorkerPool`, heartbeat checker, `connMap` (gnet.Conn → *Client). |
 | `server_ws.go` | `internal/gateway/server_ws.go` | WebSocket-specific code: `HandleWS`, `wsReadPump`, `wsPingLoop`. Extracted from server.go and client.go. |
 | `proto.Message` | `api/proto/message.pb.go` (generated) | Protobuf-generated message struct for all communication — control (heartbeat/ACK/login) and data (chat) share the same shape. `Cmd` field discriminates. Constants and `Validate()` in `api/proto/message.go`. |
+| `serverapi.API` | `internal/serverapi/` | Server API for embedding apps (`/server/v1/*`): HMAC auth + nonce store (`auth.go`), app registry + `apps` table (`apps.go`), handlers (`api.go`). |
+| `webhook` | `internal/webhook/` | `Publisher` + `Queue` (Redis Stream / memory) + `Dispatcher` (signed POST, retries, dead letters) + event adapters (`events.go`) + synchronous `BeforeSend`. |
+| `imserver.Client` | `pkg/imserver/` | Public Go SDK for the server API (signing, every endpoint) and webhook verification (`VerifyWebhook`, `ParseWebhook`). |
+| `paircast.Server` | `internal/paircast/` | Paircast HTTP layer (`/media/*`, `/room/*`) over `media.Service` + `watchroom.Service` (`internal/paircast/{media,watchroom}`); IM adapters in `imadapter.go`. Served by `cmd/paircast` (and, deprecated, by the gateway). |
 | `snowflake.Generator` | `internal/pkg/snowflake/snowflake.go` | Globally unique, time-sortable message IDs |
 | `jwt.Manager` | `internal/pkg/jwt/jwt.go` | HS256 token issue/validate for auth |
 | `configs.Config` | `configs/config.go` | JSON config loading with `Default()` fallback |
@@ -243,21 +277,38 @@ Phase 4 refinements:
 | 4 | **Dynamic clustering** — `ClusterManager` with gRPC health probes + Redis service discovery (`SETEX` heartbeat, `KEYS` scan, peer reconciliation) | ✅ |
 | 6 | **Message recall** — `CmdRecall` (19), 2-min window, `RecallMessage` MySQL store (recalled column + migration), `handleRecall` router handler, recall notification to peer (online/offline/cross-gateway) | ✅ |
 
+### Embeddable IM channel (2026-11)
+
+GO-IM as an IM channel for other apps; see `docs/16-integration-guide.md`.
+
+| # | Task | Status |
+|---|------|--------|
+| 1 | **Server-side safety** — block enforcement, account checks on connect, typed `CmdSignal` + member cache | ✅ |
+| 2 | **Server API** — `internal/serverapi` (app_id + HMAC, external users, tokens, groups, messages, signals) + OpenAPI | ✅ |
+| 3 | **Go SDK** — `pkg/imserver` | ✅ |
+| 4 | **Webhooks** — Redis Stream / memory queue, signed delivery, retries, dead letters, optional `before_send` (Kafka transport not implemented) | ✅ |
+| 5 | **Paircast split** — `cmd/paircast` service, `internal/paircast/{media,watchroom}`; gateway `media` kept one release as legacy mode | ✅ |
+| 6 | **Deploy** — `Dockerfile.paircast` (`go-im-paircast`), `deploy/k8s/paircast/` overlay (ingress `/media`, `/room`), compose profile `paircast`, Jenkins image + optional rollout | ✅ |
+
 ### Current test coverage
 
 ```
-296 passed, 0 failed, 14 skipped (MySQL / Kafka not running)
+380 passed, 0 failed, 21 skipped (MySQL / Kafka not running)
 ```
 
 | Package | Tests | Notes |
 |---------|-------|-------|
-| `internal/gateway` | 241 | hub + router + gnet_handler + redis_store + grpc_client + grpc_gateway + hashring + group_store + unread_tracker + object_store + thumbnail + router_read_receipt + router_group + server + cluster + router_recall + multi_device(14) |
+| `internal/gateway` | 288 | hub + router + gnet_handler + redis_store + grpc_client + grpc_gateway + hashring + group_store + unread_tracker + object_store + thumbnail + router_read_receipt + router_group + server + cluster + router_recall + multi_device(14) + signal + hooks + block |
+| `internal/serverapi` | 4 | signed API end to end + SDK round trip |
+| `internal/webhook` | 6 | publish / dispatch / retry / dead letter / before_send (miniredis) |
+| `internal/paircast` | 22 | HTTP layer (7) + media (4) + s3source (6) + watchroom (5) |
+| `internal/moderation` | 3 | blocks + reports |
 | `internal/logic` | 4 | gRPC server + consumer (1 skipped without MySQL) |
 | `internal/mq` | 15 | producer + consumer (2 skipped without Kafka) |
 | `internal/observability` | 7 | metrics |
 | `internal/pkg/jwt` | 8 | sign/validate, expiry, tampering, malformed, claims window, multi-user |
 | `internal/pkg/snowflake` | 13 | uniqueness, monotonic, worker ID, leasing, timestamp extraction, overflow |
-| `internal/repo` | 12 | MySQL CRUD + history + pagination (11 skipped when MySQL not running) |
+| `internal/repo` | 21 | MySQL CRUD + history + pagination + external users (18 skipped when MySQL not running) |
 | `configs` | 2 | config loading |
 | `api/openapi` | 2 | spec parses; every gateway route documented |
 | `cmd/gateway` | 6 | WebSocket + gnet TCP integration tests |
@@ -286,6 +337,8 @@ Default config values:
 - Admins: `admin_uids: []` (promoted at startup), `admin_email: ""` (non-empty and unregistered → auto-created admin, initial password emailed, forced change on first login). Role is baked into the JWT at login, so changes need a re-login
 - Mail: `enabled: false`; SMTP host/port/username/from in config, password only via env `GOIM_MAIL_PASSWORD` (k8s Secret `goim-infra` key `MAIL_PASSWORD`). Port 465 = implicit TLS, others STARTTLS. Without mail, codes are logged in dev_mode and the code endpoints return 503 otherwise
 - Object storage: `enabled: false` (in-memory fallback), endpoint `localhost:9000`, bucket `im-files`, max_upload 10MB
+- Server API: `server_api.apps: []` (empty, or no app with a secret = `/server/v1/*` not mounted); each app has `app_id`, optional `webhook_url` / `webhook_events` / `before_send_url` / `before_send_timeout`; secrets only via env `GOIM_APP_<ID>_SECRET` / `GOIM_APP_<ID>_WEBHOOK_SECRET`; `max_token_ttl` defaults to `jwt.expiration`. Needs MySQL
+- Media (deprecated): `gateway.media` runs the Paircast media library inside the gateway for one more release; new deployments use `cmd/paircast` with `configs/paircast.example.json` (k8s: `deploy/k8s/paircast/`)
 - Stability: `max_connections: 0` (unlimited), HTTP timeouts (read 10s, write 10s, idle 120s), `shutdown_timeout: 30s`, `pprof_enabled: false`, `swagger_enabled: true` (Swagger UI at `/swagger/`, spec embedded from `api/openapi/openapi.yaml`; off in the deploy configs). Every route added in `cmd/gateway/main.go` must also be added to the spec — `go test ./api/openapi/` fails otherwise
 
 ### Wire formats summary

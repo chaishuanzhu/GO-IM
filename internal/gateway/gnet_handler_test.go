@@ -555,8 +555,8 @@ func TestHandleLoginInvalidJWT(t *testing.T) {
 
 func TestHandleLoginBlockedAccount(t *testing.T) {
 	handler, hub, jwtMgr := newTestGnetHandler(t)
-	handler.accountBlocked = func(_ context.Context, uid string) string {
-		if uid == "bob" {
+	handler.accountBlocked = func(_ context.Context, claims *jwt.Claims) string {
+		if claims.UID == "bob" {
 			return kickAccountDisabled
 		}
 		return ""

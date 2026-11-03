@@ -10,12 +10,15 @@ import (
 	"time"
 )
 
-// Groups 是房间依赖的 GO-IM 群操作（由 gateway 适配）。
+// Groups 是房间依赖的 GO-IM 群操作（独立部署时走服务端 API，网关兼容模式下进程内调用）。
 type Groups interface {
 	Create(ctx context.Context, name, ownerUID string) (groupID string, err error)
 	// Join 加入群；已是成员视为成功。群不存在返回 ErrEnded。
 	Join(ctx context.Context, groupID, uid string) error
+	// Leave 退群；不是成员或群不存在视为成功。
 	Leave(ctx context.Context, groupID, uid string) error
+	// Dismiss 解散群；群不存在视为成功。
+	Dismiss(ctx context.Context, groupID string) error
 }
 
 // Notifier 在房间变化时通知群成员（瞬时群信令，不落库）。
@@ -216,7 +219,48 @@ func (s *Service) SetSubtitle(ctx context.Context, uid, roomID, ref, label strin
 	return updated, nil
 }
 
-// StartJanitor 定期删除长时间未更新的房间（含已结束的）。
+// GroupMemberLeft 同步 IM 侧的退群（group.member_left webhook）：成员不在房间里或房间已结束时什么也不做。
+func (s *Service) GroupMemberLeft(ctx context.Context, groupID, uid string) error {
+	room, err := s.store.GetByGroup(ctx, groupID)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if room.Status != StatusActive || !room.IsMember(uid) {
+		return nil
+	}
+	updated, err := s.store.Update(ctx, room.ID, func(r *Room) error {
+		if r.IsMember(uid) {
+			r.removeMember(uid, 0)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	s.notify(ctx, uid, updated)
+	return nil
+}
+
+// GroupDismissed 同步 IM 侧的群解散（group.dismissed webhook）：结束对应房间。
+func (s *Service) GroupDismissed(ctx context.Context, groupID string) error {
+	room, err := s.store.GetByGroup(ctx, groupID)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = s.store.Update(ctx, room.ID, func(r *Room) error {
+		r.Status = StatusEnded
+		return nil
+	})
+	return err
+}
+
+// StartJanitor 定期删除长时间未更新的房间（含已结束的），并解散它们绑定的群。
 func (s *Service) StartJanitor(ctx context.Context, retention, interval time.Duration) {
 	if retention <= 0 {
 		return
@@ -229,14 +273,26 @@ func (s *Service) StartJanitor(ctx context.Context, retention, interval time.Dur
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if n, err := s.store.DeleteStale(ctx, s.now().Add(-retention)); err != nil {
-					log.Printf("[watchroom] janitor: %v", err)
-				} else if n > 0 {
-					log.Printf("[watchroom] janitor removed %d stale rooms", n)
-				}
+				s.cleanup(ctx, retention)
 			}
 		}
 	}()
+}
+
+func (s *Service) cleanup(ctx context.Context, retention time.Duration) {
+	groups, err := s.store.DeleteStale(ctx, s.now().Add(-retention))
+	if err != nil {
+		log.Printf("[watchroom] janitor: %v", err)
+		return
+	}
+	for _, g := range groups {
+		if err := s.groups.Dismiss(ctx, g); err != nil {
+			log.Printf("[watchroom] janitor: dismiss group %s: %v", g, err)
+		}
+	}
+	if len(groups) > 0 {
+		log.Printf("[watchroom] janitor removed %d stale rooms", len(groups))
+	}
 }
 
 func (s *Service) notify(ctx context.Context, actorUID string, room *Room) {

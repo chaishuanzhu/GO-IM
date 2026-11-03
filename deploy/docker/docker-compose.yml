@@ -102,7 +102,9 @@ services:
     image: 870027381/go-im-gateway:${GOIM_TAG:-latest}
     environment:
       GOIM_MAIL_PASSWORD: ${MAIL_PASSWORD:-}
-      # Paircast 媒体库：源 id 为 oss 时的密钥（其它 id 按 GOIM_MEDIA_<ID>_* 自行添加）
+      GOIM_APP_PAIRCAST_SECRET: ${PAIRCAST_IM_SECRET:-}
+      GOIM_APP_PAIRCAST_WEBHOOK_SECRET: ${PAIRCAST_IM_WEBHOOK_SECRET:-}
+      # Paircast 媒体库（已弃用的网关内置版本）：源 id 为 oss 时的密钥（其它 id 按 GOIM_MEDIA_<ID>_* 自行添加）
       GOIM_MEDIA_OSS_ACCESS_KEY: ${MEDIA_OSS_ACCESS_KEY:-}
       GOIM_MEDIA_OSS_SECRET_KEY: ${MEDIA_OSS_SECRET_KEY:-}
       GOIM_TMDB_ACCESS_TOKEN: ${TMDB_ACCESS_TOKEN:-}
@@ -118,6 +120,29 @@ services:
       kafka: { condition: service_healthy }
       rustfs: { condition: service_healthy }
       logic: { condition: service_started }
+
+  # Paircast（一起看）业务服务，可选：docker compose --profile paircast up -d
+  # 需要同目录 paircast.json（参考 configs/paircast.example.json），并在 config.json 的 gateway.server_api.apps 中登记 app_id "paircast"，
+  # webhook_url 为 http://paircast:8090/im/webhook。网关用 GOIM_APP_PAIRCAST_SECRET 读取同一个密钥。
+  paircast:
+    <<: *restart
+    profiles: [paircast]
+    image: 870027381/go-im-paircast:${GOIM_TAG:-latest}
+    environment:
+      PAIRCAST_IM_SECRET: ${PAIRCAST_IM_SECRET:-}
+      PAIRCAST_IM_WEBHOOK_SECRET: ${PAIRCAST_IM_WEBHOOK_SECRET:-}
+      PAIRCAST_MYSQL_DSN: ${PAIRCAST_MYSQL_DSN:-}
+      GOIM_MEDIA_OSS_ACCESS_KEY: ${MEDIA_OSS_ACCESS_KEY:-}
+      GOIM_MEDIA_OSS_SECRET_KEY: ${MEDIA_OSS_SECRET_KEY:-}
+      GOIM_TMDB_ACCESS_TOKEN: ${TMDB_ACCESS_TOKEN:-}
+      GOIM_OPENSUBTITLES_API_KEY: ${OPENSUBTITLES_API_KEY:-}
+    ports:
+      - "${PAIRCAST_PORT:-8090}:8090"
+    volumes:
+      - ./paircast.json:/etc/paircast/paircast.json:ro
+    depends_on:
+      mysql: { condition: service_healthy }
+      gateway: { condition: service_started }
 
 volumes:
   redis-data:

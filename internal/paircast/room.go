@@ -1,26 +1,57 @@
-package gateway
+package paircast
 
 import (
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 
-	"github.com/im/internal/watchroom"
+	"github.com/im/internal/paircast/watchroom"
 )
 
-func (s *Server) roomAuth(w http.ResponseWriter, r *http.Request, method string) (uid string, ok bool) {
-	if r.Method != method {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return "", false
+// subtitleFetchPerMinute 是每个用户每分钟可下载的在线字幕数。
+const subtitleFetchPerMinute = 10
+
+// rateLimiter 是按用户的令牌桶（每分钟补满 perMinute 个）。
+type rateLimiter struct {
+	mu        sync.Mutex
+	perMinute float64
+	buckets   map[string]*bucket
+	now       func() time.Time
+}
+
+type bucket struct {
+	tokens float64
+	last   time.Time
+}
+
+func newRateLimiter(perMinute int) *rateLimiter {
+	return &rateLimiter{perMinute: float64(perMinute), buckets: map[string]*bucket{}, now: time.Now}
+}
+
+func (l *rateLimiter) allow(uid string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	if len(l.buckets) > 10000 {
+		for k, b := range l.buckets {
+			if now.Sub(b.last) > time.Minute {
+				delete(l.buckets, k)
+			}
+		}
 	}
-	if s.rooms == nil {
-		http.Error(w, "rooms not available", http.StatusServiceUnavailable)
-		return "", false
+	b, ok := l.buckets[uid]
+	if !ok {
+		b = &bucket{tokens: l.perMinute, last: now}
+		l.buckets[uid] = b
 	}
-	claims := s.authenticateRequest(w, r)
-	if claims == nil {
-		return "", false
+	b.tokens = min(l.perMinute, b.tokens+now.Sub(b.last).Minutes()*l.perMinute)
+	b.last = now
+	if b.tokens < 1 {
+		return false
 	}
-	return claims.UID, true
+	b.tokens--
+	return true
 }
 
 func formInt64(r *http.Request, key string) *int64 {
@@ -43,7 +74,7 @@ func formString(r *http.Request, key string) *string {
 	return &v
 }
 
-// HandleRoomCreate 新建观影房间（同时建群），调用者为房主。
+// HandleRoomCreate 新建观影房间（同时建群），调用者为房主。movie_id 必须存在于媒体库。
 // POST /room/create  (uid, token, movie_id)
 func (s *Server) HandleRoomCreate(w http.ResponseWriter, r *http.Request) {
 	uid, ok := s.roomAuth(w, r, http.MethodPost)
@@ -54,6 +85,12 @@ func (s *Server) HandleRoomCreate(w http.ResponseWriter, r *http.Request) {
 	if movieID == "" {
 		http.Error(w, "movie_id required", http.StatusBadRequest)
 		return
+	}
+	if s.media != nil {
+		if err := s.media.Exists(r.Context(), movieID); err != nil {
+			writeMediaError(w, err)
+			return
+		}
 	}
 	room, err := s.rooms.Create(r.Context(), uid, movieID)
 	if err != nil {
@@ -97,15 +134,22 @@ func (s *Server) HandleRoomLeave(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, room)
 }
 
-// HandleRoomUpdate 修改房间（换片 / 转让房主 / 结束仅房主；序号只增不减）。
+// HandleRoomUpdate 修改房间（换片 / 转让房主 / 结束仅房主；序号只增不减）。换片时新 movie_id 必须存在。
 // POST /room/update  (uid, token, room_id, movie_id?, host_uid?, host_transfer_seq?, last_applied_seq?, status=ended?, if_revision?)
 func (s *Server) HandleRoomUpdate(w http.ResponseWriter, r *http.Request) {
 	uid, ok := s.roomAuth(w, r, http.MethodPost)
 	if !ok {
 		return
 	}
+	movieID := formString(r, "movie_id")
+	if movieID != nil && *movieID != "" && s.media != nil {
+		if err := s.media.Exists(r.Context(), *movieID); err != nil {
+			writeMediaError(w, err)
+			return
+		}
+	}
 	room, err := s.rooms.Update(r.Context(), uid, r.FormValue("room_id"), watchroom.Patch{
-		MovieID:         formString(r, "movie_id"),
+		MovieID:         movieID,
 		HostUID:         formString(r, "host_uid"),
 		HostTransferSeq: formInt64(r, "host_transfer_seq"),
 		LastAppliedSeq:  formInt64(r, "last_applied_seq"),

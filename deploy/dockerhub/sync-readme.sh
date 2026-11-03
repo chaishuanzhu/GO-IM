@@ -15,6 +15,7 @@ short_desc() {
   case "$1" in
     gateway) echo "GO-IM 连接层：WebSocket/TCP 长连接、HTTP API、消息路由（Go）" ;;
     logic)   echo "GO-IM 业务层：Kafka 消息落库 + gRPC 查询服务（Go）" ;;
+    paircast) echo "Paircast 一起看服务：媒体库 + 观影房间，作为接入方使用 GO-IM（Go）" ;;
   esac
 }
 
@@ -22,7 +23,7 @@ jwt=$(curl -fsS --retry 3 -H 'Content-Type: application/json' \
   -d "$(python3 -c 'import json,os;print(json.dumps({"username":os.environ["DH_USER"],"password":os.environ["DH_TOKEN"]}))')" \
   "$API/users/login" | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
 
-for name in gateway logic; do
+for name in gateway logic paircast; do
   body=$(SHORT_DESC="$(short_desc "$name")" python3 -c '
 import json, os, re, sys
 page = open(sys.argv[1], encoding="utf-8").read()

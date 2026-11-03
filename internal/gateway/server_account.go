@@ -236,6 +236,7 @@ func (s *Server) HandleAccountDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("[server] account deleted by owner uid=%s", u.UID)
 	s.kickUser(context.WithoutCancel(ctx), u.UID, kickAccountDeleted)
+	s.purgeUserState(context.WithoutCancel(ctx), u.UID)
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
@@ -340,7 +341,7 @@ func (s *Server) writeLoginResponse(w http.ResponseWriter, u *repo.User) {
 	if s.adminUIDs[u.UID] {
 		role = "admin"
 	}
-	token, err := s.jwtMgr.Generate(u.UID, u.Nickname, role)
+	token, err := s.jwtMgr.GenerateVersioned(u.UID, u.Nickname, role, u.TokenVersion, 0)
 	if err != nil {
 		http.Error(w, "generate token: "+err.Error(), http.StatusInternalServerError)
 		return

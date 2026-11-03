@@ -27,7 +27,7 @@ object Cmd {
     const val TYPING = 22
     const val FORWARD = 23
     const val EDIT = 24
-    const val GROUP_SIGNAL = 25
+    const val SIGNAL = 25
 }
 
 object ChatType {

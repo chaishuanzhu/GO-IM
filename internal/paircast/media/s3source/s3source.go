@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/im/configs"
-	"github.com/im/internal/media"
+	"github.com/im/internal/paircast/media"
 )
 
 // ObjectInfo 是列表中的一个对象。
@@ -375,4 +375,9 @@ func safePath(p string) bool {
 		}
 	}
 	return true
+}
+
+// Factory 是 FromConfig 的 media.SourceFactory 形式，注册为 type "s3"。
+func Factory(sc configs.MediaSourceConfig, m configs.MediaConfig) (media.Source, error) {
+	return FromConfig(sc, m)
 }

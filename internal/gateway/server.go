@@ -17,12 +17,10 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/im/api/proto"
 	"github.com/im/configs"
-	"github.com/im/internal/media"
+	"github.com/im/internal/moderation"
 	"github.com/im/internal/pkg/jwt"
 	"github.com/im/internal/pkg/snowflake"
 	"github.com/im/internal/repo"
-	"github.com/im/internal/moderation"
-	"github.com/im/internal/watchroom"
 	"github.com/panjf2000/gnet/v2"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -63,12 +61,12 @@ type Server struct {
 	// 在线状态(nil = 只看本网关的连接)。
 	presence Presence
 
-	// 媒体库与观影房间(nil = /media/*、/room/* 返回 503)。
-	media *media.Service
-	rooms *watchroom.Service
-
 	// 屏蔽与举报(nil = /user/block*、/user/report、/admin/reports* 返回 503)。
 	moderation *moderation.Service
+
+	// 账号状态缓存与跨网关踢下线(nil = 只踢本节点)。
+	accounts accountCache
+	peers    PeerBroadcaster
 
 	// WebSocket
 	upgrader websocket.Upgrader
@@ -243,6 +241,10 @@ func (s *Server) authenticateRequest(w http.ResponseWriter, r *http.Request) *jw
 		http.Error(w, "uid does not match token", http.StatusForbidden)
 		return nil
 	}
+	if reason := s.claimsBlocked(r.Context(), claims); reason != "" {
+		http.Error(w, reason, http.StatusUnauthorized)
+		return nil
+	}
 	return claims
 }
 
@@ -370,6 +372,7 @@ func (s *Server) HandleGroupJoin(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	s.router.ForgetGroupMembers(groupID)
 
 	// 通过 WebSocket/TCP 通知在线群成员。
 	s.router.sendGroupNotification(r.Context(), claims.UID, groupID, "member_joined")
@@ -434,6 +437,7 @@ func (s *Server) HandleGroupInvite(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	s.router.ForgetGroupMembers(groupID)
 
 	// 通过 WebSocket/TCP 通知在线群成员。
 	s.router.sendGroupNotification(r.Context(), targetUID, groupID, "member_joined")
@@ -478,6 +482,7 @@ func (s *Server) HandleGroupLeave(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	s.router.ForgetGroupMembers(groupID)
 
 	// 通过 WebSocket/TCP 通知在线群成员。
 	s.router.sendGroupNotification(r.Context(), claims.UID, groupID, "member_left")
@@ -534,6 +539,7 @@ func (s *Server) HandleGroupKick(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	s.router.ForgetGroupMembers(groupID)
 
 	log.Printf("[server] group %s owner %s kicked %s", groupID, claims.UID, targetUID)
 
@@ -1458,7 +1464,8 @@ func (s *Server) HandleAdminUserDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.kickUser(r.Context(), targetUID, kickAccountDeleted)
+	s.kickUser(context.WithoutCancel(r.Context()), targetUID, kickAccountDeleted)
+	s.purgeUserState(context.WithoutCancel(r.Context()), targetUID)
 
 	data, _ := json.Marshal(map[string]string{"status": "ok"})
 	w.Header().Set("Content-Type", "application/json")
@@ -1506,8 +1513,9 @@ func (s *Server) HandleAdminUserDisable(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	s.forgetAccount(targetUID)
 	if disabled {
-		s.kickUser(r.Context(), targetUID, kickAccountDisabled)
+		s.kickUser(context.WithoutCancel(r.Context()), targetUID, kickAccountDisabled)
 	}
 
 	data, _ := json.Marshal(map[string]interface{}{"status": "ok", "disabled": disabled})
@@ -1796,7 +1804,7 @@ func (s *Server) StartGNet(cfg *configs.Config) error {
 		time.Duration(cfg.Gateway.Heartbeat)*time.Duration(cfg.Gateway.HeartbeatFail),
 		workerPoolSize,
 	)
-	s.gnetHandler.accountBlocked = s.accountBlocked
+	s.gnetHandler.accountBlocked = s.claimsBlocked
 
 	log.Printf("[server] gnet TCP server starting on %s (event-loops=%d)", cfg.Gateway.TCPAddr, numLoops)
 	return gnet.Run(s.gnetHandler, fmt.Sprintf("tcp://%s", cfg.Gateway.TCPAddr),

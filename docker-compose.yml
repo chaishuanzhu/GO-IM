@@ -156,6 +156,33 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # Paircast（一起看）业务服务，可选：docker compose --profile paircast up -d
+  # 需要 configs/paircast.json（参考 configs/paircast.example.json），并在网关配置 server_api.apps 中登记同一个 app_id。
+  paircast:
+    profiles: [paircast]
+    build:
+      context: .
+      dockerfile: Dockerfile.paircast
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+    container_name: im-paircast
+    ports:
+      - "8090:8090"
+    environment:
+      CONFIG_PATH: /etc/im/paircast.json
+      PAIRCAST_IM_SECRET: ${PAIRCAST_IM_SECRET:-}
+      PAIRCAST_IM_WEBHOOK_SECRET: ${PAIRCAST_IM_WEBHOOK_SECRET:-}
+    volumes:
+      - ./configs:/etc/im
+    depends_on:
+      mysql:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+    restart: unless-stopped
+
   # -----------------------------------------------------------------------
   # 数据卷
   # -----------------------------------------------------------------------

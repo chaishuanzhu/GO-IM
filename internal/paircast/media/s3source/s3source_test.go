@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/im/internal/media"
+	"github.com/im/internal/paircast/media"
 )
 
 type fakeAPI struct {

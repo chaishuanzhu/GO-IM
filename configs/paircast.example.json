@@ -1,0 +1,52 @@
+{
+    "_comment": "Paircast 服务配置(cmd/paircast)。密钥用环境变量提供:PAIRCAST_IM_SECRET、PAIRCAST_IM_WEBHOOK_SECRET、PAIRCAST_MYSQL_DSN、PAIRCAST_BLOB_ACCESS_KEY / PAIRCAST_BLOB_SECRET_KEY、GOIM_MEDIA_<ID>_ACCESS_KEY / GOIM_MEDIA_<ID>_SECRET_KEY、GOIM_TMDB_ACCESS_TOKEN、GOIM_OPENSUBTITLES_API_KEY。",
+    "http_addr": ":8090",
+    "im": {
+        "_comment": "IM 网关地址与接入方 ID。IM 侧 server_api.apps 中登记同一个 app_id,webhook_url 指向 http://paircast:8090/im/webhook,webhook_events 含 group.member_left 与 group.dismissed。",
+        "base_url": "http://gateway:8080",
+        "app_id": "paircast",
+        "secret": "",
+        "webhook_secret": ""
+    },
+    "mysql": {
+        "dsn": ""
+    },
+    "media": {
+        "sources": [
+            {
+                "id": "oss",
+                "name": "My Library",
+                "type": "s3",
+                "s3": {
+                    "endpoint": "oss-cn-hangzhou.aliyuncs.com",
+                    "bucket": "my-videos",
+                    "region": "cn-hangzhou",
+                    "prefix": "films/",
+                    "access_key": "",
+                    "secret_key": "",
+                    "use_ssl": true,
+                    "path_style": false
+                }
+            }
+        ],
+        "default_source": "",
+        "play_url_ttl": "6h",
+        "list_cache_ttl": "60s",
+        "tmdb_language": "zh-CN",
+        "metadata_ttl": "168h",
+        "stickers_source": "",
+        "stickers_prefix": "stickers/",
+        "room_retention": "72h"
+    },
+    "blob_store": {
+        "_comment": "共享 / 在线字幕的存储(需读写权限);endpoint 为空则不提供这两项功能。",
+        "endpoint": "",
+        "bucket": "",
+        "region": "",
+        "access_key": "",
+        "secret_key": "",
+        "use_ssl": false,
+        "path_style": true
+    },
+    "blob_prefix": ""
+}

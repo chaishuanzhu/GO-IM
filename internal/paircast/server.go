@@ -1,7 +1,9 @@
-package gateway
+// Package paircast 是 Paircast（一起看）业务服务的 HTTP 层：媒体库（/media/*）与观影房间（/room/*）。
+// 它只通过 IM 的公开能力工作 —— 令牌校验、群、瞬时信令、webhook —— 不依赖网关内部实现。
+// 独立部署时由 cmd/paircast 用服务端 API 适配（imadapter.go）；过渡期网关也可以进程内挂载同一套接口。
+package paircast
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,59 +12,55 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/im/internal/media"
-	"github.com/im/internal/watchroom"
+	"github.com/im/internal/paircast/media"
+	"github.com/im/internal/paircast/watchroom"
 )
 
-// SetMedia 启用媒体库与观影房间接口（/media/*、/room/*）。任一参数为 nil 时对应接口返回 503。
-func (s *Server) SetMedia(svc *media.Service, rooms *watchroom.Service) {
-	s.media = svc
-	s.rooms = rooms
+// RoomUpdatedSignal 是房间变化的信令类型，data 为 {"group_id":...,"room":{...}}。
+const RoomUpdatedSignal = "paircast.room_updated"
+
+// Authenticator 认证请求并返回 IM uid；失败时自己写响应并返回 ok=false。
+type Authenticator interface {
+	Authenticate(w http.ResponseWriter, r *http.Request) (uid string, ok bool)
 }
 
-// RoomGroups 把 GroupStore 适配为 watchroom.Groups。
-type RoomGroups struct{ Store GroupStore }
-
-// Create 实现 watchroom.Groups。
-func (g RoomGroups) Create(ctx context.Context, name, ownerUID string) (string, error) {
-	grp, err := g.Store.Create(ctx, name, ownerUID, nil)
-	if err != nil {
-		return "", err
-	}
-	return grp.ID, nil
+// Server 处理 /media/* 与 /room/*。media 为 nil 时全部返回 503，rooms 为 nil 时房间接口返回 503。
+type Server struct {
+	media *media.Service
+	rooms *watchroom.Service
+	auth  Authenticator
+	fetch *rateLimiter
 }
 
-// Join 实现 watchroom.Groups。
-func (g RoomGroups) Join(ctx context.Context, groupID, uid string) error {
-	switch err := g.Store.AddMember(ctx, groupID, uid); {
-	case err == nil, errors.Is(err, ErrAlreadyMember):
-		return nil
-	case errors.Is(err, ErrGroupNotFound):
-		return watchroom.ErrEnded
-	default:
-		return err
-	}
+// NewServer 创建 HTTP 层。
+func NewServer(svc *media.Service, rooms *watchroom.Service, auth Authenticator) *Server {
+	return &Server{media: svc, rooms: rooms, auth: auth, fetch: newRateLimiter(subtitleFetchPerMinute)}
 }
 
-// Leave 实现 watchroom.Groups。
-func (g RoomGroups) Leave(ctx context.Context, groupID, uid string) error {
-	err := g.Store.RemoveMember(ctx, groupID, uid)
-	if errors.Is(err, ErrNotMember) || errors.Is(err, ErrGroupNotFound) {
-		return nil
-	}
-	return err
+// Register 挂载 /media/* 与 /room/*。
+func (s *Server) Register(mux *http.ServeMux) {
+	mux.HandleFunc("/media/sources", s.HandleMediaSources)
+	mux.HandleFunc("/media/items", s.HandleMediaItems)
+	mux.HandleFunc("/media/item", s.HandleMediaItem)
+	mux.HandleFunc("/media/play", s.HandleMediaPlay)
+	mux.HandleFunc("/media/subtitles", s.HandleMediaSubtitles)
+	mux.HandleFunc("/media/subtitle", s.HandleMediaSubtitle)
+	mux.HandleFunc("/media/subtitles/search", s.HandleMediaSubtitleSearch)
+	mux.HandleFunc("/media/subtitles/fetch", s.HandleMediaSubtitleFetch)
+	mux.HandleFunc("/media/subtitles/share", s.HandleMediaSubtitleShare)
+	mux.HandleFunc("/media/stickers", s.HandleMediaStickers)
+	mux.HandleFunc("/media/stickers/pack", s.HandleMediaStickerPack)
+
+	mux.HandleFunc("/room", s.HandleRoomGet)
+	mux.HandleFunc("/room/create", s.HandleRoomCreate)
+	mux.HandleFunc("/room/join", s.HandleRoomJoin)
+	mux.HandleFunc("/room/leave", s.HandleRoomLeave)
+	mux.HandleFunc("/room/update", s.HandleRoomUpdate)
 }
 
-// RoomSignals 用瞬时群信令（CmdGroupSignal）推送房间变化：{"type":"room_updated","room":{...}}。
-type RoomSignals struct{ Router *Router }
-
-// RoomUpdated 实现 watchroom.Notifier。
-func (n RoomSignals) RoomUpdated(ctx context.Context, actorUID string, room *watchroom.Room) {
-	content, err := json.Marshal(map[string]any{"type": "room_updated", "group_id": room.GroupID, "room": room})
-	if err != nil {
-		return
-	}
-	n.Router.SendGroupSignal(ctx, actorUID, room.GroupID, string(content))
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
 }
 
 func (s *Server) mediaAuth(w http.ResponseWriter, r *http.Request, method string) (uid string, ok bool) {
@@ -74,11 +72,19 @@ func (s *Server) mediaAuth(w http.ResponseWriter, r *http.Request, method string
 		http.Error(w, "media library not configured", http.StatusServiceUnavailable)
 		return "", false
 	}
-	claims := s.authenticateRequest(w, r)
-	if claims == nil {
+	return s.auth.Authenticate(w, r)
+}
+
+func (s *Server) roomAuth(w http.ResponseWriter, r *http.Request, method string) (uid string, ok bool) {
+	if r.Method != method {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return "", false
 	}
-	return claims.UID, true
+	if s.rooms == nil {
+		http.Error(w, "rooms not available", http.StatusServiceUnavailable)
+		return "", false
+	}
+	return s.auth.Authenticate(w, r)
 }
 
 func writeMediaError(w http.ResponseWriter, err error) {
@@ -96,7 +102,7 @@ func writeMediaError(w http.ResponseWriter, err error) {
 	case errors.Is(err, watchroom.ErrConflict):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
-		log.Printf("[media] error: %v", err)
+		log.Printf("[paircast] error: %v", err)
 		http.Error(w, "upstream error", http.StatusBadGateway)
 	}
 }
@@ -228,10 +234,16 @@ func (s *Server) HandleMediaSubtitleSearch(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, map[string]any{"subtitles": refs})
 }
 
-// HandleMediaSubtitleFetch 把在线字幕下载到服务器存储，返回可读取的 ref。
+// HandleMediaSubtitleFetch 把在线字幕下载到服务器存储，返回可读取的 ref。每个用户每分钟限 subtitleFetchPerMinute 次
+// （OpenSubtitles 按下载次数计费）。
 // POST /media/subtitles/fetch  (uid, token, ref=os:<file_id>)
 func (s *Server) HandleMediaSubtitleFetch(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.mediaAuth(w, r, http.MethodPost); !ok {
+	uid, ok := s.mediaAuth(w, r, http.MethodPost)
+	if !ok {
+		return
+	}
+	if !s.fetch.allow(uid) {
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
 		return
 	}
 	ref, err := s.media.Subtitles.Fetch(r.Context(), r.FormValue("ref"))

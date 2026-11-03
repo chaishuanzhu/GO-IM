@@ -75,7 +75,8 @@ type GatewayConfig struct {
 	LogicGateway  LogicConfig         `json:"logic"`          // Gateway→Logic 的 gRPC 客户端（Addr）；与顶层 Config.Logic 不同
 	Grpc          GrpcConfig          `json:"grpc"`           // 网关自身的 gRPC 服务器（用于跨网关，未来扩展）
 	ObjectStorage ObjectStorageConfig `json:"object_storage"` // 用于文件/图片消息的 S3 兼容存储（RustFS）
-	Media         MediaConfig         `json:"media"`          // 媒体库（Paircast 视频源、字幕、贴纸、观影房间）
+	Media         MediaConfig         `json:"media"`          // 已弃用：网关内置的 Paircast 媒体库，改用 cmd/paircast；下个版本移除
+	ServerAPI     ServerAPIConfig     `json:"server_api"`     // 接入方后端调用的服务端 API（/server/v1/*）与 webhook
 
 	// 运行参数（之前为硬编码常量）。
 	RecallWindowMs        int64    `json:"recall_window_ms"`        // 消息撤回时间窗口（毫秒），默认 120000
@@ -177,7 +178,28 @@ type ObjectStorageConfig struct {
 	LegacyMaxUpload    int64    `json:"legacy_max_upload"`    // 经网关中转的 POST /upload 上限（字节），默认 10 MB
 }
 
-// MediaConfig 保存媒体库设置。Sources 为空 = 不提供 /media/* 与 /room/* 接口。
+// ServerAPIConfig 配置接入 IM 的业务后端。Apps 为空 = 不提供 /server/v1/*。
+type ServerAPIConfig struct {
+	Apps []ServerAppConfig `json:"apps"`
+	// MaxTokenTTL 限制 users/token 可申请的最长有效期，默认等于 jwt.expiration。
+	MaxTokenTTL Duration `json:"max_token_ttl"`
+}
+
+// ServerAppConfig 是一个接入方。Secret 与 WebhookSecret 建议用环境变量
+// GOIM_APP_<APP_ID>_SECRET / GOIM_APP_<APP_ID>_WEBHOOK_SECRET 提供（APP_ID 大写，非字母数字换成 _）。
+type ServerAppConfig struct {
+	AppID         string `json:"app_id"`
+	Secret        string `json:"secret,omitempty"`
+	WebhookURL    string `json:"webhook_url"`
+	WebhookSecret string `json:"webhook_secret,omitempty"`
+	// WebhookEvents 为空 = 订阅全部事件。
+	WebhookEvents []string `json:"webhook_events"`
+	// BeforeSendURL 非空时，用户发消息前同步回调该地址，可拒绝消息；超时或出错放行。
+	BeforeSendURL     string   `json:"before_send_url"`
+	BeforeSendTimeout Duration `json:"before_send_timeout"` // 默认 "500ms"
+}
+
+// MediaConfig 保存媒体库设置（cmd/paircast 与网关兼容模式共用）。Sources 为空 = 不提供 /media/* 与 /room/* 接口。
 // 访问密钥只存在服务端，客户端只拿到预签名播放直链。
 type MediaConfig struct {
 	Sources       []MediaSourceConfig `json:"sources"`
@@ -355,13 +377,7 @@ func Default() *Config {
 				LegacyMaxUpload:    10 * 1024 * 1024,
 			},
 
-			Media: MediaConfig{
-				PlayURLTTL:    Duration(6 * time.Hour),
-				ListCacheTTL:  Duration(60 * time.Second),
-				TMDBLanguage:  "zh-CN",
-				MetadataTTL:   Duration(7 * 24 * time.Hour),
-				RoomRetention: Duration(72 * time.Hour),
-			},
+			Media: DefaultMedia(),
 
 			// 运行参数。
 			RecallWindowMs:        120_000,
@@ -415,12 +431,47 @@ func Load(path string) (*Config, error) {
 	if pw := os.Getenv("GOIM_MAIL_PASSWORD"); pw != "" {
 		cfg.Gateway.Mail.Password = pw
 	}
-	applyMediaEnv(&cfg.Gateway.Media)
+	ApplyMediaEnv(&cfg.Gateway.Media)
+	applyServerAPIEnv(&cfg.Gateway.ServerAPI)
 	return cfg, nil
 }
 
-// applyMediaEnv 用环境变量覆盖媒体库密钥，避免写进配置文件。
-func applyMediaEnv(m *MediaConfig) {
+// envID 把 ID 转成环境变量名片段：大写，非字母数字换成 _。
+func envID(id string) string {
+	return strings.ToUpper(strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			return r
+		}
+		return '_'
+	}, id))
+}
+
+// applyServerAPIEnv 用环境变量覆盖接入方密钥。
+func applyServerAPIEnv(c *ServerAPIConfig) {
+	for i := range c.Apps {
+		id := envID(c.Apps[i].AppID)
+		if v := os.Getenv("GOIM_APP_" + id + "_SECRET"); v != "" {
+			c.Apps[i].Secret = v
+		}
+		if v := os.Getenv("GOIM_APP_" + id + "_WEBHOOK_SECRET"); v != "" {
+			c.Apps[i].WebhookSecret = v
+		}
+	}
+}
+
+// DefaultMedia 返回媒体库默认设置（网关兼容模式与 cmd/paircast 共用）。
+func DefaultMedia() MediaConfig {
+	return MediaConfig{
+		PlayURLTTL:    Duration(6 * time.Hour),
+		ListCacheTTL:  Duration(60 * time.Second),
+		TMDBLanguage:  "zh-CN",
+		MetadataTTL:   Duration(7 * 24 * time.Hour),
+		RoomRetention: Duration(72 * time.Hour),
+	}
+}
+
+// ApplyMediaEnv 用环境变量覆盖媒体库密钥，避免写进配置文件。
+func ApplyMediaEnv(m *MediaConfig) {
 	if v := os.Getenv("GOIM_TMDB_ACCESS_TOKEN"); v != "" {
 		m.TMDBAccessToken = v
 	}
@@ -428,12 +479,7 @@ func applyMediaEnv(m *MediaConfig) {
 		m.OpenSubtitlesAPIKey = v
 	}
 	for i := range m.Sources {
-		id := strings.ToUpper(strings.Map(func(r rune) rune {
-			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
-				return r
-			}
-			return '_'
-		}, m.Sources[i].ID))
+		id := envID(m.Sources[i].ID)
 		if v := os.Getenv("GOIM_MEDIA_" + id + "_ACCESS_KEY"); v != "" {
 			m.Sources[i].S3.AccessKey = v
 		}

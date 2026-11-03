@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 )
 
 type fakeGroups struct {
@@ -33,6 +34,11 @@ func (g *fakeGroups) Join(_ context.Context, id, uid string) error {
 
 func (g *fakeGroups) Leave(_ context.Context, id, uid string) error {
 	g.members[id] = slices.DeleteFunc(g.members[id], func(m string) bool { return m == uid })
+	return nil
+}
+
+func (g *fakeGroups) Dismiss(_ context.Context, id string) error {
+	delete(g.members, id)
 	return nil
 }
 
@@ -153,5 +159,43 @@ func TestRequireHost(t *testing.T) {
 	}
 	if _, err := svc.RequireHost(ctx, "alice", "room-1"); err != nil {
 		t.Errorf("host: %v", err)
+	}
+}
+
+func TestWebhookSyncAndJanitorDismiss(t *testing.T) {
+	ctx := context.Background()
+	svc, groups, rec := newService()
+	room, _ := svc.Create(ctx, "alice", "m")
+	svc.Join(ctx, "bob", room.ID)
+
+	if err := svc.GroupMemberLeft(ctx, room.GroupID, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := svc.Get(ctx, "bob", room.ID)
+	if got.IsMember("alice") || got.HostUID != "bob" {
+		t.Fatalf("after alice left the group: %+v", got)
+	}
+	if last := rec.rooms[len(rec.rooms)-1]; last.IsMember("alice") {
+		t.Fatal("no room_updated after webhook leave")
+	}
+	if err := svc.GroupMemberLeft(ctx, "g_unknown", "x"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.GroupDismissed(ctx, room.GroupID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := svc.Get(ctx, "bob", room.ID); got.Status != StatusEnded {
+		t.Fatalf("after dismiss: %+v", got)
+	}
+
+	other, _ := svc.Create(ctx, "carol", "m")
+	svc.now = func() time.Time { return time.Now().Add(time.Hour) }
+	svc.cleanup(ctx, time.Minute)
+	if _, ok := groups.members[other.GroupID]; ok {
+		t.Fatal("janitor did not dismiss the stale room's group")
+	}
+	if _, err := svc.Get(ctx, "carol", other.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stale room not deleted: %v", err)
 	}
 }

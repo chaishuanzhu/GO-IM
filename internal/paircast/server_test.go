@@ -1,23 +1,30 @@
-package gateway
+package paircast
 
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/im/configs"
-	"github.com/im/internal/media"
-	"github.com/im/internal/media/s3source"
-	"github.com/im/internal/pkg/jwt"
-	"github.com/im/internal/watchroom"
+	"github.com/im/internal/paircast/media"
+	"github.com/im/internal/paircast/media/s3source"
+	"github.com/im/internal/paircast/watchroom"
+	"github.com/im/pkg/imserver"
 )
 
 type mediaFakeAPI struct{ objects map[string]string }
@@ -49,16 +56,91 @@ func (f *mediaFakeAPI) Presign(_ context.Context, key string, _ time.Duration) (
 	return "https://cdn.test/" + key + "?sig=1", nil
 }
 
+type memBlobs struct {
+	mu   sync.Mutex
+	data map[string][]byte
+}
+
+func (b *memBlobs) Put(_ context.Context, key string, data []byte, _ string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.data[key] = data
+	return nil
+}
+
+func (b *memBlobs) Get(_ context.Context, key string) ([]byte, string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	d, ok := b.data[key]
+	if !ok {
+		return nil, "", media.ErrNotFound
+	}
+	return d, "text/plain", nil
+}
+
+type fakeGroups struct {
+	mu      sync.Mutex
+	n       int
+	members map[string]map[string]bool
+}
+
+func (g *fakeGroups) Create(_ context.Context, _, owner string) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.n++
+	id := fmt.Sprintf("g_%d", g.n)
+	g.members[id] = map[string]bool{owner: true}
+	return id, nil
+}
+
+func (g *fakeGroups) Join(_ context.Context, groupID, uid string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	m, ok := g.members[groupID]
+	if !ok {
+		return watchroom.ErrEnded
+	}
+	m[uid] = true
+	return nil
+}
+
+func (g *fakeGroups) Leave(_ context.Context, groupID, uid string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.members[groupID], uid)
+	return nil
+}
+
+func (g *fakeGroups) Dismiss(_ context.Context, groupID string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.members, groupID)
+	return nil
+}
+
+type nopNotifier struct{}
+
+func (nopNotifier) RoomUpdated(context.Context, string, *watchroom.Room) {}
+
+// tokenAuth 接受 token == "t-"+uid。
+type tokenAuth struct{}
+
+func (tokenAuth) Authenticate(w http.ResponseWriter, r *http.Request) (string, bool) {
+	uid := r.FormValue("uid")
+	if uid == "" || r.FormValue("token") != "t-"+uid {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return "", false
+	}
+	return uid, true
+}
+
 type mediaEnv struct {
-	srv *Server
-	jwt *jwt.Manager
+	srv   *Server
+	rooms *watchroom.Service
 }
 
 func newMediaEnv(t *testing.T) *mediaEnv {
 	t.Helper()
-	acc := newAccountEnv(t, false)
-	groups := newTestGroupStore(t)
-	acc.router.SetGroupStore(groups)
 	api := &mediaFakeAPI{objects: map[string]string{
 		"films/Inception.2010.1080p.mkv":    "video",
 		"films/Inception.2010.1080p.zh.srt": "1\n00:00:01,000 --> 00:00:02,000\n你好\n",
@@ -77,29 +159,25 @@ func newMediaEnv(t *testing.T) *mediaEnv {
 		},
 	}
 	n := 0
-	svc, err := media.NewService(cfg, factories, nil, acc.objs, func() string { n++; return "blob" + string(rune('0'+n)) })
+	blobs := &memBlobs{data: map[string][]byte{}}
+	svc, err := media.NewService(cfg, factories, nil, blobs, func() string { n++; return "blob" + strconv.Itoa(n) })
 	if err != nil {
 		t.Fatal(err)
 	}
-	rooms := watchroom.NewService(watchroom.NewMemoryStore(), RoomGroups{Store: groups}, RoomSignals{Router: acc.router}, watchroom.NewRandomID)
-	acc.srv.SetMedia(svc, rooms)
-	return &mediaEnv{srv: acc.srv, jwt: acc.jwt}
+	groups := &fakeGroups{members: map[string]map[string]bool{}}
+	rooms := watchroom.NewService(watchroom.NewMemoryStore(), groups, nopNotifier{}, watchroom.NewRandomID)
+	return &mediaEnv{srv: NewServer(svc, rooms, tokenAuth{}), rooms: rooms}
 }
 
-func (e *mediaEnv) auth(t *testing.T, uid string, q url.Values) url.Values {
-	t.Helper()
-	token, err := e.jwt.Generate(uid, uid, "user")
-	if err != nil {
-		t.Fatal(err)
-	}
+func authValues(uid string, q url.Values) url.Values {
 	q.Set("uid", uid)
-	q.Set("token", token)
+	q.Set("token", "t-"+uid)
 	return q
 }
 
 func (e *mediaEnv) call(t *testing.T, h http.HandlerFunc, method, uid string, q url.Values) *httptest.ResponseRecorder {
 	t.Helper()
-	q = e.auth(t, uid, q)
+	q = authValues(uid, q)
 	var req *http.Request
 	if method == http.MethodGet {
 		req = httptest.NewRequest(method, "/?"+q.Encode(), nil)
@@ -122,8 +200,7 @@ func decodeJSON[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 }
 
 func TestMediaDisabledReturns503(t *testing.T) {
-	acc := newAccountEnv(t, false)
-	e := &mediaEnv{srv: acc.srv, jwt: acc.jwt}
+	e := &mediaEnv{srv: NewServer(nil, nil, tokenAuth{})}
 	if rec := e.call(t, e.srv.HandleMediaItems, http.MethodGet, "100001", url.Values{}); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("items: %d", rec.Code)
 	}
@@ -169,9 +246,6 @@ func TestMediaLibraryEndpoints(t *testing.T) {
 	if rec := e.call(t, e.srv.HandleMediaPlay, http.MethodGet, "100001", url.Values{"id": {"oss:other/secret.mkv"}}); rec.Code != http.StatusNotFound {
 		t.Fatalf("out of scope: %d", rec.Code)
 	}
-	if rec := e.call(t, e.srv.HandleMediaPlay, http.MethodGet, "100001", url.Values{"id": {"oss:films/Inception.2010.1080p.mkv"}}); rec.Code != http.StatusOK {
-		t.Fatalf("play again: %d", rec.Code)
-	}
 
 	rec = e.call(t, e.srv.HandleMediaSubtitles, http.MethodGet, "100001", url.Values{"id": {"oss:films/Inception.2010.1080p.mkv"}})
 	subs := decodeJSON[struct {
@@ -192,6 +266,39 @@ func TestMediaLibraryEndpoints(t *testing.T) {
 	rec = e.call(t, e.srv.HandleMediaStickerPack, http.MethodGet, "100001", url.Values{"id": {"cats"}})
 	if !strings.Contains(rec.Body.String(), `"url":"https://cdn.test/stickers/cats/a.png?sig=1"`) || !strings.Contains(rec.Body.String(), "cover_url") {
 		t.Fatalf("pack: %s", rec.Body.String())
+	}
+}
+
+func TestRoomRejectsUnknownMovie(t *testing.T) {
+	e := newMediaEnv(t)
+	if rec := e.call(t, e.srv.HandleRoomCreate, http.MethodPost, "100001", url.Values{"movie_id": {"oss:films/missing.mkv"}}); rec.Code != http.StatusNotFound {
+		t.Fatalf("create with unknown movie: %d %s", rec.Code, rec.Body.String())
+	}
+	rec := e.call(t, e.srv.HandleRoomCreate, http.MethodPost, "100001", url.Values{"movie_id": {"oss:films/Inception.2010.1080p.mkv"}})
+	room := decodeJSON[watchroom.Room](t, rec)
+	if rec := e.call(t, e.srv.HandleRoomUpdate, http.MethodPost, "100001", url.Values{"room_id": {room.ID}, "movie_id": {"oss:films/missing.mkv"}}); rec.Code != http.StatusNotFound {
+		t.Fatalf("update with unknown movie: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSubtitleFetchRateLimited(t *testing.T) {
+	e := newMediaEnv(t)
+	now := time.Unix(1_700_000_000, 0)
+	e.srv.fetch.now = func() time.Time { return now }
+	for i := 0; i < subtitleFetchPerMinute; i++ {
+		if rec := e.call(t, e.srv.HandleMediaSubtitleFetch, http.MethodPost, "100001", url.Values{"ref": {"os:1"}}); rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("call %d limited too early", i)
+		}
+	}
+	if rec := e.call(t, e.srv.HandleMediaSubtitleFetch, http.MethodPost, "100001", url.Values{"ref": {"os:1"}}); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("over limit: %d", rec.Code)
+	}
+	if rec := e.call(t, e.srv.HandleMediaSubtitleFetch, http.MethodPost, "100002", url.Values{"ref": {"os:1"}}); rec.Code == http.StatusTooManyRequests {
+		t.Fatal("limit should be per user")
+	}
+	now = now.Add(time.Minute)
+	if rec := e.call(t, e.srv.HandleMediaSubtitleFetch, http.MethodPost, "100001", url.Values{"ref": {"os:1"}}); rec.Code == http.StatusTooManyRequests {
+		t.Fatal("bucket should refill after a minute")
 	}
 }
 
@@ -230,7 +337,7 @@ func TestRoomLifecycleAndSharedSubtitle(t *testing.T) {
 	// 房主共享字幕（multipart）。
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	for k, v := range e.auth(t, alice, url.Values{"room_id": {room.ID}, "label": {"中文"}}) {
+	for k, v := range authValues(alice, url.Values{"room_id": {room.ID}, "label": {"中文"}}) {
 		_ = mw.WriteField(k, v[0])
 	}
 	fw, _ := mw.CreateFormFile("file", "movie.zh.srt")
@@ -267,5 +374,117 @@ func TestRoomLifecycleAndSharedSubtitle(t *testing.T) {
 	}
 	if rec := e.call(t, e.srv.HandleRoomJoin, http.MethodPost, alice, url.Values{"room_id": {room.ID}}); rec.Code != http.StatusGone {
 		t.Fatalf("join ended: %d", rec.Code)
+	}
+}
+
+type fakeVerifier struct {
+	calls int
+	infos map[string]*imserver.TokenInfo
+	err   error
+}
+
+func (v *fakeVerifier) VerifyToken(_ context.Context, token string) (*imserver.TokenInfo, error) {
+	v.calls++
+	if v.err != nil {
+		return nil, v.err
+	}
+	if info, ok := v.infos[token]; ok {
+		return info, nil
+	}
+	return &imserver.TokenInfo{Valid: false, Reason: "token revoked"}, nil
+}
+
+func TestIMAuth(t *testing.T) {
+	v := &fakeVerifier{infos: map[string]*imserver.TokenInfo{"good": {Valid: true, UID: "100001"}}}
+	a := NewIMAuth(v)
+	now := time.Unix(1_700_000_000, 0)
+	a.now = func() time.Time { return now }
+
+	run := func(target string, header string) (*httptest.ResponseRecorder, string) {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		if header != "" {
+			req.Header.Set("Authorization", "Bearer "+header)
+		}
+		rec := httptest.NewRecorder()
+		uid, _ := a.Authenticate(rec, req)
+		return rec, uid
+	}
+
+	if rec, _ := run("/", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token: %d", rec.Code)
+	}
+	if _, uid := run("/?token=good", ""); uid != "100001" {
+		t.Fatalf("query token uid = %q", uid)
+	}
+	if _, uid := run("/", "good"); uid != "100001" || v.calls != 1 {
+		t.Fatalf("bearer token uid = %q calls = %d (want cached)", uid, v.calls)
+	}
+	if rec, _ := run("/?token=good&uid=100002", ""); rec.Code != http.StatusForbidden {
+		t.Fatalf("uid mismatch: %d", rec.Code)
+	}
+	if rec, _ := run("/?token=bad", ""); rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "revoked") {
+		t.Fatalf("invalid token: %d %s", rec.Code, rec.Body.String())
+	}
+	now = now.Add(tokenCacheTTL + time.Second)
+	run("/?token=good", "")
+	if v.calls != 3 {
+		t.Fatalf("cache should expire, calls = %d", v.calls)
+	}
+	v.err = errors.New("down")
+	if rec, _ := run("/?token=other", ""); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("verifier down: %d", rec.Code)
+	}
+}
+
+func signedWebhook(t *testing.T, secret, typ string, data any) *http.Request {
+	t.Helper()
+	raw, _ := json.Marshal(data)
+	body, _ := json.Marshal(imserver.WebhookEvent{ID: "d1", Type: typ, AppID: "paircast", Timestamp: time.Now().Unix(), Data: raw})
+	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	mac := hmac.New(sha256.New, []byte(secret))
+	io.WriteString(mac, ts+"\n")
+	mac.Write(body)
+	req := httptest.NewRequest(http.MethodPost, "/im/webhook", bytes.NewReader(body))
+	req.Header.Set(imserver.HeaderWebhookEvent, typ)
+	req.Header.Set(imserver.HeaderWebhookTimestamp, ts)
+	req.Header.Set(imserver.HeaderWebhookSignature, hex.EncodeToString(mac.Sum(nil)))
+	return req
+}
+
+func TestWebhookHandlerSyncsRooms(t *testing.T) {
+	e := newMediaEnv(t)
+	ctx := context.Background()
+	room, err := e.rooms.Create(ctx, "100001", "oss:films/Inception.2010.1080p.mkv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.rooms.Join(ctx, "100002", room.ID); err != nil {
+		t.Fatal(err)
+	}
+	h := WebhookHandler(e.rooms, "whsec")
+
+	rec := httptest.NewRecorder()
+	h(rec, signedWebhook(t, "wrong", imserver.EventGroupMemberLeft, map[string]string{"group_id": room.GroupID, "uid": "100002"}))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("bad signature: %d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	h(rec, signedWebhook(t, "whsec", imserver.EventGroupMemberLeft, map[string]string{"group_id": room.GroupID, "uid": "100002"}))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("member_left: %d %s", rec.Code, rec.Body.String())
+	}
+	got, err := e.rooms.Get(ctx, "100001", room.ID)
+	if err != nil || len(got.Members) != 1 {
+		t.Fatalf("after member_left: %+v %v", got, err)
+	}
+
+	rec = httptest.NewRecorder()
+	h(rec, signedWebhook(t, "whsec", imserver.EventGroupDismissed, map[string]string{"group_id": room.GroupID}))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("dismissed: %d", rec.Code)
+	}
+	if _, err := e.rooms.Join(ctx, "100002", room.ID); !errors.Is(err, watchroom.ErrEnded) {
+		t.Fatalf("join after dismiss: %v", err)
 	}
 }

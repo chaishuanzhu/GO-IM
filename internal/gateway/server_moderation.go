@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -226,7 +227,7 @@ func (s *Server) HandleAdminReportResolve(w http.ResponseWriter, r *http.Request
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		s.kickUser(r.Context(), u.UID, kickAccountDisabled)
+		s.kickUser(context.WithoutCancel(r.Context()), u.UID, kickAccountDisabled)
 		if err := s.moderation.MarkBanned(r.Context(), rep, claims.UID); err != nil {
 			writeModerationError(w, err)
 			return

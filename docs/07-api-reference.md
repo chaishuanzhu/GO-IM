@@ -793,7 +793,7 @@ TCP 连接建立后，**第一条消息必须是登录**：
 | CmdGroupList | — | — | |
 | CmdFile | 同 CmdChat，`content` 为文件元数据 JSON；表情包为 `pack_id`/`sticker_id` JSON | 同 CmdChat | `msg_type` 建议为 2/3/4/5/6 |
 | CmdRecall | `to`, `seq`(=原始MsgId) | `msg_id`, `timestamp` | 撤回通知，`seq` 携带原始消息ID |
-| CmdGroupSignal | `to`=group_id, `content`(业务自定义，通常为 JSON), 可选 `msg_type` | `msg_id`, `from`, `timestamp`, `chat_type`=2 | 瞬时群信令：仅群成员可发；只投递给在线成员（含跨网关），不持久化、不进离线队列、不计未读、不回 ACK，发送方不回显 |
+| CmdSignal | `chat_type`=1 + `to`=uid（单聊），或 `to`=group_id（群，`chat_type` 为 2 或不填）；`content` 必须是 JSON `{"type":"<ns>.<name>","data":{...}}`（type 非空，否则丢弃；data 业务自定义，如 `paircast.playback`、`paircast.room_updated`）, 可选 `msg_type` | `msg_id`, `from`, `timestamp`, `chat_type`(1/2) | 瞬时在线信令：单聊投递给对方所有在线设备，群信令仅群成员可发、投递给在线成员；含跨网关，不持久化、不进离线队列、不计未读、不回 ACK，发送方自己的设备不回显。对方离线即丢弃。群成员列表在网关上缓存 3 秒 |
 
 ### 6.3 多平台注意事项
 
@@ -828,7 +828,7 @@ TCP 连接建立后，**第一条消息必须是登录**：
 | 🟣 | `CmdGroupList` | 16 | C→S, S→C | 群组列表 |
 | 🟢 | `CmdFile` | 17 | C→S, S→C | 文件消息（经过完整聊天管线） |
 | 🔴 | `CmdRecall` | 19 | C→S, S→C | 消息撤回 |
-| 🟡 | `CmdGroupSignal` | 25 | C→S, S→C | 瞬时群信令（如同步播放控制），不持久化、不离线 |
+| 🟡 | `CmdSignal` | 25 | C→S, S→C | 瞬时在线信令（单聊或群，如同步播放控制、业务自定义通知），不持久化、不离线；旧名 `CmdGroupSignal` |
 
 ---
 

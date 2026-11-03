@@ -1,5 +1,5 @@
 // Jenkins job go-im-server (Pipeline script, not SCM): build, publish and deploy the GO-IM server side.
-//   Images  ci-01: gateway / logic images of one commit, tagged sha-<7>, pushed to Docker Hub
+//   Images  ci-01: gateway / logic / paircast images of one commit, tagged sha-<7>, pushed to Docker Hub
 //           (skipped when both tags already exist, unless REBUILD)
 //   Deploy  ci-01: kubectl set image in namespace go-im-test (logic -> gateway, each waits for its rollout),
 //           rolls back on failure, then checks https://go-im.test.chaisz.com/health
@@ -35,13 +35,13 @@ stage('Images') {
                 imageNs = params.DOCKERHUB_NAMESPACE?.trim() ?: env.DH_USER
                 withEnv(["NS=${imageNs}", "TAG=${tag}", "COMMIT=${commit}", "PLATFORMS=${params.PLATFORMS}"]) {
                     sh 'echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin'
-                    def missing = params.REBUILD ? 'gateway logic' : sh(returnStdout: true, script: '''
-                        for n in gateway logic; do
+                    def missing = params.REBUILD ? 'gateway logic paircast' : sh(returnStdout: true, script: '''
+                        for n in gateway logic paircast; do
                             docker buildx imagetools inspect "$NS/go-im-$n:$TAG" >/dev/null 2>&1 || printf '%s ' "$n"
                         done
                     ''').trim()
                     if (!missing) {
-                        echo "${imageNs}/go-im-{gateway,logic}:${tag} 已存在，跳过构建"
+                        echo "${imageNs}/go-im-{gateway,logic,paircast}:${tag} 已存在，跳过构建"
                         return
                     }
                     deleteDir()
@@ -58,7 +58,7 @@ stage('Images') {
                             set -eu
                             # Compile on the build host's architecture (Go cross-compiles by TARGETARCH) instead of
                             # running go build under QEMU for arm64.
-                            for f in Dockerfile.gateway Dockerfile.logic; do
+                            for f in Dockerfile.gateway Dockerfile.logic Dockerfile.paircast; do
                                 sed -i -E 's#^FROM golang:([^ ]+) AS builder#FROM --platform=$BUILDPLATFORM golang:\\1 AS builder\\nARG TARGETOS TARGETARCH#' "$f"
                                 sed -i -E 's#CGO_ENABLED=0 go build#CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build#' "$f"
                             done
@@ -96,7 +96,9 @@ stage('Deploy') {
                     set -eu
                     k() { kubectl -n "$K8S_NS" "$@"; }
                     done_list=""
-                    for d in logic gateway; do
+                    for d in logic gateway paircast; do
+                        # paircast 是可选叠加层（deploy/k8s/paircast），未部署则跳过
+                        if [ "$d" = paircast ] && ! k get deployment/paircast >/dev/null 2>&1; then continue; fi
                         k set image "deployment/$d" "$d=$NS/go-im-$d:$TAG"
                         done_list="$done_list $d"
                         if ! k rollout status "deployment/$d" --timeout=5m; then

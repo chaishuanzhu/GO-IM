@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 // MemoryStore 是进程内实现（MySQL 未启用或测试时）。
@@ -62,18 +64,30 @@ func (s *MemoryStore) Update(_ context.Context, id string, fn func(*Room) error)
 	return next.clone(), nil
 }
 
-// DeleteStale 实现 Store。
-func (s *MemoryStore) DeleteStale(_ context.Context, before time.Time) (int, error) {
+// GetByGroup 实现 Store。
+func (s *MemoryStore) GetByGroup(_ context.Context, groupID string) (*Room, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	n := 0
+	for _, r := range s.rooms {
+		if r.GroupID == groupID {
+			return r.clone(), nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+// DeleteStale 实现 Store。
+func (s *MemoryStore) DeleteStale(_ context.Context, before time.Time) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var groups []string
 	for id, r := range s.rooms {
 		if r.UpdatedAt < before.UnixMilli() {
 			delete(s.rooms, id)
-			n++
+			groups = append(groups, r.GroupID)
 		}
 	}
-	return n, nil
+	return groups, nil
 }
 
 // MySQLStore 把房间存进 watch_rooms 表（成员列表以 JSON 存储）。
@@ -101,10 +115,15 @@ func NewMySQLStore(db *sql.DB) (*MySQLStore, error) {
 			created_at        BIGINT       NOT NULL,
 			updated_at        BIGINT       NOT NULL,
 			PRIMARY KEY (id),
-			INDEX idx_updated (updated_at)
+			INDEX idx_updated (updated_at),
+			INDEX idx_group (group_id)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
 	if err != nil {
 		return nil, fmt.Errorf("create watch_rooms: %w", err)
+	}
+	// 旧表没有 idx_group（1061 = 索引已存在）。
+	if _, err := db.Exec(`ALTER TABLE watch_rooms ADD INDEX idx_group (group_id)`); err != nil && !isDupKeyName(err) {
+		return nil, fmt.Errorf("add watch_rooms.idx_group: %w", err)
 	}
 	return &MySQLStore{db: db, now: time.Now}, nil
 }
@@ -190,12 +209,47 @@ func (s *MySQLStore) Update(ctx context.Context, id string, fn func(*Room) error
 	return r, nil
 }
 
+// GetByGroup 实现 Store。
+func (s *MySQLStore) GetByGroup(ctx context.Context, groupID string) (*Room, error) {
+	return scanRoom(s.db.QueryRowContext(ctx, `SELECT `+roomColumns+` FROM watch_rooms WHERE group_id = ? LIMIT 1`, groupID))
+}
+
 // DeleteStale 实现 Store。
-func (s *MySQLStore) DeleteStale(ctx context.Context, before time.Time) (int, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM watch_rooms WHERE updated_at < ?`, before.UnixMilli())
+func (s *MySQLStore) DeleteStale(ctx context.Context, before time.Time) ([]string, error) {
+	cutoff := before.UnixMilli()
+	rows, err := s.db.QueryContext(ctx, `SELECT id, group_id FROM watch_rooms WHERE updated_at < ?`, cutoff)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
+	type stale struct{ id, group string }
+	var found []stale
+	for rows.Next() {
+		var r stale
+		if err := rows.Scan(&r.id, &r.group); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		found = append(found, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var groups []string
+	for _, r := range found {
+		// 删除时再比一次时间，跳过刚被更新的房间（它的群不能解散）。
+		res, err := s.db.ExecContext(ctx, `DELETE FROM watch_rooms WHERE id = ? AND updated_at < ?`, r.id, cutoff)
+		if err != nil {
+			return nil, err
+		}
+		if n, _ := res.RowsAffected(); n == 1 {
+			groups = append(groups, r.group)
+		}
+	}
+	return groups, nil
+}
+
+func isDupKeyName(err error) bool {
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && me.Number == 1061
 }

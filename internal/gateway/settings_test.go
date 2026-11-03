@@ -108,6 +108,7 @@ func TestSettingsManagerWithoutStore(t *testing.T) {
 func TestAdminSettingsAndRegistrationGate(t *testing.T) {
 	e := newAccountEnv(t, false)
 	srv, mgr := e.srv, e.jwt
+	e.users.Create(context.Background(), &repo.User{UID: "root", Role: "admin"})
 	settings := func(role string, form url.Values) (int, map[string]interface{}) {
 		method := http.MethodGet
 		if form != nil {

@@ -101,7 +101,7 @@ type GnetHandler struct {
 	connMap   sync.Map // fd(int) → *Client 连接映射
 
 	// accountBlocked 非空时登录前检查账号状态，返回值非空即拒绝（作为 CmdKick 内容）。
-	accountBlocked func(ctx context.Context, uid string) string
+	accountBlocked func(ctx context.Context, claims *jwt.Claims) string
 }
 
 // errLoginRejected 表示已向连接写出 CmdKick，由写回调负责关闭连接。
@@ -289,7 +289,7 @@ func (h *GnetHandler) handleLogin(frame []byte, c gnet.Conn) (*Client, error) {
 		return nil, fmt.Errorf("jwt: %w", err)
 	}
 	if h.accountBlocked != nil {
-		if reason := h.accountBlocked(h.ctx, claims.UID); reason != "" {
+		if reason := h.accountBlocked(h.ctx, claims); reason != "" {
 			data, err := pb.Marshal(&proto.Message{Cmd: proto.CmdKick, Content: reason})
 			if err != nil {
 				return nil, fmt.Errorf("marshal kick: %w", err)

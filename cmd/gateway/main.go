@@ -20,10 +20,13 @@ import (
 	"github.com/im/internal/moderation"
 	"github.com/im/internal/mq"
 	"github.com/im/internal/observability"
+	"github.com/im/internal/paircast/media"
+	"github.com/im/internal/paircast/watchroom"
 	"github.com/im/internal/pkg/jwt"
 	"github.com/im/internal/pkg/snowflake"
 	"github.com/im/internal/repo"
-	"github.com/im/internal/watchroom"
+	"github.com/im/internal/serverapi"
+	"github.com/im/internal/webhook"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 )
@@ -44,7 +47,12 @@ type App struct {
 	pprofServer   *http.Server            // pprof 禁用时为 nil
 	router        *gateway.Router         // 用于清理（去重缓存、限流器）
 	metrics       *observability.Metrics  // Prometheus 指标记录器
+	media         *media.Service          // 媒体库未启用时为 nil
 	rooms         *watchroom.Service      // 媒体库未启用时为 nil
+	serverAPI     *serverapi.API          // 未配置 server_api.apps 时为 nil
+	serverApps    *serverapi.Registry
+	webhooks      *webhook.Publisher // 没有接入方配置 webhook_url 时为 nil
+	webhookDisp   *webhook.Dispatcher
 }
 
 // NewApp 根据配置初始化所有应用组件。
@@ -276,6 +284,15 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		groupStore = gateway.NewInMemoryGroupStore(snow)
 		log.Printf("[main] using in-memory group store")
 	}
+	// --- 接入方 webhook 与发送前回调 ---
+	webhooks, webhookDispatcher := setupWebhooks(cfg, rdb)
+	if webhooks != nil {
+		groupStore = webhook.WrapGroupStore(groupStore, webhooks)
+		router.SetMessageEvents(webhook.MessageEvents{P: webhooks})
+	}
+	if hook := setupBeforeSend(cfg); hook != nil {
+		router.SetBeforeSend(hook)
+	}
 	router.SetGroupStore(groupStore)
 
 	// --- 去重 Redis 持久化 ---
@@ -337,7 +354,6 @@ func NewApp(cfg *configs.Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("media: %w", err)
 	}
-	server.SetMedia(mediaSvc, roomSvc)
 
 	// --- 屏蔽与举报 ---
 	var modStore moderation.Store = moderation.NewMemoryStore()
@@ -350,7 +366,27 @@ func NewApp(cfg *configs.Config) (*App, error) {
 	} else {
 		log.Printf("[main] moderation: in-memory store (no MySQL), blocks and reports are lost on restart")
 	}
-	server.SetModeration(moderation.NewService(modStore))
+	modSvc := moderation.NewService(modStore)
+	if webhooks != nil {
+		modSvc.OnReport(webhook.ReportHook(webhooks))
+	}
+	server.SetModeration(modSvc)
+	router.SetBlockChecker(modSvc)
+	if grpcForwarder != nil {
+		server.SetPeerBroadcaster(grpcForwarder)
+	}
+
+	// --- 接入方服务端 API(/server/v1/*) ---
+	serverAPI, serverApps, err := setupServerAPI(cfg, mysqlStore, rdb, groupStore, server, router)
+	if err != nil {
+		return nil, fmt.Errorf("server api: %w", err)
+	}
+
+	var webhookPresence func(string)
+	if webhooks != nil {
+		webhookPresence = webhook.PresenceHook(webhooks, hub)
+		hub.SetPresenceHook(webhookPresence)
+	}
 
 	// 在线状态:有 Redis 时每个网关维护一张位图(im:online:{node}),查询时合并所有网关。
 	if rdb != nil {
@@ -362,7 +398,12 @@ func NewApp(cfg *configs.Config) (*App, error) {
 			node = "gateway"
 		}
 		presence := gateway.NewRedisPresence(rdb, hub, node)
-		hub.SetPresenceHook(func(uid string) { presence.Changed(context.Background(), uid) })
+		hub.SetPresenceHook(func(uid string) {
+			presence.Changed(context.Background(), uid)
+			if webhooks != nil {
+				webhookPresence(uid)
+			}
+		})
 		server.SetPresence(presence)
 		log.Printf("[main] presence: redis bitmap (node=%s)", node)
 	}
@@ -457,7 +498,12 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		clusterMgr:    clusterMgr,
 		router:        router,
 		metrics:       metrics,
+		media:         mediaSvc,
 		rooms:         roomSvc,
+		serverAPI:     serverAPI,
+		serverApps:    serverApps,
+		webhooks:      webhooks,
+		webhookDisp:   webhookDispatcher,
 	}, nil
 }
 
@@ -592,7 +638,7 @@ func (app *App) Run(ctx context.Context) error {
 	app.Server.StartFileJanitor(ctx, time.Hour)
 
 	// 媒体库与观影房间（Paircast）。
-	registerMediaRoutes(mux, app.Server)
+	registerMediaRoutes(mux, app.Server, app.media, app.rooms)
 	if app.rooms != nil {
 		app.rooms.StartJanitor(ctx, time.Duration(app.Config.Gateway.Media.RoomRetention), time.Hour)
 	}
@@ -631,6 +677,32 @@ func (app *App) Run(ctx context.Context) error {
 	// OpenAPI 文档与 Swagger UI。
 	if app.Config.Stability.SwaggerEnabled {
 		mux.Handle("/swagger/", openapi.Handler("/swagger/"))
+	}
+
+	if app.webhooks != nil {
+		app.webhooks.Start(ctx)
+		app.webhookDisp.Start(ctx)
+	}
+
+	// 接入方业务后端调用的服务端 API(app_id + HMAC 签名)。
+	if app.serverAPI != nil {
+		for _, route := range []string{
+			"/server/v1/users/import",
+			"/server/v1/users/token",
+			"/server/v1/users/revoke",
+			"/server/v1/users/disable",
+			"/server/v1/users/delete",
+			"/server/v1/groups/create",
+			"/server/v1/groups/members/add",
+			"/server/v1/groups/members/remove",
+			"/server/v1/groups/dismiss",
+			"/server/v1/messages/send",
+			"/server/v1/signals/send",
+			"/server/v1/tokens/verify",
+		} {
+			mux.Handle(route, app.serverAPI)
+		}
+		app.serverApps.StartRefresh(ctx)
 	}
 
 	// 管理员监控与管理端点。

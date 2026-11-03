@@ -26,10 +26,15 @@ tags:
   - name: 消息
     description: 全文搜索、未读数、实时连接
   - name: 媒体库
-    description: 视频源（S3 兼容存储等）、播放直链、字幕、贴纸；需配置 `gateway.media`
+    description: 视频源（S3 兼容存储等）、播放直链、字幕、贴纸。由独立的 Paircast 服务（cmd/paircast，令牌为 IM 用户令牌）提供；网关内置版本（`gateway.media`）已弃用，下个版本移除
   - name: 观影房间
-    description: 一起看房间（同时建群），变化通过群信令 `room_updated` 推送
+    description: 一起看房间（同时建群），变化通过群信令 `paircast.room_updated` 推送。由独立的 Paircast 服务（cmd/paircast）提供；网关内置版本已弃用，下个版本移除
   - name: 系统
+  - name: 服务端 API
+    description: |
+      接入方业务后端调用（`server_api.apps`），不用用户 token。请求头带 `X-App-Id`、`X-Timestamp`（Unix 秒）、`X-Nonce`（≤ 64 字符，5 分钟内不可重复）、
+      `X-Signature` = hex(HMAC-SHA256(secret, METHOD + "\n" + PATH + "\n" + TIMESTAMP + "\n" + NONCE + "\n" + BODY))。
+      请求与响应均为 JSON，错误为 `{"error":"..."}`。用户用 `{"uid"}` 或 `{"external_id"}` 指定。
   - name: 管理
     description: 需要管理员角色（`role=admin`）
 
@@ -1330,6 +1335,7 @@ paths:
               schema: { type: object, properties: { ref: { type: string } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: 每个用户每分钟最多下载 10 个在线字幕, content: { text/plain: { schema: { type: string } } } }
         "501": { description: 未配置在线字幕或对象存储, content: { text/plain: { schema: { type: string } } } }
         "502": { $ref: "#/components/responses/Upstream" }
         "503": { $ref: "#/components/responses/MediaUnavailable" }
@@ -1338,7 +1344,7 @@ paths:
     post:
       tags: [媒体库]
       summary: 房主共享字幕
-      description: 字幕保存到网关对象存储（`paircast/subtitles/…`）并记到房间上，随后推送 `room_updated`。仅房主可调用。
+      description: 字幕保存到对象存储（`paircast/subtitles/…`）并记到房间上，随后推送 `paircast.room_updated`。仅房主可调用。
       requestBody:
         required: true
         content:
@@ -1480,7 +1486,7 @@ paths:
       summary: 修改房间
       description: |
         换片、转让房主、结束房间仅房主可做；`last_applied_seq` / `host_transfer_seq` 只增不减。
-        带 `if_revision` 时版本不一致返回 409。成功后向其他成员推送 `room_updated`。
+        带 `if_revision` 时版本不一致返回 409。成功后向其他成员推送 `paircast.room_updated`。
       requestBody:
         required: true
         content:
@@ -2028,6 +2034,349 @@ paths:
           content: { text/plain: { schema: { type: string } } }
         "503": { $ref: "#/components/responses/Unavailable" }
 
+  /server/v1/users/import:
+    post:
+      tags: [服务端 API]
+      summary: 导入 / 更新用户
+      description: |
+        按 `external_id`（接入方自己的用户 ID）创建或更新 IM 用户。新用户分配自增 UID、没有密码，只能通过 `users/token` 签发的令牌登录。
+        昵称为空时用 `external_id`。批量时传 `{"users":[...]}`（≤ 100），返回 `{"users":[...]}`。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                external_id: { type: string, maxLength: 128 }
+                nickname: { type: string, maxLength: 32 }
+                avatar_file_id: { type: integer, format: int64 }
+                users:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [external_id]
+                    properties:
+                      external_id: { type: string }
+                      nickname: { type: string }
+                      avatar_file_id: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: 单个导入返回用户；批量返回 `{"users":[...]}`
+          content: { application/json: { schema: { $ref: "#/components/schemas/ServerUser" } } }
+        "400": { $ref: "#/components/responses/ServerError" }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+
+  /server/v1/users/token:
+    post:
+      tags: [服务端 API]
+      summary: 签发 IM 令牌
+      description: 为用户签发与 `/login` 相同的 JWT，客户端用它连接 `/ws`、调用其余 HTTP 接口。`ttl_seconds` 为 0 时用 `server_api.max_token_ttl`。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/UserRef"
+                - type: object
+                  properties:
+                    ttl_seconds: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: 令牌
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uid: { type: string }
+                  token: { type: string }
+                  expires_at: { type: integer, format: int64, description: Unix 秒 }
+        "400": { $ref: "#/components/responses/ServerError" }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "403": { $ref: "#/components/responses/ServerError" }
+        "404": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/users/revoke:
+    post:
+      tags: [服务端 API]
+      summary: 吊销令牌
+      description: 递增用户的令牌版本，已签发的令牌立即失效，所有连接（含其他网关）收到 CmdKick `token revoked` 后被关闭。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UserRef" } } }
+      responses:
+        "200":
+          description: 已吊销
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uid: { type: string }
+                  token_version: { type: integer, format: int64 }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "404": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/users/disable:
+    post:
+      tags: [服务端 API]
+      summary: 禁用 / 启用用户
+      description: "`disabled` 默认 true。禁用后连接被踢下线（CmdKick `account disabled`），令牌不再可用。"
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/UserRef"
+                - type: object
+                  properties:
+                    disabled: { type: boolean, default: true }
+      responses:
+        "200":
+          description: 已更新
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uid: { type: string }
+                  disabled: { type: boolean }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "404": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/users/delete:
+    post:
+      tags: [服务端 API]
+      summary: 删除用户
+      description: 删除用户及其好友、备注、群成员、屏蔽关系，清理离线队列与未读，踢掉所有连接。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UserRef" } } }
+      responses:
+        "200":
+          description: 已删除
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uid: { type: string }
+                  deleted: { type: boolean }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "404": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/groups/create:
+    post:
+      tags: [服务端 API]
+      summary: 建群
+      description: 群主自动成为成员，成员收到 `member_joined` 群通知。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, owner]
+              properties:
+                name: { type: string, maxLength: 32 }
+                owner: { $ref: "#/components/schemas/UserRef" }
+                members:
+                  type: array
+                  maxItems: 500
+                  items: { $ref: "#/components/schemas/UserRef" }
+      responses:
+        "200":
+          description: 新群
+          content: { application/json: { schema: { $ref: "#/components/schemas/ServerGroup" } } }
+        "400": { $ref: "#/components/responses/ServerError" }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "404": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/groups/members/add:
+    post:
+      tags: [服务端 API]
+      summary: 拉人进群
+      description: 已在群里的用户跳过；新成员触发 `member_joined` 群通知和 webhook。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody: { $ref: "#/components/requestBodies/ServerGroupMembers" }
+      responses:
+        "200":
+          description: 实际加入的 UID
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  group_id: { type: string }
+                  added: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/ServerError" }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "404": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/groups/members/remove:
+    post:
+      tags: [服务端 API]
+      summary: 移出群成员
+      description: 不在群里的用户跳过；最后一名成员移出后群被删除。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody: { $ref: "#/components/requestBodies/ServerGroupMembers" }
+      responses:
+        "200":
+          description: 实际移出的 UID
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  group_id: { type: string }
+                  removed: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/ServerError" }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "404": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/groups/dismiss:
+    post:
+      tags: [服务端 API]
+      summary: 解散群
+      description: 先向全体成员发 `group_dismissed` 群通知（发送方为 `sys:<app_id>`），再移除全部成员。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [group_id]
+              properties:
+                group_id: { type: string }
+      responses:
+        "200":
+          description: 已解散
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  group_id: { type: string }
+                  dismissed: { type: boolean }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "404": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/messages/send:
+    post:
+      tags: [服务端 API]
+      summary: 发送消息
+      description: |
+        与客户端 CmdChat 走同一条链路（在线推送、跨网关、离线、未读、持久化）。`to`（单聊）与 `group_id`（群聊）二选一。
+        省略 `from` 时以系统身份 `sys:<app_id>` 发送，不受群成员与屏蔽限制；指定 `from` 时须是群成员且未被对方屏蔽。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                from: { $ref: "#/components/schemas/UserRef" }
+                to: { $ref: "#/components/schemas/UserRef" }
+                group_id: { type: string }
+                msg_type: { type: integer, format: int32, default: 1, description: 1 文本、2 图片……与 Protobuf `msg_type` 相同 }
+                content: { type: string, maxLength: 65536 }
+      responses:
+        "200":
+          description: 已发送
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  msg_id: { type: integer, format: int64 }
+                  from: { type: string }
+                  to: { type: string }
+                  chat_type: { type: integer, format: int32 }
+                  timestamp: { type: integer, format: int64 }
+        "400": { $ref: "#/components/responses/ServerError" }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "403": { $ref: "#/components/responses/ServerError" }
+        "404": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/signals/send:
+    post:
+      tags: [服务端 API]
+      summary: 发送瞬时信令
+      description: |
+        以 CmdSignal 投递 `{"type","data"}` 给用户的所有在线设备或群的在线成员（含跨网关）；不持久化、不进离线、不计未读。
+        `type` 格式为 `<命名空间>.<名称>`，如 `paircast.room_updated`。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                from: { $ref: "#/components/schemas/UserRef" }
+                to: { $ref: "#/components/schemas/UserRef" }
+                group_id: { type: string }
+                type: { type: string, example: paircast.room_updated }
+                data: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: 已投递给在线连接
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent: { type: boolean }
+        "400": { $ref: "#/components/responses/ServerError" }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "404": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/tokens/verify:
+    post:
+      tags: [服务端 API]
+      summary: 校验 IM 令牌
+      description: 接入方后端用它认证自己的 HTTP 请求：校验签名、有效期、账号状态与吊销。令牌无效时仍返回 200，`valid=false`。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: 校验结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid: { type: boolean }
+                  reason: { type: string, description: "valid=false 时：`invalid token`、`account disabled`、`account deleted`、`token revoked`" }
+                  uid: { type: string }
+                  external_id: { type: string }
+                  nickname: { type: string }
+                  role: { type: string }
+                  expires_at: { type: integer, format: int64 }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+
 components:
   securitySchemes:
     uid:
@@ -2040,6 +2389,23 @@ components:
       in: query
       name: token
       description: 登录返回的 JWT `token`
+    appId:
+      type: apiKey
+      in: header
+      name: X-App-Id
+    appTimestamp:
+      type: apiKey
+      in: header
+      name: X-Timestamp
+    appNonce:
+      type: apiKey
+      in: header
+      name: X-Nonce
+    appSignature:
+      type: apiKey
+      in: header
+      name: X-Signature
+      description: hex(HMAC-SHA256(secret, METHOD\nPATH\nTIMESTAMP\nNONCE\nBODY))
 
   requestBodies:
     GroupID:
@@ -2071,7 +2437,27 @@ components:
             properties:
               from_uid: { type: string, description: 请求方 UID }
 
+    ServerGroupMembers:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [group_id, users]
+            properties:
+              group_id: { type: string }
+              users:
+                type: array
+                maxItems: 500
+                items: { $ref: "#/components/schemas/UserRef" }
+
   responses:
+    ServerError:
+      description: 参数错误、无权限或资源不存在，`{"error":"..."}`
+      content: { application/json: { schema: { $ref: "#/components/schemas/ServerErrorBody" } } }
+    ServerUnauthorized:
+      description: 签名头缺失、接入方未知或停用、时间戳超出 5 分钟、签名错误或 nonce 重复
+      content: { application/json: { schema: { $ref: "#/components/schemas/ServerErrorBody" } } }
     OKTrue:
       description: 成功
       content:
@@ -2112,6 +2498,33 @@ components:
       content: { text/plain: { schema: { type: string } } }
 
   schemas:
+    UserRef:
+      type: object
+      description: "`uid` 与 `external_id` 二选一"
+      properties:
+        uid: { type: string }
+        external_id: { type: string }
+    ServerUser:
+      type: object
+      properties:
+        uid: { type: string }
+        external_id: { type: string }
+        nickname: { type: string }
+        avatar_file_id: { type: integer, format: int64 }
+        disabled: { type: boolean }
+        created: { type: boolean, description: 本次新建 }
+    ServerGroup:
+      type: object
+      properties:
+        group_id: { type: string }
+        name: { type: string }
+        owner_uid: { type: string }
+        members: { type: array, items: { type: string } }
+        created_at: { type: integer, format: int64 }
+    ServerErrorBody:
+      type: object
+      properties:
+        error: { type: string }
     StatusOK:
       type: object
       properties:

@@ -341,6 +341,9 @@ func (s *MySQLStore) migrateProfile() error {
 		{"ALTER TABLE users ADD COLUMN must_change_password TINYINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
 		{"ALTER TABLE users ADD COLUMN signature VARCHAR(255) NOT NULL DEFAULT ''", []uint16{errDupFieldName}},
 		{"ALTER TABLE group_members ADD COLUMN alias VARCHAR(128) NOT NULL DEFAULT ''", []uint16{errDupFieldName}},
+		{"ALTER TABLE users ADD COLUMN external_id VARCHAR(128) NULL", []uint16{errDupFieldName}},
+		{"ALTER TABLE users ADD UNIQUE INDEX uk_external_id (external_id)", []uint16{errDupKeyName}},
+		{"ALTER TABLE users ADD COLUMN token_version BIGINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
 	}
 	for _, step := range steps {
 		if _, err := s.db.Exec(step.ddl); err != nil && !isMySQLError(err, step.skipped...) {
@@ -355,6 +358,7 @@ const (
 	errDupKeyName   = 1061
 	errDupEntry     = 1062
 	errBadField     = 1054
+	errNoSuchTable  = 1146
 )
 
 func isMySQLError(err error, codes ...uint16) bool {
@@ -378,7 +382,7 @@ func isDupKey(err error, key string) bool {
 
 // ---------- UserStore 实现 ----------
 
-const userColumns = "uid, nickname, COALESCE(email, ''), avatar_file_id, signature, password_hash, role, is_disabled, must_change_password, created_at, updated_at"
+const userColumns = "uid, nickname, COALESCE(email, ''), avatar_file_id, signature, password_hash, role, is_disabled, must_change_password, created_at, updated_at, COALESCE(external_id, ''), token_version"
 
 type rowScanner interface {
 	Scan(dest ...interface{}) error
@@ -387,8 +391,16 @@ type rowScanner interface {
 func scanUser(row rowScanner) (*User, error) {
 	u := &User{}
 	err := row.Scan(&u.UID, &u.Nickname, &u.Email, &u.AvatarFileID, &u.Signature, &u.PasswordHash, &u.Role, &u.IsDisabled,
-		&u.MustChangePassword, &u.CreatedAt, &u.UpdatedAt)
+		&u.MustChangePassword, &u.CreatedAt, &u.UpdatedAt, &u.ExternalID, &u.TokenVersion)
 	return u, err
+}
+
+// nullableString 把空串存为 NULL（可空唯一列）。
+func nullableString(v string) interface{} {
+	if v == "" {
+		return nil
+	}
+	return v
 }
 
 // nullableEmail 把空邮箱存为 NULL，避免唯一索引冲突。
@@ -406,11 +418,14 @@ func (s *MySQLStore) Create(ctx context.Context, u *User) error {
 		role = "user"
 	}
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO users (uid, nickname, email, password_hash, role, must_change_password, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		u.UID, u.Nickname, nullableEmail(u.Email), u.PasswordHash, role, u.MustChangePassword, u.CreatedAt,
+		"INSERT INTO users (uid, nickname, email, password_hash, role, must_change_password, created_at, external_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		u.UID, u.Nickname, nullableEmail(u.Email), u.PasswordHash, role, u.MustChangePassword, u.CreatedAt, nullableString(u.ExternalID),
 	)
 	if isDupKey(err, "uk_email") {
 		return ErrEmailTaken
+	}
+	if isDupKey(err, "uk_external_id") {
+		return ErrExternalIDTaken
 	}
 	if err != nil {
 		return fmt.Errorf("insert user: %w", err)
@@ -1190,17 +1205,44 @@ func (s *MySQLStore) ListUsers(ctx context.Context, offset, limit int) ([]*User,
 	return users, total, err
 }
 
-// DeleteUser 按 UID 删除用户。如果没有行受影响则返回错误。
+// DeleteUser 删除用户及其社交关系（好友、好友请求、备注、群成员、未读计数、屏蔽），在一个事务里完成。
+// 消息、文件与举报保留（对方的聊天记录与审计）。如果用户不存在则返回错误。
 func (s *MySQLStore) DeleteUser(ctx context.Context, uid string) error {
-	result, err := s.db.ExecContext(ctx, "DELETE FROM users WHERE uid = ?", uid)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("delete user: %w", err)
 	}
-	n, _ := result.RowsAffected()
-	if n == 0 {
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, "DELETE FROM users WHERE uid = ?", uid)
+	if err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
 		return fmt.Errorf("user %s not found", uid)
 	}
-	return nil
+	cleanup := []struct {
+		query string
+		args  int
+	}{
+		{"DELETE FROM friends WHERE uid = ? OR friend_uid = ?", 2},
+		{"DELETE FROM friend_requests WHERE from_uid = ? OR to_uid = ?", 2},
+		{"DELETE FROM friend_remarks WHERE uid = ? OR friend_uid = ?", 2},
+		{"DELETE FROM group_members WHERE uid = ?", 1},
+		{"DELETE FROM unread WHERE uid = ?", 1},
+		{"DELETE FROM user_blocks WHERE owner_uid = ? OR target_uid = ?", 2},
+	}
+	for _, c := range cleanup {
+		args := []interface{}{uid}
+		if c.args == 2 {
+			args = append(args, uid)
+		}
+		// user_blocks 由 moderation 包建表，可能不存在。
+		if _, err := tx.ExecContext(ctx, c.query, args...); err != nil && !isMySQLError(err, errNoSuchTable) {
+			return fmt.Errorf("delete user: %s: %w", c.query, err)
+		}
+	}
+	return tx.Commit()
 }
 
 // userExists 检查用户是否存在。

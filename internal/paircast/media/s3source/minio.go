@@ -1,6 +1,7 @@
 package s3source
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -9,7 +10,7 @@ import (
 	"time"
 
 	"github.com/im/configs"
-	"github.com/im/internal/media"
+	"github.com/im/internal/paircast/media"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -96,4 +97,40 @@ func (m *MinioAPI) Presign(ctx context.Context, key string, ttl time.Duration) (
 func isNotFound(err error) bool {
 	code := minio.ToErrorResponse(err).Code
 	return code == "NoSuchKey" || code == "NotFound" || minio.ToErrorResponse(err).StatusCode == 404
+}
+
+// Blobs 把桶内 prefix 下的对象用作字幕等小文件的服务器存储（实现 media.BlobStore）。
+func (m *MinioAPI) Blobs(prefix string) media.BlobStore {
+	return minioBlobs{api: m, prefix: prefix}
+}
+
+type minioBlobs struct {
+	api    *MinioAPI
+	prefix string
+}
+
+func (b minioBlobs) Put(ctx context.Context, key string, data []byte, contentType string) error {
+	_, err := b.api.client.PutObject(ctx, b.api.bucket, b.prefix+key, bytes.NewReader(data), int64(len(data)),
+		minio.PutObjectOptions{ContentType: contentType})
+	return err
+}
+
+func (b minioBlobs) Get(ctx context.Context, key string) ([]byte, string, error) {
+	obj, err := b.api.client.GetObject(ctx, b.api.bucket, b.prefix+key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, "", err
+	}
+	defer obj.Close()
+	info, err := obj.Stat()
+	if err != nil {
+		if isNotFound(err) {
+			return nil, "", media.ErrNotFound
+		}
+		return nil, "", err
+	}
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		return nil, "", err
+	}
+	return data, info.ContentType, nil
 }

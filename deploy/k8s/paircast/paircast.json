@@ -1,0 +1,18 @@
+{
+    "_comment": "Paircast 服务配置(字段说明见 configs/paircast.example.json)。密钥全部来自 Secret goim-paircast 注入的环境变量。",
+    "http_addr": ":8090",
+    "im": {
+        "base_url": "http://gateway:8080",
+        "app_id": "paircast"
+    },
+    "media": {
+        "sources": [],
+        "room_retention": "72h"
+    },
+    "blob_store": {
+        "endpoint": "rustfs:9000",
+        "bucket": "im-files",
+        "use_ssl": false,
+        "path_style": true
+    }
+}

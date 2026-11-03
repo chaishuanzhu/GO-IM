@@ -78,3 +78,23 @@ func TestReportDedupAndResolve(t *testing.T) {
 		t.Fatalf("missing report: %v", err)
 	}
 }
+
+func TestIsBlockedCachedAndInvalidated(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(NewMemoryStore())
+	if svc.IsBlocked(ctx, "a", "b") {
+		t.Fatal("unexpected block")
+	}
+	if err := svc.Block(ctx, "a", "b"); err != nil {
+		t.Fatal(err)
+	}
+	if !svc.IsBlocked(ctx, "a", "b") || svc.IsBlocked(ctx, "b", "a") {
+		t.Fatal("block not visible or not directional")
+	}
+	if err := svc.Unblock(ctx, "a", "b"); err != nil {
+		t.Fatal(err)
+	}
+	if svc.IsBlocked(ctx, "a", "b") {
+		t.Fatal("unblock not visible")
+	}
+}

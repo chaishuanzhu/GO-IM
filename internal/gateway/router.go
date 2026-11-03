@@ -3,10 +3,12 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
 	"math/rand/v2"
+	"slices"
 	"sync"
 	"time"
 
@@ -49,6 +51,16 @@ type Router struct {
 
 	// 文件元数据与会话引用(nil = 不校验文件消息)。
 	fileStore repo.FileStore
+
+	// 用户屏蔽关系(nil = 不拦截)。
+	blocks BlockChecker
+
+	// 瞬时消息路径的群成员短期缓存。
+	members memberCache
+
+	// 消息事件(webhook)与发送前回调,nil = 不启用。
+	events     MessageEvents
+	beforeSend BeforeSendHook
 
 	// Prometheus 指标记录器(nil = 未接入,所有指标调用为 no-op)。
 	metrics *observability.Metrics
@@ -149,6 +161,47 @@ func (r *Router) SetFriendStore(fs repo.FriendStore) {
 // SetUserStore 让推送（如好友请求）携带用户最新的昵称与头像。
 func (r *Router) SetUserStore(us repo.UserStore) {
 	r.userStore = us
+}
+
+// BlockChecker 报告 owner 是否屏蔽了 target。
+type BlockChecker interface {
+	IsBlocked(ctx context.Context, owner, target string) bool
+}
+
+// SetBlockChecker 启用服务端屏蔽:被屏蔽者发来的单聊、转发、好友请求、单聊信令与输入状态不再投递给屏蔽者。
+func (r *Router) SetBlockChecker(b BlockChecker) {
+	r.blocks = b
+}
+
+// errFriendRequestBlocked 是被屏蔽时回给发送方的错误;措辞与普通失败一致,不暴露屏蔽关系。
+var errFriendRequestBlocked = errors.New("friend request rejected")
+
+// isGroupMsg 报告消息是否按群聊扇出(群聊未启用时群消息退化为单聊)。
+func (r *Router) isGroupMsg(msg *proto.Message) bool {
+	return msg.ChatType == proto.ChatTypeGroup && r.groupStore != nil
+}
+
+// blockedBy 报告 recipient 是否屏蔽了 sender。
+func (r *Router) blockedBy(ctx context.Context, recipient, sender string) bool {
+	return r.blocks != nil && recipient != sender && r.blocks.IsBlocked(ctx, recipient, sender)
+}
+
+// rejectBlocked 丢弃发给屏蔽者的消息:不投递、不落库、不计未读;ACK 带 {"error":"blocked"},客户端据此提示被拒收。
+func (r *Router) rejectBlocked(sender *Client, msg *proto.Message) {
+	if msg.Seq > 0 {
+		r.dedup.Mark(dedupKey(sender), msg.Seq, msg.MsgId)
+	}
+	if msg.NeedAck {
+		sender.Send(&proto.Message{
+			Cmd:       proto.CmdAck,
+			MsgId:     msg.MsgId,
+			Seq:       msg.Seq,
+			To:        sender.UID,
+			Content:   `{"error":"blocked"}`,
+			Timestamp: time.Now().UnixMilli(),
+		})
+	}
+	log.Printf("[router] %d from %s to %s dropped: blocked by recipient", msg.Cmd, sender.UID, msg.To)
 }
 
 // RouterConfig 保存 Router 可调运行参数。
@@ -501,6 +554,9 @@ func (r *Router) PersistQueueStats() (depth, capacity int) {
 // persistAsync 将消息副本提交到批量持久化队列。队列满时最多等待配置的
 // enqueue timeout；仍无法入队才丢弃并记录，避免无限阻塞在线投递。
 func (r *Router) persistAsync(ctx context.Context, msg *proto.Message) {
+	if r.events != nil {
+		r.events.MessageSent(ctx, msg)
+	}
 	if r.kafka == nil && r.msgStore == nil {
 		log.Printf("[router] persistAsync: no persistence backend configured (kafka=%v msgStore=%v)", r.kafka != nil, r.msgStore != nil)
 		return
@@ -586,8 +642,8 @@ func (r *Router) Route(ctx context.Context, sender *Client, msg *proto.Message) 
 		r.handleFriendResponse(ctx, sender, msg)
 	case proto.CmdTyping:
 		r.handleTyping(ctx, sender, msg)
-	case proto.CmdGroupSignal:
-		r.handleGroupSignal(ctx, sender, msg)
+	case proto.CmdSignal:
+		r.handleSignal(ctx, sender, msg)
 	case proto.CmdForward:
 		r.handleForward(ctx, sender, msg)
 	case proto.CmdEdit:
@@ -659,6 +715,9 @@ func (r *Router) handleRecall(ctx context.Context, sender *Client, msg *proto.Me
 		slog.Error("recall send failed on some device, stored offline", "to", msg.To)
 	}
 	r.syncToOwnDevices(ctx, sender, msg)
+	if r.events != nil {
+		r.events.MessageRecalled(ctx, msg.Seq, sender.UID, msg.To, msg.ChatType)
+	}
 }
 
 // sendRecallError 为失败的撤回请求发送错误响应。
@@ -717,6 +776,14 @@ func (r *Router) handleChat(ctx context.Context, sender *Client, msg *proto.Mess
 	// 分配全局唯一的消息 ID
 	msg.MsgId = r.snow.Next()
 	msg.Timestamp = time.Now().UnixMilli()
+
+	if !r.isGroupMsg(msg) && r.blockedBy(ctx, msg.To, sender.UID) {
+		r.rejectBlocked(sender, msg)
+		return
+	}
+	if r.rejectedByHook(ctx, sender, msg) {
+		return
+	}
 
 	// 投递给目标。
 	// 注意:去重 Mark 在投递之后调用,而非之前。
@@ -1330,6 +1397,7 @@ func (r *Router) handleGroupJoin(ctx context.Context, sender *Client, msg *proto
 			r.sendGroupError(sender, proto.CmdGroupJoin, err.Error())
 			return
 		}
+		r.ForgetGroupMembers(groupID)
 		// 获取成员列表用于响应。
 		groupInfo, _ := r.logicClient.GetGroupClient(ctx, groupID)
 		members := []string{}
@@ -1364,6 +1432,7 @@ func (r *Router) handleGroupJoin(ctx context.Context, sender *Client, msg *proto
 		r.sendGroupError(sender, proto.CmdGroupJoin, err.Error())
 		return
 	}
+	r.ForgetGroupMembers(groupID)
 
 	members, _ := r.groupStore.GetMembers(ctx, groupID)
 	data, _ := json.Marshal(map[string]interface{}{
@@ -1432,6 +1501,7 @@ func (r *Router) handleGroupInviteMember(ctx context.Context, sender *Client, ms
 			r.sendGroupError(sender, proto.CmdGroupInviteMember, err.Error())
 			return
 		}
+		r.ForgetGroupMembers(groupID)
 
 		// 获取更新后的成员列表。
 		updatedGroup, _ := r.logicClient.GetGroupClient(ctx, groupID)
@@ -1483,6 +1553,7 @@ func (r *Router) handleGroupInviteMember(ctx context.Context, sender *Client, ms
 		r.sendGroupError(sender, proto.CmdGroupInviteMember, err.Error())
 		return
 	}
+	r.ForgetGroupMembers(groupID)
 
 	members, _ := r.groupStore.GetMembers(ctx, groupID)
 	data, _ := json.Marshal(map[string]interface{}{
@@ -1522,6 +1593,7 @@ func (r *Router) handleGroupLeave(ctx context.Context, sender *Client, msg *prot
 			r.sendGroupError(sender, proto.CmdGroupLeave, err.Error())
 			return
 		}
+		r.ForgetGroupMembers(groupID)
 		data, _ := json.Marshal(map[string]interface{}{
 			"group_id": groupID,
 			"uid":      sender.UID,
@@ -1557,6 +1629,7 @@ func (r *Router) handleGroupLeave(ctx context.Context, sender *Client, msg *prot
 		r.sendGroupError(sender, proto.CmdGroupLeave, err.Error())
 		return
 	}
+	r.ForgetGroupMembers(groupID)
 
 	// 检查群是否仍然存在(最后一名成员退出时群被删除)。
 	_, getErr := r.groupStore.Get(ctx, groupID)
@@ -1762,7 +1835,11 @@ func (r *Router) handleFriendRequest(ctx context.Context, sender *Client, msg *p
 		return
 	}
 
-	if err := r.friendStore.SendRequest(ctx, sender.UID, msg.To); err != nil {
+	err := errFriendRequestBlocked
+	if !r.blockedBy(ctx, msg.To, sender.UID) {
+		err = r.friendStore.SendRequest(ctx, sender.UID, msg.To)
+	}
+	if err != nil {
 		// 通知发送方错误信息
 		data, _ := json.Marshal(map[string]string{"error": err.Error()})
 		sender.Send(&proto.Message{
@@ -1924,82 +2001,95 @@ func (r *Router) handleTyping(ctx context.Context, sender *Client, msg *proto.Me
 		return
 	}
 
-	// 用已认证的发送方覆盖 From 字段。
 	msg.From = sender.UID
-
-	// 单聊:转发给目标。
-	if msg.ChatType != proto.ChatTypeGroup || r.groupStore == nil {
-		r.sendLocal(ctx, msg.To, msg, nil)
-		return
-	}
-
-	// 群聊:扇出给除发送方外的所有在线成员。
-	members, err := r.groupStore.GetMembers(ctx, msg.To)
-	if err != nil {
-		return
-	}
-	for _, memberUID := range members {
-		if memberUID == sender.UID {
-			continue
+	if msg.ChatType == proto.ChatTypeGroup {
+		if r.groupStore == nil {
+			return
 		}
-		r.sendLocal(ctx, memberUID, msg, nil)
+		members, err := r.transientMembers(ctx, msg.To)
+		if err != nil || !slices.Contains(members, sender.UID) {
+			return
+		}
+		r.deliverTransient(ctx, msg, members)
+		return
 	}
+	if r.blockedBy(ctx, msg.To, sender.UID) {
+		return
+	}
+	r.deliverTransient(ctx, msg, []string{msg.To})
 }
 
-// handleGroupSignal 中继瞬时群信令(如同步播放的播放/暂停/进度心跳)。
-// 仅群成员可发送;只投递给在线成员(跨网关经 forwarder 转发),
-// 不持久化、不进离线队列、不计未读、不回 Ack。发送方自己的设备不回显。
-func (r *Router) handleGroupSignal(ctx context.Context, sender *Client, msg *proto.Message) {
-	if r.groupStore == nil {
+// handleSignal 中继瞬时信令(如同步播放的播放/暂停/进度心跳、业务自定义在线通知)。
+// chat_type=1 发给 To 用户的所有在线设备;否则 To 为群 ID,仅群成员可发,投递给在线成员。
+// 跨网关经 forwarder 转发;不持久化、不进离线队列、不计未读、不回 Ack,发送方自己的设备不回显。
+func (r *Router) handleSignal(ctx context.Context, sender *Client, msg *proto.Message) {
+	direct := msg.ChatType == proto.ChatTypeSingle
+	if direct && (msg.To == sender.UID || r.blockedBy(ctx, msg.To, sender.UID)) {
 		return
 	}
-	if !r.groupStore.IsMember(ctx, msg.To, sender.UID) {
-		log.Printf("[router] group signal from %s to %s dropped: not a member", sender.UID, msg.To)
+	if !direct {
+		if r.groupStore == nil {
+			return
+		}
+		if !r.transientIsMember(ctx, msg.To, sender.UID) {
+			log.Printf("[router] group signal from %s to %s dropped: not a member", sender.UID, msg.To)
+			return
+		}
+	}
+	if _, err := proto.ParseSignal(msg.Content); err != nil {
+		log.Printf("[router] signal from %s dropped: %v", sender.UID, err)
 		return
 	}
 	if r.checkRateLimit(sender.UID) {
 		slog.Warn("rate limited", "uid", sender.UID)
 		return
 	}
-	members, err := r.groupStore.GetMembers(ctx, msg.To)
-	if err != nil {
-		return
+	chatType := proto.ChatTypeGroup
+	if direct {
+		chatType = proto.ChatTypeSingle
 	}
-
-	r.fanoutSignal(ctx, sender.UID, msg.To, msg.MsgType, msg.Content, members)
+	r.SendSignal(ctx, sender.UID, chatType, msg.To, msg.MsgType, msg.Content)
 }
 
-// SendGroupSignal 由服务端发出瞬时群信令（例如观影房间状态变化），跳过 fromUID 本人，不落库。
-func (r *Router) SendGroupSignal(ctx context.Context, fromUID, groupID, content string) {
-	if r.groupStore == nil {
-		return
-	}
-	members, err := r.groupStore.GetMembers(ctx, groupID)
-	if err != nil {
-		return
-	}
-	r.fanoutSignal(ctx, fromUID, groupID, proto.MsgTypeText, content, members)
-}
-
-func (r *Router) fanoutSignal(ctx context.Context, fromUID, groupID string, msgType int32, content string, members []string) {
+// SendSignal 发出瞬时信令,也供服务端业务调用(例如观影房间状态变化)。
+// chatType=ChatTypeSingle 时 to 为用户,否则为群 ID;跳过 fromUID 本人,不落库。
+// content 应为 proto.EncodeSignal 生成的 {"type","data"} 格式,这里不再校验。
+func (r *Router) SendSignal(ctx context.Context, fromUID string, chatType int32, to string, msgType int32, content string) {
 	out := &proto.Message{
-		Cmd:       proto.CmdGroupSignal,
+		Cmd:       proto.CmdSignal,
 		MsgId:     r.snow.Next(),
 		From:      fromUID,
-		To:        groupID,
-		ChatType:  proto.ChatTypeGroup,
+		To:        to,
+		ChatType:  chatType,
 		MsgType:   msgType,
 		Content:   content,
 		Timestamp: time.Now().UnixMilli(),
 	}
-	for _, memberUID := range members {
-		if memberUID == fromUID {
+	if chatType == proto.ChatTypeSingle {
+		r.deliverTransient(ctx, out, []string{to})
+		return
+	}
+	out.ChatType = proto.ChatTypeGroup
+	if r.groupStore == nil {
+		return
+	}
+	members, err := r.transientMembers(ctx, to)
+	if err != nil {
+		return
+	}
+	r.deliverTransient(ctx, out, members)
+}
+
+// deliverTransient 把瞬时消息投递给各用户的在线连接,本节点没有连接时转发给归属网关;跳过 msg.From。
+func (r *Router) deliverTransient(ctx context.Context, msg *proto.Message, uids []string) {
+	for _, uid := range uids {
+		if uid == msg.From {
 			continue
 		}
-		if found, _ := r.sendLocal(ctx, memberUID, out, nil); found {
+		if found, _ := r.sendLocal(ctx, uid, msg, nil); found {
 			continue
 		}
-		r.forwardTransient(ctx, memberUID, out)
+		r.forwardTransient(ctx, uid, msg)
 	}
 }
 
@@ -2045,6 +2135,14 @@ func (r *Router) handleForward(ctx context.Context, sender *Client, msg *proto.M
 	// 分配新的 MsgID 和时间戳。
 	msg.MsgId = r.snow.Next()
 	msg.Timestamp = time.Now().UnixMilli()
+
+	if !r.isGroupMsg(msg) && r.blockedBy(ctx, msg.To, sender.UID) {
+		r.rejectBlocked(sender, msg)
+		return
+	}
+	if r.rejectedByHook(ctx, sender, msg) {
+		return
+	}
 
 	// 投递给目标 —— 与 handleChat 相同的处理流程。
 	if msg.ChatType == proto.ChatTypeGroup && r.groupStore != nil {

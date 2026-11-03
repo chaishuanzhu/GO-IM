@@ -48,8 +48,12 @@ const (
 	// 消息编辑。
 	CmdEdit int32 = 24 // 编辑之前发送的消息
 
-	// 瞬时群信令（如同步播放控制）：只投递给在线群成员，不持久化、不进离线队列、不计未读、不回 Ack。
-	CmdGroupSignal int32 = 25
+	// 瞬时信令（如同步播放控制、业务自定义在线通知）：chat_type=1 发给单个用户，否则发给群（To 为群 ID）。
+	// 只投递给在线连接（含跨网关），不持久化、不进离线队列、不计未读、不回 Ack。
+	CmdSignal int32 = 25
+
+	// Deprecated: 使用 CmdSignal。
+	CmdGroupSignal = CmdSignal
 )
 
 // 聊天类型。
@@ -76,15 +80,15 @@ var (
 
 // IsTransient 报告该消息是否为瞬时消息:只投递给在线连接,绝不转存离线。
 func (m *Message) IsTransient() bool {
-	return m.Cmd == CmdGroupSignal || m.Cmd == CmdTyping
+	return m.Cmd == CmdSignal || m.Cmd == CmdTyping
 }
 
 // Validate 检查消息的命令类型所对应的字段是否有效。
 func (m *Message) Validate() error {
-	if m.Cmd <= CmdNone || m.Cmd > CmdGroupSignal {
+	if m.Cmd <= CmdNone || m.Cmd > CmdSignal {
 		return errors.New("invalid command")
 	}
-	if (m.Cmd == CmdChat || m.Cmd == CmdHistory || m.Cmd == CmdReadReceipt || m.Cmd == CmdFile || m.Cmd == CmdRecall || m.Cmd == CmdFriendRequest || m.Cmd == CmdFriendResponse || m.Cmd == CmdForward || m.Cmd == CmdEdit || m.Cmd == CmdGroupSignal) && m.To == "" {
+	if (m.Cmd == CmdChat || m.Cmd == CmdHistory || m.Cmd == CmdReadReceipt || m.Cmd == CmdFile || m.Cmd == CmdRecall || m.Cmd == CmdFriendRequest || m.Cmd == CmdFriendResponse || m.Cmd == CmdForward || m.Cmd == CmdEdit || m.Cmd == CmdSignal) && m.To == "" {
 		return ErrMissingTarget
 	}
 	return nil

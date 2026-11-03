@@ -41,6 +41,15 @@ func (s *GrpcGatewayServer) ForwardMessage(ctx context.Context, req *proto.Forwa
 		return &proto.ForwardResponse{Delivered: false, Error: "uid is empty"}, nil
 	}
 
+	// 踢下线:关闭该用户在本节点的所有连接(Content 为原因)。
+	if req.Message.Cmd == proto.CmdKick {
+		conns := s.clients.GetAll(ctx, req.Uid)
+		for _, c := range conns {
+			c.Kick(req.Message.Content)
+		}
+		return &proto.ForwardResponse{Delivered: len(conns) > 0}, nil
+	}
+
 	// 路由时信任转发网关提供的 req.Uid,但保留
 	// 原始 message.To 用于显示。
 	if targets := s.clients.GetAll(ctx, req.Uid); len(targets) > 0 {

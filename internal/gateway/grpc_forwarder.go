@@ -110,6 +110,27 @@ func (f *GrpcForwarder) Forward(ctx context.Context, targetUID string, msg *prot
 	return resp.Delivered, nil
 }
 
+// Broadcast 把消息发给所有对端网关(不含本节点),用于不按哈希环归属的控制消息,
+// 例如踢下线:用户的连接可能落在任意网关。单个对端失败只记录日志。
+func (f *GrpcForwarder) Broadcast(ctx context.Context, uid string, msg *proto.Message) {
+	for nodeID := range f.PeerAddrs() {
+		if nodeID == f.thisNodeID {
+			continue
+		}
+		client, err := f.getOrDial(nodeID)
+		if err != nil {
+			log.Printf("[grpc-forwarder] broadcast dial %s failed: %v", nodeID, err)
+			continue
+		}
+		rpcCtx, cancel := context.WithTimeout(ctx, f.rpcTimeout)
+		_, err = client.ForwardMessage(rpcCtx, &proto.ForwardRequest{Message: msg, Uid: uid})
+		cancel()
+		if err != nil {
+			log.Printf("[grpc-forwarder] broadcast to %s failed: %v", nodeID, err)
+		}
+	}
+}
+
 // getOrDial 返回指定节点的 gRPC 客户端,首次使用时惰性建立
 // 连接(双重检查锁)。
 func (f *GrpcForwarder) getOrDial(nodeID string) (proto.GatewayClient, error) {
