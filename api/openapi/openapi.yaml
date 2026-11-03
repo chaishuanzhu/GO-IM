@@ -1693,7 +1693,7 @@ paths:
               properties:
                 external_id: { type: string, maxLength: 128 }
                 nickname: { type: string, maxLength: 32 }
-                avatar_file_id: { type: integer, format: int64 }
+                avatar_file_id: { type: integer, format: int64, description: "用户上传（`/upload`）得到的文件 ID，必须是该用户自己上传的已就绪图片，设置后可经 `/avatar/{id}` 公开访问；0 清除头像" }
                 users:
                   type: array
                   maxItems: 100
@@ -2019,6 +2019,102 @@ paths:
                   expires_at: { type: integer, format: int64 }
         "401": { $ref: "#/components/responses/ServerUnauthorized" }
 
+  /server/v1/reports/list:
+    post:
+      tags: [服务端 API]
+      summary: 列出举报
+      description: 用户在 IM 里提交的举报（`/user/report`），新的在前，附带举报人与被举报人。供接入方在自己的后台审核。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [pending, handled, all], default: pending }
+                offset: { type: integer, minimum: 0, default: 0 }
+                limit: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: 一页举报
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reports:
+                    type: array
+                    items: { $ref: "#/components/schemas/ServerReport" }
+                  total: { type: integer }
+                  pending: { type: integer, description: 全部待处理条数 }
+                  offset: { type: integer }
+                  limit: { type: integer }
+        "400": { $ref: "#/components/responses/ServerError" }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "503": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/reports/get:
+    post:
+      tags: [服务端 API]
+      summary: 查询一条举报
+      description: 接入方处理前可先查看被举报人（例如保护自己的管理员不被封禁）。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: 举报
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerReport" }
+        "400": { $ref: "#/components/responses/ServerError" }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "404": { $ref: "#/components/responses/ServerError" }
+        "503": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/reports/resolve:
+    post:
+      tags: [服务端 API]
+      summary: 处理举报
+      description: |
+        `ignore` 只标记这条；`ban` 禁用被举报的 IM 账号（立即下线、无法再连接），并把针对他的其他待处理举报一并标记为已封禁。
+        接入方自己的账号状态与管理员保护由接入方处理。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, action]
+              properties:
+                id: { type: integer, format: int64 }
+                action: { type: string, enum: [ignore, ban] }
+                handled_by: { type: string, maxLength: 64, description: 处理人标识，默认 `sys:<app_id>` }
+      responses:
+        "200":
+          description: 已处理
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer, format: int64 }
+                  status: { type: string, enum: [ignored, banned] }
+                  target_uid: { type: string, description: 仅 ban 时 }
+        "400": { $ref: "#/components/responses/ServerError" }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "404": { $ref: "#/components/responses/ServerError" }
+        "503": { $ref: "#/components/responses/ServerError" }
+
 components:
   securitySchemes:
     uid:
@@ -2146,6 +2242,21 @@ components:
         avatar_file_id: { type: integer, format: int64 }
         disabled: { type: boolean }
         created: { type: boolean, description: 本次新建 }
+    ServerReport:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        reporter_uid: { type: string }
+        target_uid: { type: string }
+        message_id: { type: string }
+        context: { type: string, description: 举报时所在的会话（如群 ID） }
+        content: { type: string, description: 消息摘要（≤ 500 字） }
+        status: { type: string, enum: [pending, ignored, banned] }
+        handled_by: { type: string }
+        created_at: { type: integer, format: int64, description: 毫秒 }
+        handled_at: { type: integer, format: int64, description: 毫秒 }
+        reporter: { $ref: "#/components/schemas/ServerUser" }
+        target: { $ref: "#/components/schemas/ServerUser" }
     ServerGroup:
       type: object
       properties:

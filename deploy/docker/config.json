@@ -91,17 +91,6 @@
         },
 
 
-        "server_api": {
-            "_comment": "接入方 Paircast(服务端在 Paircast 仓库 server/,Docker 部署见 server/deploy/docker)。密钥由 .env 的 PAIRCAST_IM_SECRET / PAIRCAST_IM_WEBHOOK_SECRET 提供;不设密钥时服务端 API 不启用。",
-            "apps": [
-                {
-                    "app_id": "paircast",
-                    "webhook_url": "http://paircast:8090/im/webhook",
-                    "webhook_events": ["group.member_left", "group.dismissed"]
-                }
-            ]
-        },
-
         "recall_window_ms": 120000,
         "history_default_limit": 30,
         "search_default_limit": 20,

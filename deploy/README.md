@@ -81,7 +81,7 @@ docker compose down -v                          # 停止并删除所有数据
 
 注册默认开放。要关闭自助注册：在配置文件设 `gateway.auth.disable_registration: true`，或在客户端管理后台（`POST /admin/settings registration_open=false`）关闭——后台改过之后以数据库里的值为准。关闭后管理员仍可添加用户。用户可在客户端里自行注销账号（`POST /user/delete`，需验证密码；管理员账号不能自助注销）。
 
-聊天里的屏蔽与举报也存在服务端（MySQL 表 `user_blocks` / `user_reports`，启动时自动建表；未接 MySQL 时存在内存里，重启丢失）。管理员在 Paircast「设置 → 举报处理」里查看待处理举报，可以忽略，或封禁被举报用户（等同 `POST /admin/users/disable`：立即下线、无法再登录；解封也用这个接口）。
+聊天里的屏蔽与举报也存在服务端（MySQL 表 `user_blocks` / `user_reports`，启动时自动建表；未接 MySQL 时存在内存里，重启丢失）。管理员用 `GET /admin/reports` / `POST /admin/reports/resolve` 查看和处理举报：可以忽略，或封禁被举报用户（等同 `POST /admin/users/disable`：立即下线、无法再登录；解封也用这个接口）。接入方在自己的后台审核时用服务端 API 的 `reports/list` / `reports/resolve`。
 
 在配置文件的 `gateway.mail` 中填写 SMTP 服务器并设 `enabled: true`；密码不要写进配置文件，通过环境变量 `GOIM_MAIL_PASSWORD` 传入：
 
@@ -189,7 +189,13 @@ RustFS 的 S3 端口对外暴露后，务必修改默认的 `RUSTFS_SECRET_KEY`�
 ## 接入其他应用
 
 GO-IM 可以作为 IM 通道接入其他应用：接入方后端通过服务端 API（`/server/v1/*`）导入用户、签发令牌、管理群、发消息和信令，并接收 webhook。
-配置见 `gateway.server_api`，说明见 `docs/16-integration-guide.md`。Paircast（一起看）的服务端就是这样一个接入方，代码与部署清单在 Paircast 仓库的 `server/`。
+说明见 `docs/16-integration-guide.md`。登记一个接入方需要两步：
+
+1. 在配置的 `gateway.server_api.apps` 里加上 `{"app_id": "...", "webhook_url": "...", "webhook_events": [...]}`。
+2. 提供密钥 `GOIM_APP_<APP_ID>_SECRET`（及可选的 `GOIM_APP_<APP_ID>_WEBHOOK_SECRET`，`<APP_ID>` 大写）：
+   Docker 写进 compose 同目录的 `apps.env`；Kubernetes 放进 Secret `goim-apps`（gateway 通过 `envFrom` 读取）。然后重启 gateway。
+
+接入方的部署说明由接入方提供。例如 Paircast（一起看）的服务端在 Paircast 仓库的 `server/`。
 
 ## 端口
 

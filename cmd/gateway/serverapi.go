@@ -16,7 +16,7 @@ import (
 
 // setupServerAPI 在配置了 server_api.apps 时创建服务端 API；需要 MySQL（外部用户映射与令牌版本）。
 func setupServerAPI(cfg *configs.Config, mysqlStore *repo.MySQLStore, rdb *redis.Client,
-	groups gateway.GroupStore, server *gateway.Server, router *gateway.Router) (*serverapi.API, *serverapi.Registry, error) {
+	groups gateway.GroupStore, server *gateway.Server, router *gateway.Router, mod serverapi.Moderation) (*serverapi.API, *serverapi.Registry, error) {
 	sc := cfg.Gateway.ServerAPI
 	if len(sc.Apps) == 0 {
 		return nil, nil, nil
@@ -54,6 +54,8 @@ func setupServerAPI(cfg *configs.Config, mysqlStore *repo.MySQLStore, rdb *redis
 		Groups:      groups,
 		Accounts:    server,
 		Messenger:   router,
+		Moderation:  mod,
+		Files:       mysqlStore,
 		MaxTokenTTL: maxTTL,
 	})
 	log.Printf("[main] server api enabled for %d app(s)", apps.Len())

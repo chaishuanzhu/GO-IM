@@ -6,14 +6,15 @@ IM 只负责连接、消息、群和在线状态。两边的边界：
 ```
 接入方客户端 ──(IM 令牌)──▶ GO-IM 网关（/ws、TCP、/history …）
      │                          ▲      │
-     │ 业务请求（带 IM 令牌）     │      │ webhook（签名，异步 + 可选同步 before_send）
+     │ 登录、业务请求             │      │ webhook（签名，异步 + 可选同步 before_send）
      ▼                          │      ▼
 接入方业务后端 ──(app_id + HMAC)──▶ /server/v1/*   ◀── 接入方 /im/webhook
 ```
 
 - 接入方后端通过**服务端 API**（`/server/v1/*`）导入用户、签发令牌、管理群、发消息和信令。
 - 接入方客户端拿后端签发的 **IM 令牌**直接连网关，协议与 GO-IM 自己的客户端相同（`docs/07-api-reference.md`）。
-- 接入方后端用 `tokens/verify` 校验客户端提交的 IM 令牌，以此认证自己的业务接口——不需要再发一套令牌。
+- 用户在接入方登录，接入方后端把 IM 用户和 IM 令牌一起返回给客户端。接入方业务接口可以用自己的会话认证，
+  也可以直接让客户端带 IM 令牌、后端用 `tokens/verify` 校验。
 - IM 侧的事件（消息、成员变化、上下线、举报）通过 **webhook** 推给接入方后端。
 
 参考实现：Paircast（一起看）的服务端就是这样一个接入方，见文末。
@@ -61,7 +62,7 @@ IM 只负责连接、消息、群和在线状态。两边的边界：
 
 | 接口 | 请求 | 响应 |
 |------|------|------|
-| `users/import` | `{"external_id","nickname"?,"avatar_file_id"?}` 或 `{"users":[...]}`（≤ 100） | 用户（批量为 `{"users":[...]}`），新建的带 `created: true` |
+| `users/import` | `{"external_id","nickname"?,"avatar_file_id"?}` 或 `{"users":[...]}`（≤ 100） | 用户（批量为 `{"users":[...]}`），新建的带 `created: true`；`avatar_file_id` 须是该用户用自己的 IM 令牌上传的图片 |
 | `users/token` | `{uid\|external_id, "ttl_seconds"?}` | `{"uid","token","expires_at"}`；ttl 为 0 用 `max_token_ttl` |
 | `users/revoke` | `{uid\|external_id}` | `{"token_version"}`：之前签发的令牌全部失效，在线连接被踢 |
 | `users/disable` | `{uid\|external_id, "disabled": bool}` | 禁用后不能登录 / 连接，在线连接被踢 |
@@ -99,6 +100,16 @@ IM 只负责连接、消息、群和在线状态。两边的边界：
 - 只投递给在线连接（含跨网关），不持久化、不进离线队列、不计未读。适合房间状态、播放进度、输入中等。
 - 客户端收到 `CmdSignal`，`content` 为 `{"type":"<ns>.<name>","data":...}`；客户端之间也可以直接发（单聊或群，群信令只有成员能发）。
 - `type` 必须带命名空间（如 `paircast.room_updated`），避免与其他接入方冲突。
+
+**举报**：用户在 IM 里举报（`/user/report`）后，接入方在自己的后台审核：
+
+| 接口 | 请求 | 响应 |
+|------|------|------|
+| `reports/list` | `{"status"?: "pending"\|"handled"\|"all", "offset"?, "limit"?(≤200)}` | `{"reports":[{...,"reporter":用户,"target":用户}],"total","pending"}` |
+| `reports/get` | `{"id"}` | 单条举报（同上的结构） |
+| `reports/resolve` | `{"id", "action": "ignore"\|"ban", "handled_by"?}` | `{"id","status"}`；`ban` 禁用被举报的 IM 账号并结清针对他的其他待处理举报 |
+
+新举报也会以 `report.created` webhook 推送。接入方自己的账号（是否同时停用、管理员不可封禁）由接入方处理。
 
 ## 6. Webhook
 
@@ -161,10 +172,13 @@ http.HandleFunc("/im/webhook", func(w http.ResponseWriter, r *http.Request) {
 
 Paircast（一起看）的服务端（媒体库 `/media/*` + 观影房间 `/room/*`）在 [Paircast 仓库](https://github.com/chaishuanzhu/Paircast) 的 `server/`，完全通过上面的能力使用 IM：
 
-- 认证：客户端带 IM 令牌调用 Paircast，Paircast 用 `tokens/verify` 校验（缓存 60 秒）。
+- 账号：用户、密码与管理员都在 Paircast；登录时 `users/import`（`external_id` 为 Paircast 用户 ID，同步昵称与头像）+ `users/token`，
+  把 IM 地址、`uid` 与 IM 令牌连同 Paircast 自己的会话令牌返回给客户端；停用 / 删除账号时同步 `users/disable` / `users/delete`。
+- 举报审核：Paircast 后台用 `reports/list` / `reports/resolve`，封禁时同时停用 Paircast 账号。
 - 房间 = 一个 IM 群：建房 `groups/create`，进出房 `groups/members/add|remove`，房间清理 `groups/dismiss`。
 - 房间变化用群信令 `paircast.room_updated` 推送；播放同步由客户端之间直接发 `paircast.playback` 信令。
 - 订阅 `group.member_left` / `group.dismissed`，用户在 IM 里退群或群被解散时同步房间成员。
-- 与 GO-IM 同域名部署时，反向代理把 `/media`、`/room` 转给 Paircast，其余路径转网关。
+- 与 GO-IM 同域名部署时，反向代理把 `/account`、`/console`、`/media`、`/room` 转给 Paircast，其余路径转网关；
+  App 里填的服务器地址是 Paircast，IM 地址由登录接口返回。
 
 SDK 引用：`go get github.com/chaishuanzhu/GO-IM/pkg/imserver`（独立的 Go 模块，只依赖标准库）。

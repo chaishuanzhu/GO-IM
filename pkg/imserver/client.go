@@ -152,6 +152,9 @@ type ImportUser struct {
 // String 返回字符串指针，便于填写可选字段。
 func String(s string) *string { return &s }
 
+// Int64 返回 int64 指针，便于填写可选字段（AvatarFileID 传 0 清除头像）。
+func Int64(v int64) *int64 { return &v }
+
 // ImportUser 按 external_id 创建或更新用户。
 func (c *Client) ImportUser(ctx context.Context, u ImportUser) (*User, error) {
 	var out User
@@ -315,4 +318,61 @@ func (c *Client) VerifyToken(ctx context.Context, token string) (*TokenInfo, err
 		return nil, err
 	}
 	return &out, nil
+}
+
+// 举报状态。
+const (
+	ReportPending = "pending"
+	ReportIgnored = "ignored"
+	ReportBanned  = "banned"
+)
+
+// Report 是用户在 IM 里提交的举报；Reporter / Target 在用户已删除时只有 UID。
+type Report struct {
+	ID        int64  `json:"id"`
+	MessageID string `json:"message_id,omitempty"`
+	Context   string `json:"context,omitempty"`
+	Content   string `json:"content"`
+	Status    string `json:"status"`
+	HandledBy string `json:"handled_by,omitempty"`
+	CreatedAt int64  `json:"created_at"`
+	HandledAt int64  `json:"handled_at,omitempty"`
+	Reporter  User   `json:"reporter"`
+	Target    User   `json:"target"`
+}
+
+// ReportList 是一页举报。Pending 是全部待处理条数。
+type ReportList struct {
+	Reports []Report `json:"reports"`
+	Total   int      `json:"total"`
+	Pending int      `json:"pending"`
+}
+
+// ListReports 分页列出举报（新的在前）；status 为 pending（默认）、handled 或 all，limit ≤ 200。
+func (c *Client) ListReports(ctx context.Context, status string, offset, limit int) (*ReportList, error) {
+	var out ReportList
+	err := c.post(ctx, "reports/list", map[string]any{"status": status, "offset": offset, "limit": limit}, &out)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetReport 返回一条举报；不存在时 IsNotFound(err) 为 true。
+func (c *Client) GetReport(ctx context.Context, id int64) (*Report, error) {
+	var out Report
+	if err := c.post(ctx, "reports/get", map[string]any{"id": id}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ResolveReport 处理举报：action 为 "ignore" 或 "ban"。ban 禁用被举报的 IM 账号，并把针对他的其他待处理举报
+// 一并标记为已封禁；handledBy 为空时记为 sys:<app_id>。返回举报的新状态。
+func (c *Client) ResolveReport(ctx context.Context, id int64, action, handledBy string) (string, error) {
+	var out struct {
+		Status string `json:"status"`
+	}
+	err := c.post(ctx, "reports/resolve", map[string]any{"id": id, "action": action, "handled_by": handledBy}, &out)
+	return out.Status, err
 }

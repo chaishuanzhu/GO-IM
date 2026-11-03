@@ -71,4 +71,16 @@ func TestSDKAgainstAPI(t *testing.T) {
 	if err := c.DismissGroup(ctx, g.ID); err != nil {
 		t.Fatal(err)
 	}
+
+	id, err := e.mod.Report(ctx, users[0].UID, alice.UID, "m1", g.ID, "spam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := c.ListReports(ctx, imserver.ReportPending, 0, 10)
+	if err != nil || list.Pending != 1 || list.Reports[0].Target.ExternalID != "alice" {
+		t.Fatalf("reports: %+v %v", list, err)
+	}
+	if st, err := c.ResolveReport(ctx, id, "ignore", "admin"); err != nil || st != imserver.ReportIgnored {
+		t.Fatalf("resolve: %q %v", st, err)
+	}
 }

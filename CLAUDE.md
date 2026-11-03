@@ -123,9 +123,10 @@ CmdSignal (25, formerly CmdGroupSignal) → Router.handleSignal → chat_type=1:
 # Server API — embeddable IM channel (internal/serverapi, docs/16-integration-guide.md; needs MySQL)
 POST /server/v1/<path> → API.ServeHTTP → authenticate: X-App-Id + X-Timestamp (±5 min) + X-Nonce (Redis SETNX im:serverapi:nonce:<app>:<nonce>, or memory)
                + X-Signature = hex(HMAC-SHA256(secret, METHOD\nPATH\nTS\nNONCE\nBODY)) → JSON, errors {"error":...}
-               → users/import|token|revoke|disable|delete, groups/create|members/add|members/remove|dismiss, messages/send, signals/send, tokens/verify
+               → users/import|token|revoke|disable|delete, groups/create|members/add|members/remove|dismiss, messages/send, signals/send, tokens/verify, reports/list|get|resolve
+               → users/import with avatar_file_id (must be the user's own ready image) marks the file public (/avatar/{id}); reports/resolve ban = SetAccountDisabled + MarkBanned (app handles its own admins)
                → users referenced by {uid} or {external_id} (users.external_id, per app); system sender = sys:<app_id> (skips block / membership checks)
-               → secrets only from env GOIM_APP_<ID>_SECRET / _WEBHOOK_SECRET; apps table (secret hash + status, 0 = disabled) refreshed every 30 s
+               → secrets only from env GOIM_APP_<ID>_SECRET / _WEBHOOK_SECRET (Docker: optional apps.env; k8s: optional Secret goim-apps via envFrom); apps table (secret hash + status, 0 = disabled) refreshed every 30 s
                → Server.IssueToken / VerifyToken / RevokeTokens (token_version) / SetAccountDisabled / DeleteAccount; Router.SendMessage / SendSignal / NotifyGroup
 
 # Webhooks (internal/webhook; Kafka transport not implemented)
@@ -138,7 +139,8 @@ before_send_url → Router.rejectedByHook (after the block check in chat / forwa
 
 # Integrating apps — e.g. Paircast (server lives in the Paircast repo, server/)
 App backend → pkg/imserver (separate Go module github.com/chaishuanzhu/GO-IM/pkg/imserver, stdlib only; main module uses it via replace ./pkg/imserver)
-               → users/import + users/token → client connects with the IM token; app backend verifies it with tokens/verify
+               → the app owns its users: app login → users/import (external_id) + users/token → returns IM url/uid/token to the client
+               → app APIs use the app's own session (or tokens/verify on the IM token); reports/* for the app's moderation console
                → groups/* for app-level rooms; signals/send "<app>.<name>" for realtime state; webhooks for IM-side changes
 
 # Multi-gateway forwarding (Phase 4)

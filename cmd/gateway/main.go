@@ -368,7 +368,7 @@ func NewApp(cfg *configs.Config) (*App, error) {
 	}
 
 	// --- 接入方服务端 API(/server/v1/*) ---
-	serverAPI, serverApps, err := setupServerAPI(cfg, mysqlStore, rdb, groupStore, server, router)
+	serverAPI, serverApps, err := setupServerAPI(cfg, mysqlStore, rdb, groupStore, server, router, modSvc)
 	if err != nil {
 		return nil, fmt.Errorf("server api: %w", err)
 	}

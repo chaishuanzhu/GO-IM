@@ -113,8 +113,8 @@
             "apps": [],
             "_apps_example": [
                 {
-                    "app_id": "paircast",
-                    "webhook_url": "http://paircast:8090/im/webhook",
+                    "app_id": "myapp",
+                    "webhook_url": "http://myapp:8090/im/webhook",
                     "webhook_events": [],
                     "before_send_url": "",
                     "before_send_timeout": "500ms"

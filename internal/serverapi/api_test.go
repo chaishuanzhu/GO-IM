@@ -15,6 +15,7 @@ import (
 	"github.com/im/api/proto"
 	"github.com/im/configs"
 	"github.com/im/internal/gateway"
+	"github.com/im/internal/moderation"
 	"github.com/im/internal/pkg/jwt"
 	"github.com/im/internal/pkg/snowflake"
 	"github.com/im/internal/repo"
@@ -142,8 +143,24 @@ func (t *chanTransport) Write(b []byte) error {
 	return nil
 }
 
+type fakeFiles struct {
+	files   map[int64]*repo.File
+	avatars []int64
+}
+
+func (f *fakeFiles) GetFile(_ context.Context, id int64) (*repo.File, error) {
+	return f.files[id], nil
+}
+
+func (f *fakeFiles) MarkAvatar(_ context.Context, id int64) error {
+	f.avatars = append(f.avatars, id)
+	return nil
+}
+
 type env struct {
 	api      *API
+	mod      *moderation.Service
+	files    *fakeFiles
 	hub      *gateway.Hub
 	users    *fakeUsers
 	accounts *fakeAccounts
@@ -162,13 +179,16 @@ func newEnv(t *testing.T) *env {
 	router.SetGroupStore(groups)
 	users := &fakeUsers{byUID: map[string]*repo.User{}}
 	accounts := &fakeAccounts{users: users, jwt: jwt.New("k", time.Hour)}
-	e := &env{hub: hub, users: users, accounts: accounts, groups: groups, now: time.Unix(1_800_000_000, 0)}
+	e := &env{hub: hub, users: users, accounts: accounts, groups: groups, now: time.Unix(1_800_000_000, 0),
+		mod: moderation.NewService(moderation.NewMemoryStore()), files: &fakeFiles{}}
 	e.api = New(Deps{
 		Apps:        NewRegistry([]configs.ServerAppConfig{{AppID: "paircast", Secret: testSecret}}),
 		Users:       users,
 		Groups:      groups,
 		Accounts:    accounts,
 		Messenger:   router,
+		Moderation:  e.mod,
+		Files:       e.files,
 		MaxTokenTTL: time.Hour,
 	})
 	e.api.now = func() time.Time { return e.now }
@@ -385,5 +405,78 @@ func TestGroupsMessagesAndSignals(t *testing.T) {
 	}
 	if code, _ := e.do(t, e.signed(Prefix+"groups/dismiss", map[string]any{"group_id": groupID})); code != http.StatusNotFound {
 		t.Errorf("dismiss missing group: %d", code)
+	}
+}
+
+func TestImportMarksAvatarPublic(t *testing.T) {
+	e := newEnv(t)
+	uid := e.call(t, "users/import", map[string]any{"external_id": "ext-1", "nickname": "A"})["uid"].(string)
+	e.files.files = map[int64]*repo.File{
+		42: {FileID: 42, OwnerUID: uid, Mime: "image/jpeg", Status: repo.FileStatusReady},
+		43: {FileID: 43, OwnerUID: "someone-else", Mime: "image/jpeg", Status: repo.FileStatusReady},
+		44: {FileID: 44, OwnerUID: uid, Mime: "application/pdf", Status: repo.FileStatusReady},
+	}
+	if got := e.call(t, "users/import", map[string]any{"external_id": "ext-1", "avatar_file_id": 42}); got["avatar_file_id"] != float64(42) {
+		t.Fatalf("import: %v", got)
+	}
+	for _, id := range []int64{43, 44, 99} {
+		if code, out := e.do(t, e.signed(Prefix+"users/import", map[string]any{"external_id": "ext-1", "avatar_file_id": id})); code != http.StatusBadRequest {
+			t.Fatalf("avatar %d: status %d %v", id, code, out)
+		}
+	}
+	e.call(t, "users/import", map[string]any{"external_id": "ext-1", "avatar_file_id": 0})
+	if len(e.files.avatars) != 1 || e.files.avatars[0] != 42 {
+		t.Fatalf("marked avatars: %v", e.files.avatars)
+	}
+}
+
+func TestReportsListAndResolve(t *testing.T) {
+	e := newEnv(t)
+	alice := e.call(t, "users/import", map[string]any{"external_id": "a", "nickname": "Alice"})["uid"].(string)
+	bob := e.call(t, "users/import", map[string]any{"external_id": "b", "nickname": "Bob"})["uid"].(string)
+	ctx := context.Background()
+	first, err := e.mod.Report(ctx, alice, bob, "m1", "g_1", "spam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.mod.Report(ctx, alice, bob, "m2", "g_1", "more spam"); err != nil {
+		t.Fatal(err)
+	}
+
+	list := e.call(t, "reports/list", map[string]any{"status": "pending"})
+	reports := list["reports"].([]any)
+	if list["pending"] != float64(2) || len(reports) != 2 {
+		t.Fatalf("list: %v", list)
+	}
+	r0 := reports[0].(map[string]any)
+	if r0["target"].(map[string]any)["external_id"] != "b" || r0["reporter"].(map[string]any)["nickname"] != "Alice" {
+		t.Fatalf("report users: %v", r0)
+	}
+	if code, _ := e.do(t, e.signed(Prefix+"reports/list", map[string]any{"status": "bogus"})); code != http.StatusBadRequest {
+		t.Errorf("bad status: %d", code)
+	}
+	got := e.call(t, "reports/get", map[string]any{"id": first})
+	if got["target"].(map[string]any)["uid"] != bob || got["content"] != "spam" {
+		t.Fatalf("get: %v", got)
+	}
+	if code, _ := e.do(t, e.signed(Prefix+"reports/get", map[string]any{"id": 999})); code != http.StatusNotFound {
+		t.Errorf("unknown report get: %d", code)
+	}
+
+	out := e.call(t, "reports/resolve", map[string]any{"id": first, "action": "ban", "handled_by": "admin-1"})
+	if out["status"] != moderation.StatusBanned || out["target_uid"] != bob {
+		t.Fatalf("ban: %v", out)
+	}
+	if u, _ := e.users.GetByUID(ctx, bob); !u.IsDisabled {
+		t.Error("banned IM user not disabled")
+	}
+	if left := e.call(t, "reports/list", map[string]any{}); left["pending"] != float64(0) {
+		t.Fatalf("pending after ban: %v", left)
+	}
+	if code, _ := e.do(t, e.signed(Prefix+"reports/resolve", map[string]any{"id": 999, "action": "ignore"})); code != http.StatusNotFound {
+		t.Errorf("unknown report: %d", code)
+	}
+	if code, _ := e.do(t, e.signed(Prefix+"reports/resolve", map[string]any{"id": first, "action": "nuke"})); code != http.StatusBadRequest {
+		t.Errorf("bad action: %d", code)
 	}
 }

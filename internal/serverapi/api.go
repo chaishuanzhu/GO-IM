@@ -13,6 +13,7 @@ import (
 
 	"github.com/im/api/proto"
 	"github.com/im/internal/gateway"
+	"github.com/im/internal/moderation"
 	"github.com/im/internal/pkg/jwt"
 	"github.com/im/internal/repo"
 )
@@ -49,7 +50,21 @@ type Messenger interface {
 	ForgetGroupMembers(groupID string)
 }
 
-// Deps 是 API 的依赖。
+// Moderation 是举报处理（moderation.Service 实现）。
+type Moderation interface {
+	Reports(ctx context.Context, filter string, offset, limit int) (reports []moderation.Report, total, pending int, err error)
+	Get(ctx context.Context, id int64) (*moderation.Report, error)
+	Ignore(ctx context.Context, id int64, admin string) error
+	MarkBanned(ctx context.Context, r *moderation.Report, admin string) error
+}
+
+// AvatarFiles 校验头像文件并把它标记为公开（MySQLStore 实现）。
+type AvatarFiles interface {
+	GetFile(ctx context.Context, fileID int64) (*repo.File, error)
+	MarkAvatar(ctx context.Context, fileID int64) error
+}
+
+// Deps 是 API 的依赖。Moderation、Files 可为 nil（举报接口不可用 / 导入时不能设置头像）。
 type Deps struct {
 	Apps        *Registry
 	Nonces      NonceStore
@@ -57,6 +72,8 @@ type Deps struct {
 	Groups      gateway.GroupStore
 	Accounts    Accounts
 	Messenger   Messenger
+	Moderation  Moderation
+	Files       AvatarFiles
 	MaxTokenTTL time.Duration
 }
 
@@ -68,6 +85,8 @@ type API struct {
 	groups      gateway.GroupStore
 	accounts    Accounts
 	messenger   Messenger
+	moderation  Moderation
+	files       AvatarFiles
 	maxTokenTTL time.Duration
 	now         func() time.Time
 	routes      map[string]handlerFunc
@@ -79,7 +98,7 @@ type handlerFunc func(ctx context.Context, app *App, body []byte) (any, error)
 func New(d Deps) *API {
 	a := &API{
 		apps: d.Apps, nonces: d.Nonces, users: d.Users, groups: d.Groups,
-		accounts: d.Accounts, messenger: d.Messenger,
+		accounts: d.Accounts, messenger: d.Messenger, moderation: d.Moderation, files: d.Files,
 		maxTokenTTL: d.MaxTokenTTL, now: time.Now,
 	}
 	if a.nonces == nil {
@@ -98,6 +117,9 @@ func New(d Deps) *API {
 		"messages/send":         a.messagesSend,
 		"signals/send":          a.signalsSend,
 		"tokens/verify":         a.tokensVerify,
+		"reports/list":          a.reportsList,
+		"reports/get":           a.reportsGet,
+		"reports/resolve":       a.reportsResolve,
 	}
 	return a
 }
@@ -257,9 +279,25 @@ func (a *API) usersImport(ctx context.Context, _ *App, body []byte) (any, error)
 		if it.Nickname != nil && len([]rune(*it.Nickname)) > 32 {
 			return nil, badRequest("nickname too long (≤ 32)")
 		}
-		u, created, err := a.users.UpsertExternalUser(ctx, it.ExternalID, it.Nickname, it.AvatarFileID)
+		avatar := it.AvatarFileID
+		setAvatar := avatar != nil && *avatar > 0
+		if setAvatar && a.files == nil {
+			return nil, &apiError{http.StatusServiceUnavailable, "avatars not available"}
+		}
+		if setAvatar {
+			avatar = nil
+		}
+		u, created, err := a.users.UpsertExternalUser(ctx, it.ExternalID, it.Nickname, avatar)
 		if err != nil {
 			return nil, err
+		}
+		if setAvatar {
+			if err := a.claimAvatar(ctx, u.UID, *it.AvatarFileID); err != nil {
+				return nil, err
+			}
+			if u, _, err = a.users.UpsertExternalUser(ctx, it.ExternalID, nil, it.AvatarFileID); err != nil {
+				return nil, err
+			}
 		}
 		v := viewUser(u)
 		v.Created = created
@@ -269,6 +307,24 @@ func (a *API) usersImport(ctx context.Context, _ *App, body []byte) (any, error)
 		return out[0], nil
 	}
 	return map[string]any{"users": out}, nil
+}
+
+// claimAvatar 要求头像是该用户自己上传、已就绪的图片，然后把它标记为公开。
+func (a *API) claimAvatar(ctx context.Context, uid string, fileID int64) error {
+	f, err := a.files.GetFile(ctx, fileID)
+	if err != nil {
+		return err
+	}
+	if f == nil || f.OwnerUID != uid || f.Status != repo.FileStatusReady {
+		return badRequest("avatar file not found")
+	}
+	if !gateway.IsImageMIME(f.Mime) {
+		return badRequest("avatar must be an image")
+	}
+	if f.IsAvatar {
+		return nil
+	}
+	return a.files.MarkAvatar(ctx, fileID)
 }
 
 // usersToken 为用户签发 IM 令牌：{"uid"|"external_id", "ttl_seconds"}。
@@ -656,4 +712,145 @@ func (a *API) tokensVerify(ctx context.Context, _ *App, body []byte) (any, error
 		resp["external_id"] = u.ExternalID
 	}
 	return resp, nil
+}
+
+// --- 举报 ---
+
+// ReportView 是返回给接入方的举报，附带双方用户信息（用户已删除时只有 uid）。
+type ReportView struct {
+	moderation.Report
+	Reporter UserView `json:"reporter"`
+	Target   UserView `json:"target"`
+}
+
+func (a *API) requireModeration() error {
+	if a.moderation == nil {
+		return &apiError{http.StatusServiceUnavailable, "moderation not available"}
+	}
+	return nil
+}
+
+// reportsList 分页列出举报（新的在前）：{"status":"pending|handled|all","offset","limit"(≤200)}。
+func (a *API) reportsList(ctx context.Context, _ *App, body []byte) (any, error) {
+	if err := a.requireModeration(); err != nil {
+		return nil, err
+	}
+	var req struct {
+		Status string `json:"status"`
+		Offset int    `json:"offset"`
+		Limit  int    `json:"limit"`
+	}
+	if err := decode(body, &req); err != nil {
+		return nil, err
+	}
+	if req.Offset < 0 {
+		req.Offset = 0
+	}
+	if req.Limit <= 0 || req.Limit > 200 {
+		req.Limit = 50
+	}
+	reports, total, pending, err := a.moderation.Reports(ctx, req.Status, req.Offset, req.Limit)
+	if errors.Is(err, moderation.ErrInvalid) {
+		return nil, badRequest("status must be pending, handled or all")
+	}
+	if err != nil {
+		return nil, err
+	}
+	lookup := a.userViews(ctx)
+	out := make([]ReportView, 0, len(reports))
+	for _, r := range reports {
+		out = append(out, ReportView{Report: r, Reporter: lookup(r.ReporterUID), Target: lookup(r.TargetUID)})
+	}
+	return map[string]any{"reports": out, "total": total, "pending": pending, "offset": req.Offset, "limit": req.Limit}, nil
+}
+
+// reportsGet 返回一条举报：{"id"}。
+func (a *API) reportsGet(ctx context.Context, _ *App, body []byte) (any, error) {
+	if err := a.requireModeration(); err != nil {
+		return nil, err
+	}
+	var req struct {
+		ID int64 `json:"id"`
+	}
+	if err := decode(body, &req); err != nil {
+		return nil, err
+	}
+	if req.ID <= 0 {
+		return nil, badRequest("id required")
+	}
+	rep, err := a.moderation.Get(ctx, req.ID)
+	if errors.Is(err, moderation.ErrNotFound) {
+		return nil, notFound("report not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	lookup := a.userViews(ctx)
+	return ReportView{Report: *rep, Reporter: lookup(rep.ReporterUID), Target: lookup(rep.TargetUID)}, nil
+}
+
+// userViews 返回带缓存的 uid → UserView 查询；查不到的用户只带 uid。
+func (a *API) userViews(ctx context.Context) func(uid string) UserView {
+	users := map[string]UserView{}
+	return func(uid string) UserView {
+		if v, ok := users[uid]; ok {
+			return v
+		}
+		v := UserView{UID: uid}
+		if u, err := a.users.GetByUID(ctx, uid); err == nil && u != nil {
+			v = viewUser(u)
+		}
+		users[uid] = v
+		return v
+	}
+}
+
+// reportsResolve 处理一条举报：{"id", "action":"ignore|ban", "handled_by"?}。ban 禁用被举报的 IM 账号（立即下线），
+// 并把针对该用户的其他待处理举报一并标记为已封禁；接入方自己的账号状态与管理员保护由接入方负责。
+func (a *API) reportsResolve(ctx context.Context, app *App, body []byte) (any, error) {
+	if err := a.requireModeration(); err != nil {
+		return nil, err
+	}
+	var req struct {
+		ID        int64  `json:"id"`
+		Action    string `json:"action"`
+		HandledBy string `json:"handled_by"`
+	}
+	if err := decode(body, &req); err != nil {
+		return nil, err
+	}
+	if req.ID <= 0 {
+		return nil, badRequest("id required")
+	}
+	by := app.SystemUID()
+	if h := strings.TrimSpace(req.HandledBy); h != "" {
+		if len(h) > 64 {
+			return nil, badRequest("handled_by too long (≤ 64)")
+		}
+		by = h
+	}
+	rep, err := a.moderation.Get(ctx, req.ID)
+	if errors.Is(err, moderation.ErrNotFound) {
+		return nil, notFound("report not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch req.Action {
+	case "ignore":
+		if err := a.moderation.Ignore(ctx, rep.ID, by); err != nil {
+			return nil, err
+		}
+		return map[string]any{"id": rep.ID, "status": moderation.StatusIgnored}, nil
+	case "ban":
+		if err := a.accounts.SetAccountDisabled(ctx, rep.TargetUID, true); err != nil {
+			return nil, err
+		}
+		if err := a.moderation.MarkBanned(ctx, rep, by); err != nil {
+			return nil, err
+		}
+		return map[string]any{"id": rep.ID, "status": moderation.StatusBanned, "target_uid": rep.TargetUID}, nil
+	default:
+		return nil, badRequest("action must be ignore or ban")
+	}
 }

@@ -91,14 +91,8 @@
         },
 
         "server_api": {
-            "_comment": "接入方 Paircast(服务端在 Paircast 仓库 server/,部署清单 server/deploy/k8s)。密钥由 Secret goim-paircast 注入(GOIM_APP_PAIRCAST_SECRET / _WEBHOOK_SECRET);未部署时没有密钥,服务端 API 不启用。",
-            "apps": [
-                {
-                    "app_id": "paircast",
-                    "webhook_url": "http://paircast:8090/im/webhook",
-                    "webhook_events": ["group.member_left", "group.dismissed"]
-                }
-            ]
+            "_comment": "接入方(见 docs/16-integration-guide.md)。在 apps 里登记 app_id / webhook_url / webhook_events;密钥放进 Secret goim-apps(键名 GOIM_APP_<APP_ID>_SECRET / GOIM_APP_<APP_ID>_WEBHOOK_SECRET),gateway 通过 envFrom 读取。apps 为空即不启用。",
+            "apps": []
         },
 
         "recall_window_ms": 120000,

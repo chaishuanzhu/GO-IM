@@ -52,19 +52,15 @@ spec:
       containers:
         - name: gateway
           image: 870027381/go-im-gateway
+          # 接入方密钥（GOIM_APP_<APP_ID>_SECRET / _WEBHOOK_SECRET）；没有接入方时不需要创建这个 Secret
+          envFrom:
+            - secretRef: { name: goim-apps, optional: true }
           env:
             - { name: CONFIG_PATH, value: /etc/im/config.json }
             - { name: TZ, value: Asia/Shanghai }
             - name: GOIM_MAIL_PASSWORD
               valueFrom:
                 secretKeyRef: { name: goim-infra, key: MAIL_PASSWORD, optional: true }
-            # 接入方 paircast 的密钥（Secret 由 Paircast 仓库的 server/deploy/k8s 创建；未部署时不存在，服务端 API 不启用）
-            - name: GOIM_APP_PAIRCAST_SECRET
-              valueFrom:
-                secretKeyRef: { name: goim-paircast, key: IM_SECRET, optional: true }
-            - name: GOIM_APP_PAIRCAST_WEBHOOK_SECRET
-              valueFrom:
-                secretKeyRef: { name: goim-paircast, key: IM_WEBHOOK_SECRET, optional: true }
           lifecycle:
             # 先等 Service / Ingress 摘掉本 Pod，再开始关闭，避免新连接落到正在退出的 Pod
             preStop:
