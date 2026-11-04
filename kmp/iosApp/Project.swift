@@ -22,7 +22,7 @@ let project = Project(
             deploymentTargets: .iOS("16.0"),
             infoPlist: .extendingDefault(
                 with: [
-                    "CFBundleDisplayName": "GO-IM KMP",
+                    "CFBundleDisplayName": "GO-IM",
                     "UILaunchScreen": [:],
                     "CADisableMinimumFrameDurationOnPhone": true,
                     "NSMicrophoneUsageDescription": "发送语音消息需要使用麦克风",
