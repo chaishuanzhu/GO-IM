@@ -116,7 +116,7 @@ CmdRecall      → Router.handleRecall → validate target + sender + Seq (origi
                → sendRecallError on failure — no ACK, no persistence for recall itself
 
 # Transient signal (online-only; e.g. synced playback control, app-defined notifications)
-CmdSignal (25, formerly CmdGroupSignal) → Router.handleSignal → chat_type=1: to = uid (all online devices); otherwise to = group ID, sender must be a member
+CmdSignal (25) → Router.handleSignal → chat_type=1: to = uid (all online devices); otherwise to = group ID, sender must be a member
                → Router.SendSignal (also the server-side entry point) → deliverTransient: sendLocal, else forwardTransient (GrpcForwarder) — never StoreOffline
                → content must be {"type":"<ns>.<name>","data":{...}} (proto.EncodeSignal / ParseSignal); untyped signals are dropped
                → group members come from a 3 s per-node cache (memberCache, cleared on local join/leave/invite/kick)

@@ -51,9 +51,6 @@ const (
 	// 瞬时信令（如同步播放控制、业务自定义在线通知）：chat_type=1 发给单个用户，否则发给群（To 为群 ID）。
 	// 只投递给在线连接（含跨网关），不持久化、不进离线队列、不计未读、不回 Ack。
 	CmdSignal int32 = 25
-
-	// Deprecated: 使用 CmdSignal。
-	CmdGroupSignal = CmdSignal
 )
 
 // 聊天类型。
