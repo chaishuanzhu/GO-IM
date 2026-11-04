@@ -8,24 +8,35 @@ import (
 	"time"
 
 	"github.com/im/internal/pkg/snowflake"
+	"github.com/im/internal/repo"
 )
 
 // Group 表示一个聊天群及其成员。
 type Group struct {
-	ID        string          `json:"id"`         // 例如 "g_123456"
-	Name      string          `json:"name"`       // 人类可读的群名称
-	OwnerUID  string          `json:"owner_uid"`  // 创建者/群主
-	Members   map[string]bool `json:"members"`    // uid → true(包含群主)
-	CreatedAt int64           `json:"created_at"` // unix 毫秒时间戳
+	ID        string          `json:"id"`             // 例如 "g_123456"
+	Name      string          `json:"name"`           // 人类可读的群名称
+	OwnerUID  string          `json:"owner_uid"`      // 创建者/群主
+	Members   map[string]bool `json:"members"`        // uid → true(包含群主)
+	Kind      string          `json:"kind,omitempty"` // 空 = 普通群；GroupKindChatroom = 聊天室
+	CreatedAt int64           `json:"created_at"`     // unix 毫秒时间戳
 
 	aliases map[string]string // uid → 群昵称（仅内存实现使用）
 }
+
+// GroupKindChatroom 是聊天室：成员由接入方通过服务端 API 管理，用户不能自行加入或邀请；
+// 消息只推给在线成员（不进离线队列、不计未读），也不出现在成员的群列表里。
+const GroupKindChatroom = repo.GroupKindChatroom
+
+// IsChatroom 报告群是否为聊天室。
+func (g *Group) IsChatroom() bool { return g != nil && g.Kind == GroupKindChatroom }
 
 // GroupStore 管理群的持久化。InMemoryGroupStore 是默认实现;
 // MySQLGroupStore 提供基于 MySQL 的替代实现。
 type GroupStore interface {
 	// Create 创建新群并添加群主及可选的初始成员。
 	Create(ctx context.Context, name, ownerUID string, members []string) (*Group, error)
+	// CreateChatroom 与 Create 相同，但创建的是聊天室（GroupKindChatroom）。
+	CreateChatroom(ctx context.Context, name, ownerUID string, members []string) (*Group, error)
 	AddMember(ctx context.Context, groupID, uid string) error
 	RemoveMember(ctx context.Context, groupID, uid string) error
 	GetMembers(ctx context.Context, groupID string) ([]string, error)
@@ -47,6 +58,8 @@ var (
 	ErrAlreadyMember = errors.New("user is already a member of this group")
 	ErrNotMember     = errors.New("user is not a member of this group")
 	ErrGroupIDExists = errors.New("group ID already exists")
+	// ErrChatroomManaged：聊天室成员由接入方管理，用户不能自行加入或邀请。
+	ErrChatroomManaged = errors.New("chatroom membership is managed by the app")
 )
 
 // InMemoryGroupStore 用内存映射实现 GroupStore。
@@ -73,6 +86,15 @@ func (s *InMemoryGroupStore) newGroupID() string {
 
 // Create 创建新群并添加群主和初始成员。
 func (s *InMemoryGroupStore) Create(ctx context.Context, name, ownerUID string, members []string) (*Group, error) {
+	return s.create(name, ownerUID, members, "")
+}
+
+// CreateChatroom 创建聊天室。
+func (s *InMemoryGroupStore) CreateChatroom(ctx context.Context, name, ownerUID string, members []string) (*Group, error) {
+	return s.create(name, ownerUID, members, GroupKindChatroom)
+}
+
+func (s *InMemoryGroupStore) create(name, ownerUID string, members []string, kind string) (*Group, error) {
 	id := s.newGroupID()
 	memberMap := map[string]bool{ownerUID: true}
 	for _, uid := range members {
@@ -85,6 +107,7 @@ func (s *InMemoryGroupStore) Create(ctx context.Context, name, ownerUID string, 
 		Name:      name,
 		OwnerUID:  ownerUID,
 		Members:   memberMap,
+		Kind:      kind,
 		CreatedAt: time.Now().UnixMilli(),
 	}
 
@@ -166,14 +189,14 @@ func (s *InMemoryGroupStore) IsMember(ctx context.Context, groupID, uid string) 
 	return g.Members[uid]
 }
 
-// GetUserGroups 返回用户所属的所有群。
+// GetUserGroups 返回用户所属的所有普通群（不含聊天室）。
 func (s *InMemoryGroupStore) GetUserGroups(ctx context.Context, uid string) ([]*Group, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var result []*Group
 	for _, g := range s.groups {
-		if g.Members[uid] {
+		if g.Members[uid] && !g.IsChatroom() {
 			result = append(result, g)
 		}
 	}

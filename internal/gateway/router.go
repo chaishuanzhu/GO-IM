@@ -58,6 +58,9 @@ type Router struct {
 	// 瞬时消息路径的群成员短期缓存。
 	members memberCache
 
+	// 群 ID → 是否聊天室（聊天室消息只推在线成员、不计未读）。
+	groupKinds groupKindCache
+
 	// 消息事件(webhook)与发送前回调,nil = 不启用。
 	events     MessageEvents
 	beforeSend BeforeSendHook
@@ -896,6 +899,10 @@ func (r *Router) fanoutGroup(ctx context.Context, sender *Client, msg *proto.Mes
 // 提供成员 UID。当群成员关系由外部管理时(例如通过 gRPC Logic 服务)
 // 使用此方法,以避免双重写入。
 func (r *Router) fanoutGroupWithMembers(ctx context.Context, sender *Client, msg *proto.Message, members []string, syncSelf bool) {
+	deliver := r.deliverToUser
+	if r.isChatroom(ctx, msg.To) {
+		deliver = r.deliverOnline
+	}
 	delivered := 0
 	for _, memberUID := range members {
 		if memberUID == sender.UID {
@@ -905,7 +912,7 @@ func (r *Router) fanoutGroupWithMembers(ctx context.Context, sender *Client, msg
 			continue
 		}
 
-		found, failed := r.deliverToUser(ctx, memberUID, msg)
+		found, failed := deliver(ctx, memberUID, msg)
 		if found {
 			r.metrics.RecordGroupFanoutSend()
 		}
@@ -1093,7 +1100,7 @@ func (r *Router) handleReadReceipt(ctx context.Context, sender *Client, msg *pro
 		sender.UID, peerUID)
 }
 
-// incrementUnread 为消息的接收方加一条未读:单聊键为发送方 UID,群聊键为群 ID(除发送方外的成员各 +1)。
+// incrementUnread 为消息的接收方加一条未读:单聊键为发送方 UID,群聊键为群 ID(除发送方外的成员各 +1,聊天室不计)。
 // 客户端按键还原会话(`g_` 前缀为群),已读回执用同样的键清零。
 func (r *Router) incrementUnread(ctx context.Context, senderUID string, msg *proto.Message) {
 	if r.unreadTracker == nil {
@@ -1105,7 +1112,7 @@ func (r *Router) incrementUnread(ctx context.Context, senderUID string, msg *pro
 		}
 		return
 	}
-	if r.groupStore == nil {
+	if r.groupStore == nil || r.isChatroom(ctx, msg.To) {
 		return
 	}
 	members, err := r.groupStore.GetMembers(ctx, msg.To)
@@ -1390,6 +1397,10 @@ func (r *Router) handleGroupJoin(ctx context.Context, sender *Client, msg *proto
 		r.sendGroupError(sender, proto.CmdGroupJoin, "group_id is required (set 'to' field)")
 		return
 	}
+	if r.isChatroom(ctx, groupID) {
+		r.sendGroupError(sender, proto.CmdGroupJoin, ErrChatroomManaged.Error())
+		return
+	}
 
 	// 优先尝试 gRPC Logic 服务。
 	if r.logicClient != nil {
@@ -1476,6 +1487,10 @@ func (r *Router) handleGroupInviteMember(ctx context.Context, sender *Client, ms
 
 	if targetUID == sender.UID {
 		r.sendGroupError(sender, proto.CmdGroupInviteMember, "cannot invite yourself — use CmdGroupJoin instead")
+		return
+	}
+	if r.isChatroom(ctx, groupID) {
+		r.sendGroupError(sender, proto.CmdGroupInviteMember, ErrChatroomManaged.Error())
 		return
 	}
 

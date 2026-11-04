@@ -56,7 +56,16 @@ func translateRepoError(err error) error {
 
 // Create 创建新群并添加群主和初始成员。
 func (s *MySQLGroupStore) Create(ctx context.Context, name, ownerUID string, members []string) (*Group, error) {
-	row, err := s.repo.CreateGroup(ctx, name, ownerUID, members)
+	return s.create(ctx, name, ownerUID, members, "")
+}
+
+// CreateChatroom 创建聊天室。
+func (s *MySQLGroupStore) CreateChatroom(ctx context.Context, name, ownerUID string, members []string) (*Group, error) {
+	return s.create(ctx, name, ownerUID, members, GroupKindChatroom)
+}
+
+func (s *MySQLGroupStore) create(ctx context.Context, name, ownerUID string, members []string, kind string) (*Group, error) {
+	row, err := s.repo.CreateGroupOfKind(ctx, name, ownerUID, members, kind)
 	if err != nil {
 		return nil, translateRepoError(err)
 	}
@@ -71,6 +80,7 @@ func (s *MySQLGroupStore) Create(ctx context.Context, name, ownerUID string, mem
 		Name:      row.Name,
 		OwnerUID:  row.OwnerUID,
 		Members:   memberMap,
+		Kind:      row.Kind,
 		CreatedAt: row.CreatedAt,
 	}, nil
 }
@@ -139,6 +149,7 @@ func (s *MySQLGroupStore) Get(ctx context.Context, groupID string) (*Group, erro
 		Name:      row.Name,
 		OwnerUID:  row.OwnerUID,
 		Members:   make(map[string]bool, len(members)),
+		Kind:      row.Kind,
 		CreatedAt: row.CreatedAt,
 	}
 	for _, uid := range members {

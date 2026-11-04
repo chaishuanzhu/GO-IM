@@ -360,6 +360,10 @@ func (s *Server) HandleGroupJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.router != nil && s.router.isChatroom(r.Context(), groupID) {
+		http.Error(w, ErrChatroomManaged.Error(), http.StatusForbidden)
+		return
+	}
 	if err := s.groupStore.AddMember(r.Context(), groupID, claims.UID); err != nil {
 		switch err {
 		case ErrGroupNotFound:
@@ -418,6 +422,10 @@ func (s *Server) HandleGroupInvite(w http.ResponseWriter, r *http.Request) {
 	g, err := s.groupStore.Get(r.Context(), groupID)
 	if err != nil {
 		http.Error(w, "group not found", http.StatusNotFound)
+		return
+	}
+	if g.IsChatroom() {
+		http.Error(w, ErrChatroomManaged.Error(), http.StatusForbidden)
 		return
 	}
 	if g.OwnerUID != claims.UID {

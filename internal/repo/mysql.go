@@ -178,6 +178,7 @@ func (s *MySQLStore) migrate() error {
 			id          VARCHAR(64)  PRIMARY KEY,
 			name        VARCHAR(256) NOT NULL,
 			owner_uid   VARCHAR(64)  NOT NULL,
+			kind        VARCHAR(16)  NOT NULL DEFAULT '',
 			created_at  BIGINT       NOT NULL,
 			INDEX idx_owner (owner_uid)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
@@ -344,6 +345,7 @@ func (s *MySQLStore) migrateProfile() error {
 		{"ALTER TABLE users ADD COLUMN external_id VARCHAR(128) NULL", []uint16{errDupFieldName}},
 		{"ALTER TABLE users ADD UNIQUE INDEX uk_external_id (external_id)", []uint16{errDupKeyName}},
 		{"ALTER TABLE users ADD COLUMN token_version BIGINT NOT NULL DEFAULT 0", []uint16{errDupFieldName}},
+		{"ALTER TABLE `groups` ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT ''", []uint16{errDupFieldName}},
 	}
 	for _, step := range steps {
 		if _, err := s.db.Exec(step.ddl); err != nil && !isMySQLError(err, step.skipped...) {

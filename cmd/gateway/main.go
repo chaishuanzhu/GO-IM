@@ -232,6 +232,7 @@ func NewApp(cfg *configs.Config) (*App, error) {
 
 		// 创建处理传入转发消息的 gRPC 服务器处理器。
 		grpcHandler := gateway.NewGrpcGatewayServer(hub, offlineStore, cfg.Gateway.Grpc.NodeID)
+		grpcHandler.SetOnlineOnly(router.OnlineOnly)
 		grpcSrv, err = gateway.StartGrpcServer(cfg.Gateway.Grpc.Addr, grpcHandler)
 		if err != nil {
 			log.Printf("[main] gRPC server start failed (%v), continuing without multi-gateway", err)

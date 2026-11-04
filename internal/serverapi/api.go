@@ -111,6 +111,7 @@ func New(d Deps) *API {
 		"users/disable":         a.usersDisable,
 		"users/delete":          a.usersDelete,
 		"groups/create":         a.groupsCreate,
+		"groups/get":            a.groupsGet,
 		"groups/members/add":    a.groupsMembersAdd,
 		"groups/members/remove": a.groupsMembersRemove,
 		"groups/dismiss":        a.groupsDismiss,
@@ -417,8 +418,23 @@ type groupView struct {
 	ID        string   `json:"group_id"`
 	Name      string   `json:"name"`
 	OwnerUID  string   `json:"owner_uid"`
+	Type      string   `json:"type"`
 	Members   []string `json:"members"`
 	CreatedAt int64    `json:"created_at"`
+}
+
+// 群类型（groups/create 的 type）。
+const (
+	groupTypeGroup    = "group"
+	groupTypeChatroom = "chatroom"
+)
+
+func viewOfGroup(g *gateway.Group) groupView {
+	v := groupView{ID: g.ID, Name: g.Name, OwnerUID: g.OwnerUID, Type: groupTypeGroup, CreatedAt: g.CreatedAt}
+	if g.IsChatroom() {
+		v.Type = groupTypeChatroom
+	}
+	return v
 }
 
 func (a *API) needGroups() error {
@@ -447,6 +463,7 @@ func (a *API) groupsCreate(ctx context.Context, _ *App, body []byte) (any, error
 		Name    string    `json:"name"`
 		Owner   UserRef   `json:"owner"`
 		Members []UserRef `json:"members"`
+		Type    string    `json:"type"`
 	}
 	if err := decode(body, &req); err != nil {
 		return nil, err
@@ -454,6 +471,14 @@ func (a *API) groupsCreate(ctx context.Context, _ *App, body []byte) (any, error
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" || len([]rune(req.Name)) > 32 {
 		return nil, badRequest("name required (≤ 32)")
+	}
+	create := a.groups.Create
+	switch req.Type {
+	case "", groupTypeGroup:
+	case groupTypeChatroom:
+		create = a.groups.CreateChatroom
+	default:
+		return nil, badRequest("type must be group or chatroom")
 	}
 	owner, err := a.resolve(ctx, req.Owner)
 	if err != nil {
@@ -463,13 +488,38 @@ func (a *API) groupsCreate(ctx context.Context, _ *App, body []byte) (any, error
 	if err != nil {
 		return nil, err
 	}
-	g, err := a.groups.Create(ctx, req.Name, owner.UID, members)
+	g, err := create(ctx, req.Name, owner.UID, members)
 	if err != nil {
 		return nil, groupError(err)
 	}
-	view := groupView{ID: g.ID, Name: g.Name, OwnerUID: g.OwnerUID, CreatedAt: g.CreatedAt}
+	view := viewOfGroup(g)
 	view.Members, _ = a.groups.GetMembers(ctx, g.ID)
 	a.messenger.NotifyGroup(ctx, owner.UID, g.ID, "member_joined", view.Members)
+	return view, nil
+}
+
+// groupsGet 返回群信息与成员（按加入顺序）。
+func (a *API) groupsGet(ctx context.Context, _ *App, body []byte) (any, error) {
+	if err := a.needGroups(); err != nil {
+		return nil, err
+	}
+	var req struct {
+		GroupID string `json:"group_id"`
+	}
+	if err := decode(body, &req); err != nil {
+		return nil, err
+	}
+	if req.GroupID == "" {
+		return nil, badRequest("group_id required")
+	}
+	g, err := a.groups.Get(ctx, req.GroupID)
+	if err != nil {
+		return nil, groupError(err)
+	}
+	view := viewOfGroup(g)
+	if view.Members, err = a.groups.GetMembers(ctx, g.ID); err != nil {
+		return nil, groupError(err)
+	}
 	return view, nil
 }
 

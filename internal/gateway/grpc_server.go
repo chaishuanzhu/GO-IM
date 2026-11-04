@@ -18,6 +18,21 @@ type GrpcGatewayServer struct {
 	clients ClientRegistry
 	offline OfflineStore
 	nodeID  string
+
+	// onlineOnly 判断消息是否只投在线连接（不转存离线）；nil 时只看 IsTransient。
+	onlineOnly func(context.Context, *proto.Message) bool
+}
+
+// SetOnlineOnly 设置只投在线连接的判断（Router.OnlineOnly，含聊天室消息）。
+func (s *GrpcGatewayServer) SetOnlineOnly(fn func(context.Context, *proto.Message) bool) {
+	s.onlineOnly = fn
+}
+
+func (s *GrpcGatewayServer) isOnlineOnly(ctx context.Context, msg *proto.Message) bool {
+	if s.onlineOnly != nil {
+		return s.onlineOnly(ctx, msg)
+	}
+	return msg.IsTransient()
 }
 
 // NewGrpcGatewayServer 创建一个 GrpcGatewayServer,
@@ -59,7 +74,7 @@ func (s *GrpcGatewayServer) ForwardMessage(ctx context.Context, req *proto.Forwa
 				sendErr = err
 			}
 		}
-		if sendErr != nil && req.Message.IsTransient() {
+		if sendErr != nil && s.isOnlineOnly(ctx, req.Message) {
 			return &proto.ForwardResponse{Delivered: false, Error: sendErr.Error()}, nil
 		}
 		if sendErr != nil {
@@ -72,8 +87,8 @@ func (s *GrpcGatewayServer) ForwardMessage(ctx context.Context, req *proto.Forwa
 		return &proto.ForwardResponse{Delivered: true}, nil
 	}
 
-	if req.Message.IsTransient() {
-		return &proto.ForwardResponse{Delivered: false, Error: "target not locally connected, transient dropped"}, nil
+	if s.isOnlineOnly(ctx, req.Message) {
+		return &proto.ForwardResponse{Delivered: false, Error: "target not locally connected, online-only message dropped"}, nil
 	}
 
 	// 目标未在本节点连接 —— 转存离线。

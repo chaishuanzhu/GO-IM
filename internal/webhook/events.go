@@ -61,6 +61,16 @@ func (s *groupStore) Create(ctx context.Context, name, ownerUID string, members 
 	return g, err
 }
 
+func (s *groupStore) CreateChatroom(ctx context.Context, name, ownerUID string, members []string) (*gateway.Group, error) {
+	g, err := s.GroupStore.CreateChatroom(ctx, name, ownerUID, members)
+	if err == nil {
+		for uid := range g.Members {
+			s.joined(g.ID, uid)
+		}
+	}
+	return g, err
+}
+
 func (s *groupStore) AddMember(ctx context.Context, groupID, uid string) error {
 	err := s.GroupStore.AddMember(ctx, groupID, uid)
 	if err == nil {

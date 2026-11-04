@@ -9,11 +9,16 @@ import (
 	"time"
 )
 
+// GroupKindChatroom 是聊天室：成员由接入方管理，消息只推给在线成员，不进离线队列、不计未读、不出现在群列表里。
+// 普通群的 kind 为空串。
+const GroupKindChatroom = "chatroom"
+
 // GroupRow 表示来自数据库的一条群组数据行。
 type GroupRow struct {
 	ID        string
 	Name      string
 	OwnerUID  string
+	Kind      string
 	CreatedAt int64
 }
 
@@ -41,6 +46,11 @@ func (s *MySQLGroupStore) newGroupID() string {
 // CreateGroup 创建一个新群组并添加群主与初始成员。
 // 返回创建的群组数据行。
 func (s *MySQLGroupStore) CreateGroup(ctx context.Context, name, ownerUID string, members []string) (*GroupRow, error) {
+	return s.CreateGroupOfKind(ctx, name, ownerUID, members, "")
+}
+
+// CreateGroupOfKind 与 CreateGroup 相同，kind 为 "" 或 GroupKindChatroom。
+func (s *MySQLGroupStore) CreateGroupOfKind(ctx context.Context, name, ownerUID string, members []string, kind string) (*GroupRow, error) {
 	id := s.newGroupID()
 	now := time.Now().UnixMilli()
 
@@ -51,8 +61,8 @@ func (s *MySQLGroupStore) CreateGroup(ctx context.Context, name, ownerUID string
 	defer tx.Rollback()
 
 	_, err = tx.ExecContext(ctx,
-		"INSERT INTO `groups` (id, name, owner_uid, created_at) VALUES (?, ?, ?, ?)",
-		id, name, ownerUID, now,
+		"INSERT INTO `groups` (id, name, owner_uid, kind, created_at) VALUES (?, ?, ?, ?, ?)",
+		id, name, ownerUID, kind, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert group: %w", err)
@@ -86,7 +96,7 @@ func (s *MySQLGroupStore) CreateGroup(ctx context.Context, name, ownerUID string
 	}
 
 	log.Printf("[mysql_group] created group %s for owner %s with %d initial members", id, ownerUID, len(members))
-	return &GroupRow{ID: id, Name: name, OwnerUID: ownerUID, CreatedAt: now}, nil
+	return &GroupRow{ID: id, Name: name, OwnerUID: ownerUID, Kind: kind, CreatedAt: now}, nil
 }
 
 // AddMember 将用户添加到群组。失败时返回哨兵错误。
@@ -207,8 +217,8 @@ func (s *MySQLGroupStore) GetMembers(ctx context.Context, groupID string) ([]str
 func (s *MySQLGroupStore) GetGroup(ctx context.Context, groupID string) (*GroupRow, error) {
 	g := &GroupRow{}
 	err := s.db.QueryRowContext(ctx,
-		"SELECT id, name, owner_uid, created_at FROM `groups` WHERE id = ?", groupID,
-	).Scan(&g.ID, &g.Name, &g.OwnerUID, &g.CreatedAt)
+		"SELECT id, name, owner_uid, kind, created_at FROM `groups` WHERE id = ?", groupID,
+	).Scan(&g.ID, &g.Name, &g.OwnerUID, &g.Kind, &g.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrGroupNotFound
 	}
@@ -218,13 +228,13 @@ func (s *MySQLGroupStore) GetGroup(ctx context.Context, groupID string) (*GroupR
 	return g, nil
 }
 
-// ListGroups 返回用户所属的全部群组。
+// ListGroups 返回用户所属的全部普通群（不含聊天室）。
 func (s *MySQLGroupStore) ListGroups(ctx context.Context, uid string) ([]*GroupRow, error) {
 	rows, err := s.db.QueryContext(ctx,
 		"SELECT g.id, g.name, g.owner_uid, g.created_at "+
 			"FROM `groups` g "+
 			"INNER JOIN group_members gm ON g.id = gm.group_id "+
-			"WHERE gm.uid = ? "+
+			"WHERE gm.uid = ? AND g.kind = '' "+
 			"ORDER BY g.created_at DESC", uid,
 	)
 	if err != nil {

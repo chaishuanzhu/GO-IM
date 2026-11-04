@@ -1819,8 +1819,11 @@ paths:
   /server/v1/groups/create:
     post:
       tags: [服务端 API]
-      summary: 建群
-      description: 群主自动成为成员，成员收到 `member_joined` 群通知。
+      summary: 建群 / 建聊天室
+      description: >-
+        群主自动成为成员，成员收到 `member_joined` 群通知。`type: chatroom` 建聊天室：成员只能由服务端 API 管理
+        （用户自行加入 / 邀请返回 403），消息只推给在线成员（不进离线队列、不计未读），也不出现在成员的群列表里；
+        适合直播间、观影房间这类临时房间。
       security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
       requestBody:
         required: true
@@ -1836,9 +1839,33 @@ paths:
                   type: array
                   maxItems: 500
                   items: { $ref: "#/components/schemas/UserRef" }
+                type: { type: string, enum: [group, chatroom], default: group }
       responses:
         "200":
           description: 新群
+          content: { application/json: { schema: { $ref: "#/components/schemas/ServerGroup" } } }
+        "400": { $ref: "#/components/responses/ServerError" }
+        "401": { $ref: "#/components/responses/ServerUnauthorized" }
+        "404": { $ref: "#/components/responses/ServerError" }
+
+  /server/v1/groups/get:
+    post:
+      tags: [服务端 API]
+      summary: 查询群
+      description: 返回群信息与成员（按加入顺序），用于接入方与自己的房间数据对账。
+      security: [{ appId: [], appTimestamp: [], appNonce: [], appSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [group_id]
+              properties:
+                group_id: { type: string }
+      responses:
+        "200":
+          description: 群
           content: { application/json: { schema: { $ref: "#/components/schemas/ServerGroup" } } }
         "400": { $ref: "#/components/responses/ServerError" }
         "401": { $ref: "#/components/responses/ServerUnauthorized" }
@@ -2263,6 +2290,7 @@ components:
         group_id: { type: string }
         name: { type: string }
         owner_uid: { type: string }
+        type: { type: string, enum: [group, chatroom] }
         members: { type: array, items: { type: string } }
         created_at: { type: integer, format: int64 }
     ServerErrorBody:

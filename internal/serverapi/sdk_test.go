@@ -71,6 +71,19 @@ func TestSDKAgainstAPI(t *testing.T) {
 	if err := c.DismissGroup(ctx, g.ID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := c.GetGroup(ctx, g.ID); !imserver.IsNotFound(err) {
+		t.Fatalf("dismissed group: %v", err)
+	}
+
+	room, err := c.CreateChatroom(ctx, "chatroom", imserver.External("alice"), []imserver.UserRef{imserver.External("bob")})
+	if err != nil || room.Type != imserver.GroupTypeChatroom {
+		t.Fatalf("chatroom: %+v %v", room, err)
+	}
+	recv(t, bobConn)
+	got, err := c.GetGroup(ctx, room.ID)
+	if err != nil || got.Type != imserver.GroupTypeChatroom || len(got.Members) != 2 || got.Members[0] != alice.UID {
+		t.Fatalf("get chatroom: %+v %v", got, err)
+	}
 
 	id, err := e.mod.Report(ctx, users[0].UID, alice.UID, "m1", g.ID, "spam")
 	if err != nil {

@@ -80,12 +80,19 @@ IM 只负责连接、消息、群和在线状态。两边的边界：
 
 | 接口 | 请求 | 说明 |
 |------|------|------|
-| `groups/create` | `{"name","owner":{...},"members":[{...}]}` | 返回 `{"group_id","name","owner_uid","members","created_at"}` |
+| `groups/create` | `{"name","owner":{...},"members":[{...}],"type"}` | 返回 `{"group_id","name","owner_uid","type","members","created_at"}`；`type` 为 `group`（默认）或 `chatroom`，见下 |
+| `groups/get` | `{"group_id"}` | 返回同上（成员按加入顺序），用于与接入方自己的房间数据对账 |
 | `groups/members/add` | `{"group_id","users":[...]}` | 已在群里的忽略；成员收到 `member_joined` 群通知 |
 | `groups/members/remove` | `{"group_id","users":[...]}` | 不在群里的忽略；成员收到 `member_left` |
 | `groups/dismiss` | `{"group_id"}` | 全体成员收到 `group_dismissed` 后移出，群随之删除 |
 
-每次最多 500 人。接入方后端操作的群与用户在客户端自己建的群完全相同。
+每次最多 500 人。`type: group` 的群与用户在客户端自己建的群完全相同。
+
+`type: chatroom` 是聊天室，适合直播间、观影房间这类临时房间：
+
+- 成员只能由服务端 API 管理：用户自行加入 / 邀请返回 403，退出仍可以（触发 `group.member_left`）。
+- 消息只推给在线成员（跨网关也一样），不进离线队列、不计未读；消息照常落库，可以查历史。
+- 不出现在成员的群列表（`/group/list`、`CmdGroupList`）里。
 
 ## 5. 消息与信令
 
@@ -175,10 +182,10 @@ Paircast（一起看）的服务端（媒体库 `/media/*` + 观影房间 `/room
 - 账号：用户、密码与管理员都在 Paircast；登录时 `users/import`（`external_id` 为 Paircast 用户 ID，同步昵称与头像）+ `users/token`，
   把 IM 地址、`uid` 与 IM 令牌连同 Paircast 自己的会话令牌返回给客户端；停用 / 删除账号时同步 `users/disable` / `users/delete`。
 - 举报审核：Paircast 后台用 `reports/list` / `reports/resolve`，封禁时同时停用 Paircast 账号。
-- 房间 = 一个 IM 群：建房 `groups/create`，进出房 `groups/members/add|remove`，房间清理 `groups/dismiss`。
-- 房间变化用群信令 `paircast.room_updated` 推送；播放同步由客户端之间直接发 `paircast.playback` 信令。
-- 订阅 `group.member_left` / `group.dismissed`，用户在 IM 里退群或群被解散时同步房间成员。
-- 与 GO-IM 同域名部署时，反向代理把 `/account`、`/console`、`/media`、`/room` 转给 Paircast，其余路径转网关；
-  App 里填的服务器地址是 Paircast，IM 地址由登录接口返回。
+- 房间 = 一个 IM 聊天室：建房 `groups/create`（`type: chatroom`），进出房 `groups/members/add|remove`，房间清理 `groups/dismiss`。
+- 房间变化用群信令 `paircast.room_updated` 推送；播放同步由客户端之间直接发 `paircast.playback` 信令，房主同时把播放状态
+  上报给 Paircast，新加入 / 重连的成员先按服务端快照对齐。
+- 订阅 `group.member_left` / `group.dismissed`，用户在 IM 里退群或群被解散时同步房间成员；另有定时对账（`groups/get`）兜住丢失的 webhook。
+- Paircast 与 GO-IM 各用一个域名：App 里填的服务器地址是 Paircast，IM 地址由登录接口返回。
 
 SDK 引用：`go get github.com/chaishuanzhu/GO-IM/pkg/imserver`（独立的 Go 模块，只依赖标准库）。

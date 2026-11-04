@@ -222,15 +222,42 @@ type Group struct {
 	ID        string   `json:"group_id"`
 	Name      string   `json:"name"`
 	OwnerUID  string   `json:"owner_uid"`
+	Type      string   `json:"type"` // GroupTypeGroup 或 GroupTypeChatroom
 	Members   []string `json:"members"`
 	CreatedAt int64    `json:"created_at"`
 }
 
+// 群类型。
+const (
+	GroupTypeGroup = "group"
+	// GroupTypeChatroom 是聊天室：成员只能由服务端 API 管理，消息只推给在线成员
+	// （不进离线、不计未读），也不出现在成员的群列表里。适合直播间、观影房间这类临时房间。
+	GroupTypeChatroom = "chatroom"
+)
+
 // CreateGroup 建群，owner 自动成为成员。
 func (c *Client) CreateGroup(ctx context.Context, name string, owner UserRef, members []UserRef) (*Group, error) {
+	return c.createGroup(ctx, name, owner, members, GroupTypeGroup)
+}
+
+// CreateChatroom 建聊天室（GroupTypeChatroom），owner 自动成为成员。
+func (c *Client) CreateChatroom(ctx context.Context, name string, owner UserRef, members []UserRef) (*Group, error) {
+	return c.createGroup(ctx, name, owner, members, GroupTypeChatroom)
+}
+
+func (c *Client) createGroup(ctx context.Context, name string, owner UserRef, members []UserRef, typ string) (*Group, error) {
 	var out Group
-	err := c.post(ctx, "groups/create", map[string]any{"name": name, "owner": owner, "members": members}, &out)
+	err := c.post(ctx, "groups/create", map[string]any{"name": name, "owner": owner, "members": members, "type": typ}, &out)
 	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetGroup 返回群信息与成员；群不存在时 IsNotFound(err) 为 true。
+func (c *Client) GetGroup(ctx context.Context, groupID string) (*Group, error) {
+	var out Group
+	if err := c.post(ctx, "groups/get", map[string]string{"group_id": groupID}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
