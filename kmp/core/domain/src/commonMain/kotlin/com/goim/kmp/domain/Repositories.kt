@@ -304,11 +304,8 @@ interface StickerRepository {
     /** 拉取远端 catalog，缺失或升级的包下载 pack.json。 */
     suspend fun syncCatalog()
 
-    /** 贴纸图片字节：本地包文件 → 消息 url → catalog base_url，下载后落盘。 */
+    /** 贴纸图片字节：本地缓存 → 网关 `/stickers/{pack}/{file}`，下载后落盘。 */
     suspend fun imageBytes(ref: StickerRef): ByteArray?
-
-    /** 发送用：补上接收方可下载的 CDN 地址。 */
-    suspend fun enrichedRef(item: StickerItem): StickerRef
 
     suspend fun recordRecent(ref: StickerRef)
 

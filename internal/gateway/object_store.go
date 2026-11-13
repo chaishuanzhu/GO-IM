@@ -30,6 +30,9 @@ type ObjectStore interface {
 
 	// Delete 从存储中移除一个 key。
 	Delete(ctx context.Context, key string) error
+
+	// Copy 在存储内把 src 复制到 dst（覆盖）。
+	Copy(ctx context.Context, src, dst string) error
 }
 
 // storedObject 在内存中保存文件数据。
@@ -89,6 +92,18 @@ func (s *InMemoryObjectStore) Delete(_ context.Context, key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.items, key)
+	return nil
+}
+
+// Copy 在内存中复制一个 key。
+func (s *InMemoryObjectStore) Copy(_ context.Context, src, dst string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	obj, ok := s.items[src]
+	if !ok {
+		return fmt.Errorf("key %q not found", src)
+	}
+	s.items[dst] = &storedObject{data: append([]byte(nil), obj.data...), contentType: obj.contentType}
 	return nil
 }
 
@@ -285,6 +300,17 @@ func (s *MinioStore) Get(ctx context.Context, key string) ([]byte, string, error
 func (s *MinioStore) Ping(ctx context.Context) error {
 	_, err := s.client.BucketExists(ctx, s.bucket)
 	return err
+}
+
+// Copy 在桶内服务端复制对象，数据不经过网关。
+func (s *MinioStore) Copy(ctx context.Context, src, dst string) error {
+	_, err := s.client.CopyObject(ctx,
+		minio.CopyDestOptions{Bucket: s.bucket, Object: dst},
+		minio.CopySrcOptions{Bucket: s.bucket, Object: src})
+	if err != nil {
+		return fmt.Errorf("minio copy %q -> %q: %w", src, dst, err)
+	}
+	return nil
 }
 
 // Delete 从 MinIO 中移除一个对象。

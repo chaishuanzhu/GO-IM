@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Convert JackEasons/emoticon packs into GO-IM sticker layout + zip.
+"""Convert JackEasons/emoticon packs into the GO-IM sticker layout.
 
-Output folder (upload this entire directory to OSS):
+Output folder:
   stickers-dist/
     catalog.json
     {pack_id}/pack.json + images
-    {pack_id}.zip
 
-OSS base (user-hosted):
-  https://oss.chaisz.com/im-sticker-pack
+Upload it to the object storage prefix stickers/ with scripts/upload_stickers.sh;
+the gateway serves it at GET /stickers/… (no login).
 """
 
 from __future__ import annotations
@@ -25,7 +24,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "stickers-dist"
-CDN_BASE = "https://oss.chaisz.com/im-sticker-pack"
 
 # Small/medium packs from https://github.com/JackEasons/emoticon
 # (source_name, pack_id, display_name)
@@ -107,13 +105,11 @@ def convert_pack(source_name: str, pack_id: str, display_name: str, work: Path) 
         shutil.copy2(src, out_dir / file_name)
         stickers.append({"id": sid, "file": file_name, "w": 240, "h": 240})
 
-    base_url = f"{CDN_BASE.rstrip('/')}/{pack_id}/"
     pack = {
         "pack_id": pack_id,
         "name": display_name,
         "version": 1,
         "cover": stickers[0]["file"],
-        "base_url": base_url,
         "stickers": stickers,
     }
     (out_dir / "pack.json").write_text(
@@ -121,20 +117,11 @@ def convert_pack(source_name: str, pack_id: str, display_name: str, work: Path) 
         encoding="utf-8",
     )
 
-    zip_out = OUT / f"{pack_id}.zip"
-    if zip_out.exists():
-        zip_out.unlink()
-    with zipfile.ZipFile(zip_out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for f in sorted(out_dir.iterdir()):
-            zf.write(f, arcname=f.name)
-
-    print(f"  -> {pack_id}: {len(stickers)} stickers, zip={zip_out.stat().st_size // 1024}KB")
+    print(f"  -> {pack_id}: {len(stickers)} stickers")
     return {
         "pack_id": pack_id,
         "name": display_name,
         "version": 1,
-        "base_url": base_url,
-        "zip_url": f"{CDN_BASE.rstrip('/')}/{pack_id}.zip",
         "cover": stickers[0]["file"],
         "count": len(stickers),
     }
@@ -161,7 +148,6 @@ def main() -> int:
 
     catalog = {
         "version": 1,
-        "cdn_base": CDN_BASE.rstrip("/"),
         "packs": catalog_packs,
     }
     (OUT / "catalog.json").write_text(
@@ -169,18 +155,9 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    # Preset index for the iOS client (small JSON only — assets live on OSS).
-    ios_res = ROOT / "ios" / "App" / "Resources" / "Stickers"
-    ios_res.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(OUT / "catalog.json", ios_res / "catalog.json")
-
-    docs = ROOT / "docs" / "stickers"
-    docs.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(OUT / "catalog.json", docs / "catalog.json")
 
     print(f"\nDone: {len(catalog_packs)} packs in {OUT}")
-    print(f"Upload the contents of {OUT}/ to OSS prefix im-sticker-pack")
-    print(f"  e.g. catalog.json -> {CDN_BASE}/catalog.json")
+    print("Upload with scripts/upload_stickers.sh (object storage prefix stickers/)")
     return 0
 
 

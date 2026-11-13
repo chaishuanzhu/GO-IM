@@ -72,7 +72,7 @@
 | 视频选择发送 + 播放 | PHPicker + AVPlayer | `expect VideoPlayer`（AVPlayer / Media3 ExoPlayer / Desktop 系统播放器打开） | M3 |
 | 文件选择发送 + 下载进度 + 预览 | UIDocumentPicker + `FileDownloadCenter` + Quick Look | FileKit 选择 + `FileDownloadCenter`（common）+ `expect FileOpener` | M3 |
 | 语音录制（AAC m4a，16kHz，单声道，32kbps）+ 波形 + 播放 | `VoiceRecorder` / `VoicePlayer` / 波形视图 | `expect AudioRecorder` / `AudioPlayer`，波形用 Compose Canvas | M3 |
-| 贴纸（OSS catalog + 内置包 + 最近使用，`msg_type=6`） | `StickerRepositoryImpl` | `commonMain` 同实现（Ktor + Okio 落盘），GIF/WebP 动图解码见 §9 | M3 |
+| 贴纸（网关 `/stickers/` catalog + 最近使用，`msg_type=6`） | `StickerRepositoryImpl` | `commonMain` 同实现（Ktor + Okio 落盘），GIF/WebP 动图解码见 §9 | M3 |
 | Emoji 面板 | `EmojiAccessoryPanel` | 同 | M3 |
 | 图片 / 视频 / 文件预览 | `MediaPreview`（缩放、视频、QuickLook） | `MediaPreviewScreen`（zoomable 图片 + VideoPlayer + FileOpener） | M3 |
 | 带 token 的 `/file` 缩略图 / 原图加载 | Kingfisher | Coil 3（URL 拼 `uid`+`token`） | M3 |
@@ -441,7 +441,7 @@ fun buildDatabase(builder: RoomDatabase.Builder<AppDatabase>): AppDatabase =
 全部用 `@Serializable` 数据类在 `core:model` 中定义，字段名与 iOS / 服务端一致：
 
 - 文件类（`msg_type` 2–5）：`file_id`、`name`、`size`、`mime`、`width`、`height`、`thumb_width`、`thumb_height`、`duration`（兼容整数与浮点）。
-- 贴纸（`msg_type=6`）：`pack_id`、`sticker_id`、`format`、`width`、`height`、`url?`。
+- 贴纸（`msg_type=6`）：`pack_id`、`sticker_id`、`format`、`width`、`height`；图片按 `pack_id` 从网关 `/stickers/` 取。
 - 群通知、搜索参数、未读计数：见 [07 §10](07-api-reference.md)。
 - 会话预览文案（`[图片]`、`[语音] 3"`、`[视频]`、`[文件]`、`[表情]`）复刻 iOS `MessagePreview`。
 
@@ -499,7 +499,7 @@ GOIM/
 | 好友 | `POST /friend/request|accept|reject|remove`、`GET /friend/list` |
 | 文件 | `POST /upload`（multipart：uid / token / file）、`GET /file?id=&thumb=1&uid=&token=` |
 | 搜索 / 未读 | `GET /search`、`GET /unread` |
-| 贴纸 | OSS `catalog.json` + 包下载（与 iOS 默认 catalog 地址一致，可配置） |
+| 贴纸 | 网关 `GET /stickers/catalog.json` → `{pack}/pack.json` → `{pack}/{file}`（跟随服务器地址） |
 
 - 错误映射到 `DomainError`（`NotAuthenticated` / `Network` / `Server(code, body)` / `Persistence` / `InvalidState` / `Cancelled`），文案与 iOS 相同。
 - 上传使用 `onUpload` 进度回调驱动气泡上的进度；下载使用 `onDownload` + `FileDownloadCenter` 的 `Flow<FileDownloadEvent>`（`Progress` / `Completed` / `Failed`）。
@@ -656,7 +656,7 @@ GOIM/
 
 **状态：数据链路完成并联调；UI 三端编译通过，未做真机 / iOS 端互发的人工验收。** 三端构建（`assembleDebug`、`:app:desktop` 编译、`:app:shared:linkDebugFrameworkIosSimulatorArm64`）、`./gradlew check iosSimulatorArm64Test`（261 个用例）全绿。
 
-**范围**：文件上传 / 下载（带进度）、图片（多选 ≤ 9、原图开关、相机、压缩、全屏预览缩放）、视频、文件（下载后打开）、语音（按住录制、上滑取消、电平波形、播放）、贴纸（CDN catalog、动图、最近使用）、Emoji 面板、@ 提及（群成员 / 单聊对方与好友）。
+**范围**：文件上传 / 下载（带进度）、图片（多选 ≤ 9、原图开关、相机、压缩、全屏预览缩放）、视频、文件（下载后打开）、语音（按住录制、上滑取消、电平波形、播放）、贴纸（网关 catalog、动图、最近使用）、Emoji 面板、@ 提及（群成员 / 单聊对方与好友）。
 
 **对本地网关联调**（`GatewayE2ETest.mediaUploadSendAndDownload`）：
 
@@ -676,7 +676,7 @@ GOIM/
 - **视频**：从系统选择器选取，时长由 `MediaMetadataRetriever` / `AVURLAsset` 读取（桌面端无时长）；气泡为文件卡片样式，**没有封面缩略图**。
 - **打开文件 / 视频**：iOS 用 Quick Look；Android 用 `FileProvider`（`${applicationId}.fileprovider`）交给外部应用；桌面用 `Desktop.open`。
 - **语音**：Android `MediaRecorder`（AAC 16 kHz 单声道），iOS `AVAudioRecorder`；**桌面端暂不支持录音（M4）**，语音播放交给系统应用。不足 500 ms 提示「录音太短」。
-- **动图贴纸**：Android 用 coil-gif（`AnimatedImageDecoder` / `GifDecoder`）；桌面与 iOS 用 Skia `Codec` 逐帧绘制。贴纸 catalog / manifest / 图片缓存在 `GOIM/Catalog/Stickers`，内置 iOS 同款预设 catalog，离线可用；最近使用存在 meta 表（`sticker.recent`，最多 20 个）。
+- **动图贴纸**：Android 用 coil-gif（`AnimatedImageDecoder` / `GifDecoder`）；桌面与 iOS 用 Skia `Codec` 逐帧绘制。贴纸 catalog / manifest / 图片从网关 `/stickers/` 取并缓存在 `GOIM/Catalog/Stickers`（缓存后离线可用）；最近使用存在 meta 表（`sticker.recent`，最多 20 个）。
 - **相机**：仅 Android / iOS（FileKit）；桌面端隐藏「拍照」入口。
 - **未做**：iOS 的相册缩略图横条与「有限访问」提示条；视频封面；桌面拖拽发送（M4）。
 - **Info.plist 权限**（麦克风 / 相机 / 相册）加在 `iosApp/Project.swift`，修改后需重新 `tuist generate`。

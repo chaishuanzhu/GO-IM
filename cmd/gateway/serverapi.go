@@ -47,7 +47,7 @@ func setupServerAPI(cfg *configs.Config, mysqlStore *repo.MySQLStore, rdb *redis
 	if maxTTL <= 0 {
 		maxTTL = time.Duration(cfg.JWT.Expiration)
 	}
-	api := serverapi.New(serverapi.Deps{
+	deps := serverapi.Deps{
 		Apps:        apps,
 		Nonces:      nonces,
 		Users:       mysqlStore,
@@ -55,9 +55,12 @@ func setupServerAPI(cfg *configs.Config, mysqlStore *repo.MySQLStore, rdb *redis
 		Accounts:    server,
 		Messenger:   router,
 		Moderation:  mod,
-		Files:       mysqlStore,
 		MaxTokenTTL: maxTTL,
-	})
+	}
+	if avatars := server.Avatars(); avatars != nil {
+		deps.Files = avatars
+	}
+	api := serverapi.New(deps)
 	log.Printf("[main] server api enabled for %d app(s)", apps.Len())
 	return api, apps, nil
 }

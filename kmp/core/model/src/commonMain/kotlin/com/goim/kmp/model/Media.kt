@@ -63,7 +63,7 @@ val Message.hasLocalAttachment: Boolean
     get() = msgType != MsgType.Text && msgType != MsgType.Sticker &&
         MessagePreview.decodeFileMeta(content)?.fileId?.let(LocalFileId::isLocal) == true
 
-/** 贴纸消息（msg_type=6）的 `content`；以 pack_id + sticker_id 为准，`url` 是接收方未安装该包时的回退地址。 */
+/** 贴纸消息（msg_type=6）的 `content`；接收方按 pack_id + sticker_id 从网关 `/stickers/` 取图。 */
 @Serializable
 data class StickerRef(
     @SerialName("pack_id") val packId: String,
@@ -71,7 +71,6 @@ data class StickerRef(
     val format: String = "png",
     val width: Int = 240,
     val height: Int = 240,
-    val url: String? = null,
 ) {
     val key: String get() = "$packId/$stickerId"
 
@@ -92,9 +91,9 @@ data class StickerItem(
     val width: Int = 240,
     val height: Int = 240,
 ) {
-    fun asRef(url: String? = null): StickerRef {
+    fun asRef(): StickerRef {
         val ext = fileName.substringAfterLast('.', "").lowercase()
-        return StickerRef(packId, stickerId, ext.ifEmpty { "png" }, width, height, url)
+        return StickerRef(packId, stickerId, ext.ifEmpty { "png" }, width, height)
     }
 }
 
@@ -104,5 +103,4 @@ data class StickerPack(
     val version: Int,
     val coverFileName: String?,
     val stickers: List<StickerItem>,
-    val baseUrl: String?,
 )

@@ -157,18 +157,35 @@ class GoImFileApiTest {
 
     @Test
     fun stickerCatalogAndManifestParsing() {
-        val packs = StickerCdnApi.parseCatalog(
-            """{"cdn_base":"https://cdn/x","packs":[{"pack_id":"a","name":"A","version":2,"cover":"1.png","count":3},
-               {"pack_id":"b","name":"","base_url":"https://other/b","count":1}]}""",
+        val packs = StickerApi.parseCatalog(
+            """{"version":1,"cdn_base":"https://old","packs":[{"pack_id":"a","name":"A","version":2,"cover":"1.png","count":3},
+               {"pack_id":"b","name":"","count":1}]}""",
         )
-        assertEquals("https://cdn/x/a/", packs[0].baseUrl)
-        assertEquals("https://other/b/", packs[1].baseUrl)
+        assertEquals(listOf("a", "b"), packs.map { it.packId })
+        assertEquals(2, packs[0].version)
         assertEquals("b", packs[1].name)
-        val pack = StickerCdnApi.parsePackManifest(
+        val pack = StickerApi.parsePackManifest(
             """{"pack_id":"capoo","name":"咖波","version":1,"stickers":[{"id":"001","file":"001.gif","w":240,"h":240}]}""",
-            "https://cdn/capoo",
         )
-        assertEquals("https://cdn/capoo/", pack.baseUrl)
         assertEquals("gif", pack.stickers.single().asRef().format)
+    }
+
+    @Test
+    fun stickerApiReadsFromGateway() = runTest {
+        val seen = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            seen += request.url.toString()
+            when (request.url.encodedPath) {
+                "/stickers/catalog.json" -> respond("""{"packs":[{"pack_id":"capoo","name":"咖波","count":1}]}""")
+                "/stickers/capoo/pack.json" -> respond("""{"pack_id":"capoo","stickers":[{"id":"001","file":"001.gif"}]}""")
+                "/stickers/capoo/001.gif" -> respond(byteArrayOf(1, 2, 3))
+                else -> respond("missing", HttpStatusCode.NotFound)
+            }
+        }
+        val api = StickerApi(createHttpClient(engine)) { "https://im.example.com/" }
+        assertEquals("capoo", api.catalog().single().packId)
+        assertEquals("001.gif", api.pack("capoo").stickers.single().fileName)
+        assertEquals(3, api.image("capoo", "001.gif").size)
+        assertEquals("https://im.example.com/stickers/catalog.json", seen.first())
     }
 }

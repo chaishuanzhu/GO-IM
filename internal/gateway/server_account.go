@@ -540,7 +540,7 @@ func (s *Server) HandleProfile(w http.ResponseWriter, r *http.Request) {
 
 // claimAvatar 校验文件属于该用户且是已就绪的图片，并标记为头像（之后可公开读取）。
 func (s *Server) claimAvatar(ctx context.Context, uid string, fileID int64) string {
-	if s.fileStore == nil {
+	if s.Avatars() == nil {
 		return "avatar upload not available"
 	}
 	f, err := s.fileStore.GetFile(ctx, fileID)
@@ -554,11 +554,9 @@ func (s *Server) claimAvatar(ctx context.Context, uid string, fileID int64) stri
 	if !IsImageMIME(f.Mime) {
 		return "avatar must be an image"
 	}
-	if !f.IsAvatar {
-		if err := s.fileStore.MarkAvatar(ctx, fileID); err != nil {
-			log.Printf("[server] mark avatar %d: %v", fileID, err)
-			return "avatar file not found"
-		}
+	if err := s.Avatars().MarkAvatar(ctx, fileID); err != nil {
+		log.Printf("[server] mark avatar %d: %v", fileID, err)
+		return "avatar file not found"
 	}
 	return ""
 }
@@ -689,16 +687,19 @@ func (s *Server) HandleAvatar(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	key := id
+	key := avatarKey(fileID)
 	if r.URL.Query().Get("thumb") == "1" && f.HasThumb {
-		key = id + "_thumb"
+		key = thumbKey(key)
 	}
-	etag := `"` + key + `"`
+	etag := `"` + strings.TrimPrefix(key, avatarsPrefix) + `"`
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	data, contentType, err := s.objectStore.Get(ctx, key)
+	if err != nil && key != avatarKey(fileID) {
+		data, contentType, err = s.objectStore.Get(ctx, avatarKey(fileID))
+	}
 	if err != nil {
 		log.Printf("[server] avatar %s read: %v", key, err)
 		http.NotFound(w, r)

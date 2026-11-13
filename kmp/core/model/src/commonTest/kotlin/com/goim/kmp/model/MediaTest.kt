@@ -25,14 +25,16 @@ class MediaTest {
     }
 
     @Test
-    fun stickerContentUsesSnakeCaseAndKeepsUrl() {
-        val ref = StickerRef("capoo", "001-file_1437", "gif", 240, 240, "https://cdn/capoo/001-file_1437.gif")
+    fun stickerContentUsesSnakeCase() {
+        val ref = StickerRef("capoo", "001-file_1437", "gif", 240, 240)
         val json = ref.toContentJson()
         assertTrue(json.contains("\"pack_id\":\"capoo\"") && json.contains("\"sticker_id\":\"001-file_1437\""), json)
         assertEquals(ref, StickerRef.decode(json))
         assertTrue(ref.isAnimated)
         // iOS 发出的最简 content（无 url / 尺寸）也能解析
         assertEquals(StickerRef("doge", "001"), StickerRef.decode("""{"pack_id":"doge","sticker_id":"001"}"""))
+        // 旧消息里的 url 字段忽略
+        assertEquals(StickerRef("doge", "001"), StickerRef.decode("""{"pack_id":"doge","sticker_id":"001","url":"https://x/y.png"}"""))
         assertNull(StickerRef.decode("not json"))
     }
 

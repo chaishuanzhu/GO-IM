@@ -186,6 +186,26 @@ RustFS 的 S3 端口对外暴露后，务必修改默认的 `RUSTFS_SECRET_KEY`�
 
 文件按会话鉴权：只有上传者和文件被发送到的会话成员可以下载。
 
+## 对象存储布局与贴纸
+
+网关只用一个桶（`object_storage.bucket`，默认 `im-files`），按前缀区分用途：
+
+| 前缀 | 内容 |
+|------|------|
+| `files/{file_id}`、`files/{file_id}_thumb` | 聊天发送的文件与图片缩略图 |
+| `avatars/{file_id}`、`avatars/{file_id}_thumb` | 用户头像（设为头像时从 `files/` 移过来），`GET /avatar/{id}` 公开读取 |
+| `stickers/` | 表情包：`catalog.json`、`{pack_id}/pack.json`、`{pack_id}/{file}`，`GET /stickers/…` 公开读取 |
+
+导入 / 更新表情包（`stickers-dist/` 由 `scripts/build_sticker_packs.py`、`scripts/build_capoo_packs.py` 生成）：
+
+```bash
+S3_ENDPOINT=http://127.0.0.1:9000 S3_BUCKET=im-files \
+S3_ACCESS_KEY=rustfsadmin S3_SECRET_KEY=<RUSTFS_SECRET_KEY> \
+  scripts/upload_stickers.sh stickers-dist
+```
+
+脚本会去掉清单里的绝对地址，客户端统一从网关取；先传图片和包清单，最后传 `catalog.json`。新增包时 `version` 加一，客户端据此刷新缓存。
+
 ## 接入其他应用
 
 GO-IM 可以作为 IM 通道接入其他应用：接入方后端通过服务端 API（`/server/v1/*`）导入用户、签发令牌、管理群、发消息和信令，并接收 webhook。

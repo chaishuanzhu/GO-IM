@@ -73,7 +73,7 @@ func (s *Server) HandlePresign(w http.ResponseWriter, r *http.Request) {
 	mime := safeUploadMIME(r.FormValue("mime"))
 
 	fileID := s.snow.Next()
-	key := strconv.FormatInt(fileID, 10)
+	key := fileKey(fileID)
 	if err := s.fileStore.CreateFile(r.Context(), &repo.File{
 		FileID:    fileID,
 		OwnerUID:  claims.UID,
@@ -97,7 +97,7 @@ func (s *Server) HandlePresign(w http.ResponseWriter, r *http.Request) {
 
 	// Content-Length 由 HTTP 客户端按实际 body 设置，只把 Content-Type 交给客户端。
 	writeJSON(w, map[string]interface{}{
-		"file_id":    key,
+		"file_id":    strconv.FormatInt(fileID, 10),
 		"upload_url": uploadURL,
 		"method":     http.MethodPut,
 		"headers":    map[string]string{"Content-Type": headers.Get("Content-Type")},
@@ -143,7 +143,7 @@ func (s *Server) HandleComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := strconv.FormatInt(fileID, 10)
+	key := fileKey(fileID)
 	size, _, err := s.direct.Stat(ctx, key)
 	if err != nil {
 		http.Error(w, "object not uploaded", http.StatusConflict)
@@ -196,8 +196,7 @@ func (s *Server) generateThumb(fileID int64) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	key := strconv.FormatInt(fileID, 10)
-	data, _, err := s.objectStore.Get(ctx, key)
+	data, _, err := s.objectStore.Get(ctx, fileKey(fileID))
 	if err != nil {
 		log.Printf("[server] thumbnail %d: read original: %v", fileID, err)
 		return
@@ -207,7 +206,13 @@ func (s *Server) generateThumb(fileID int64) {
 		log.Printf("[server] thumbnail %d: %v", fileID, err)
 		return
 	}
-	if err := s.objectStore.Put(ctx, key+"_thumb", thumb, "image/jpeg"); err != nil {
+	// 生成期间可能已被设为头像（对象移到了 avatars/），按当前记录决定写入位置。
+	f, err := s.fileStore.GetFile(ctx, fileID)
+	if err != nil || f == nil {
+		log.Printf("[server] thumbnail %d: file record gone: %v", fileID, err)
+		return
+	}
+	if err := s.objectStore.Put(ctx, thumbKey(storedKey(f)), thumb, "image/jpeg"); err != nil {
 		log.Printf("[server] thumbnail %d: upload: %v", fileID, err)
 		return
 	}
@@ -218,15 +223,15 @@ func (s *Server) generateThumb(fileID int64) {
 
 // HandleDownload 提供文件/图片数据。
 // GET /file?id={file_id}[&thumb=1]&uid=uid&token=token
-// 有记录的文件仅上传者、文件所在会话的成员与管理员可读；无记录的旧文件登录即可读。
+// 有记录的文件仅上传者、文件所在会话的成员与管理员可读；未启用文件记录（无 MySQL）时登录即可读。
 // 启用直传时 302 到预签名下载地址，否则由网关支持 Range 地转发。
 func (s *Server) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	if s.objectStore == nil {
 		http.Error(w, "object store not available", http.StatusServiceUnavailable)
 		return
 	}
-	id := r.URL.Query().Get("id")
-	if id == "" {
+	fileID, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil || fileID <= 0 {
 		http.Error(w, "id required", http.StatusBadRequest)
 		return
 	}
@@ -237,31 +242,28 @@ func (s *Server) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	wantThumb := r.URL.Query().Get("thumb") == "1"
 
-	key := id
-	if wantThumb {
-		key = id + "_thumb"
-	}
+	original := fileKey(fileID)
 	var f *repo.File
-	if fileID, err := strconv.ParseInt(id, 10, 64); err == nil && s.fileStore != nil {
+	if s.fileStore != nil {
 		if f, err = s.fileStore.GetFile(ctx, fileID); err != nil {
 			log.Printf("[server] download: get file %d: %v", fileID, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-	}
-	if f != nil {
-		if f.Status != repo.FileStatusReady || (claims.Role != "admin" && !fileAccessible(ctx, s.fileStore, s.groupStore, claims.UID, f)) {
+		if f == nil || f.Status != repo.FileStatusReady || (claims.Role != "admin" && !fileAccessible(ctx, s.fileStore, s.groupStore, claims.UID, f)) {
 			http.Error(w, "file not found", http.StatusNotFound)
 			return
 		}
-		if wantThumb && !f.HasThumb {
-			key = id
-		}
+		original = storedKey(f)
+	}
+	key := original
+	if wantThumb && (f == nil || f.HasThumb) {
+		key = thumbKey(original)
 	}
 
 	if s.direct != nil {
 		filename := ""
-		if f != nil && key == id && !isInlineMIME(f.Mime) {
+		if f != nil && key == original && !isInlineMIME(f.Mime) {
 			filename = f.Name
 		}
 		u, err := s.direct.PresignGet(ctx, key, filename, s.downloadTTL)
@@ -323,9 +325,9 @@ func (s *Server) sweepPendingFiles(ctx context.Context) {
 
 // discardFile 删除对象（含缩略图）与文件记录，对象不存在不算错误。
 func (s *Server) discardFile(ctx context.Context, fileID int64) {
-	key := strconv.FormatInt(fileID, 10)
+	key := fileKey(fileID)
 	_ = s.objectStore.Delete(ctx, key)
-	_ = s.objectStore.Delete(ctx, key+"_thumb")
+	_ = s.objectStore.Delete(ctx, thumbKey(key))
 	if err := s.fileStore.DeleteFile(ctx, fileID); err != nil {
 		log.Printf("[server] delete file %d: %v", fileID, err)
 	}

@@ -21,7 +21,7 @@ import com.goim.kmp.model.User
 import com.goim.kmp.model.isAdmin
 import com.goim.kmp.network.GoImApi
 import com.goim.kmp.network.GoImFileApi
-import com.goim.kmp.network.StickerCdnApi
+import com.goim.kmp.network.StickerApi
 import com.goim.kmp.network.GoImUserApi
 import com.goim.kmp.storage.AppDirectories
 import com.goim.kmp.storage.LocalMediaStore
@@ -211,7 +211,7 @@ class SessionManager(
             LocalMediaStore(home),
             scope,
         )
-        val stickers = StickerRepositoryImpl(StickerCdnApi(httpClient), directories.root / "Catalog" / "Stickers", database)
+        val stickers = StickerRepositoryImpl(StickerApi(httpClient) { settings.apiBaseUrl.value }, directories.root / "Catalog" / "Stickers", database)
         val profiles = ProfileRepositoryImpl(userApi, database, files, user, scope, onSelfChanged = { profile ->
             auth.updateSavedProfile(profile)
             _accounts.value = auth.savedAccounts()

@@ -264,7 +264,7 @@ class GatewayE2ETest {
         assertTrue(voiceMeta.mime.startsWith("audio/"), "保留客户端 audio mime: ${voiceMeta.mime}")
         assertContentEquals(voiceBytes, bob.files.ensureLocal(voiceMeta.fileId, voiceMeta.name).let { FileSystem.SYSTEM.read(it.toPath()) { readByteArray() } })
 
-        val sticker = StickerRef("capoo", "001-file_1437", "gif", 240, 240, "https://oss.chaisz.com/im-sticker-pack/capoo/001-file_1437.gif")
+        val sticker = StickerRef("capoo", "001-file_1437", "gif", 240, 240)
         val sent = SendStickerUseCase(alice.messages, alice.conversations, alice.stickers)(bobUid, ChatType.SINGLE, sticker, alice.user, null)
         awaitSent(alice, sent.id)
         val stickerRecv = withTimeout(10_000) {

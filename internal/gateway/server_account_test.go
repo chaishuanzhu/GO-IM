@@ -510,7 +510,7 @@ func TestProfileUpdateAndAvatar(t *testing.T) {
 	e.users.Create(ctx, &repo.User{UID: "100001", Nickname: "b"})
 
 	png := tinyPNG(t)
-	e.objs.Put(ctx, "501", png, "image/png")
+	e.objs.Put(ctx, "files/501", png, "image/png")
 	e.files.CreateFile(ctx, &repo.File{FileID: 501, OwnerUID: "100000", Mime: "image/png", Size: int64(len(png)), Status: repo.FileStatusReady})
 	e.files.CreateFile(ctx, &repo.File{FileID: 502, OwnerUID: "100001", Mime: "image/png", Status: repo.FileStatusReady})
 	e.files.CreateFile(ctx, &repo.File{FileID: 503, OwnerUID: "100000", Mime: "application/pdf", Status: repo.FileStatusReady})
@@ -540,6 +540,17 @@ func TestProfileUpdateAndAvatar(t *testing.T) {
 	p := decode(t, rec)
 	if p["nickname"] != "小明" || p["avatar_url"] != "/avatar/501" || p["email"] != "a@example.com" {
 		t.Fatalf("profile = %v", p)
+	}
+
+	// 设为头像后对象从 files/ 移到 avatars/。
+	if _, _, err := e.objs.Get(ctx, "files/501"); err == nil {
+		t.Fatal("avatar object should leave files/")
+	}
+	if _, _, err := e.objs.Get(ctx, "avatars/501"); err != nil {
+		t.Fatalf("avatar object missing: %v", err)
+	}
+	if f, _ := e.files.GetFile(ctx, 501); f == nil || !f.IsAvatar {
+		t.Fatalf("file not marked as avatar: %+v", f)
 	}
 
 	avatarRec = httptest.NewRecorder()

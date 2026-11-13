@@ -148,8 +148,7 @@ class ChatMediaActions internal constructor(
     fun voiceOutputPath(extension: String = "m4a"): String = "${deps.voiceDir.trimEnd('/')}/rec_${nowMillis()}.$extension"
 
     fun sendSticker(item: StickerItem) = launchReporting {
-        val ref = deps.stickers.enrichedRef(item)
-        deps.sendSticker(to, chatType, ref, self, title)
+        deps.sendSticker(to, chatType, item.asRef(), self, title)
         refreshRecent()
     }
 

@@ -62,6 +62,8 @@ HTTP /user/profile (GET own or ?target, POST nickname / signature (≤ 60, empty
 HTTP /friend/remark (friend_uid, remark ≤ 32, empty clears) → friend_remarks row, private to the caller; /friend/list rows carry signature + remark; KMP shows 备注名(昵称) or just the nickname
 HTTP /group/rename (owner only, trimmed, ≤ 32), /group/alias (member's own group nickname, ≤ 32, empty clears) → group_members.alias; /group/members carries aliases; KMP group info shows 群昵称(昵称) or the nickname (friend remarks are not used in groups), tapping a member opens their info with an add-friend entry for non-friends
 HTTP /avatar/{file_id}[?thumb=1] → public, only files marked is_avatar, immutable cache
+Object storage layout (internal/gateway/storage.go, one bucket): files/{id}[_thumb] chat files; avatars/{id}[_thumb] avatars (claimAvatar / users/import → AvatarFiles.MarkAvatar copies files/ → avatars/, marks the row, deletes the source); stickers/ sticker packs
+HTTP /stickers/catalog.json | /stickers/{pack}/pack.json | /stickers/{pack}/{file} → public, read from stickers/ (scripts/upload_stickers.sh imports stickers-dist); clients take stickers only from the gateway
 
 # Presence (presence.go, server_presence.go)
 Hub first connection / last disconnect → presenceHook → RedisPresence.Changed → SETBIT im:online:{node} <numeric uid> (uid < 2^27; non-numeric skipped)
@@ -157,7 +159,7 @@ routeOrStoreOffline → HashRing.Get(targetUID) → if peer owns: GrpcForwarder.
 | Component | File | Role |
 |-----------|------|------|
 | `App` | `cmd/gateway/main.go` | Wires everything together; owns `ClientRegistry`, `Server`, `Config`. Supports dual-transport (WebSocket + gnet TCP) startup via `transport` config. |
-| `Server` | `internal/gateway/server.go`, `server_account.go` | HTTP handlers: `/login` (JWT issue), `/register` (email code), `/auth/email-code`, `/password/reset`, `/user/*` profile + search, `/avatar/`, `/online`, `/health`, group CRUD, upload/download, search, unread. Depends on `ClientRegistry` (not concrete `*Hub`). Also owns `StartGNet()` for gnet TCP server. |
+| `Server` | `internal/gateway/server.go`, `server_account.go` | HTTP handlers: `/login` (JWT issue), `/register` (email code), `/auth/email-code`, `/password/reset`, `/user/*` profile + search, `/avatar/`, `/stickers/`, `/online`, `/health`, group CRUD, upload/download, search, unread. Depends on `ClientRegistry` (not concrete `*Hub`). Also owns `StartGNet()` for gnet TCP server. |
 | `Hub` | `internal/gateway/hub.go` | Implements `ClientRegistry` + `OfflineStore`. Connection registry (`map[UID][]*Client`, one entry per device) + offline message queue (in-memory, max 1000/user). `DevicePolicy` (`single` / `per_platform` / `unlimited`) decides which existing connections a new one kicks (`CmdKick`); the same `device_id` reconnecting is replaced silently. `Count()` counts users, not connections. All methods accept `context.Context`. |
 | `ClientRegistry` | `internal/gateway/interfaces.go` | Interface for connection management: `Register`, `Unregister`, `Get` (latest connection), `GetAll` (every device), `IsOnline`, `OnlineUsers`, `Count`. Implemented by `*Hub`; Redis impl planned. |
 | `OfflineStore` | `internal/gateway/interfaces.go` | Interface for offline message queues: `StoreOffline`, `DrainOffline`. Implemented by `*Hub` (in-memory) and `*RedisOfflineStore` (Redis-backed, with in-memory fallback). |
@@ -315,7 +317,7 @@ The server loads `configs/config.json`, falling back to `Default()` if the file 
 
 Default config values:
 - Transport: `"websocket"` (options: `"websocket"`, `"gnet"`, `"both"`)
-- HTTP: `:8080` (serves /login, /register, /auth/email-code, /password/reset, /user/*, /avatar/, /online, /health, /ws, /upload, /file, /search, /unread, /group/*, /friend/*, /admin/*, /swagger/)
+- HTTP: `:8080` (serves /login, /register, /auth/email-code, /password/reset, /user/*, /avatar/, /stickers/, /online, /health, /ws, /upload, /file, /search, /unread, /group/*, /friend/*, /admin/*, /swagger/)
 - TCP: `:8081` (gnet raw TCP, port used when transport is "gnet" or "both")
 - JWT secret: `"change-me-in-production"`, 7-day expiration, HS256
 - Snowflake worker ID: 1

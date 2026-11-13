@@ -132,7 +132,7 @@ func decodeFileResp(t *testing.T, rec *httptest.ResponseRecorder) map[string]int
 func (e *fileTestEnv) uploadReady(t *testing.T, uid string, data []byte, mime string) string {
 	t.Helper()
 	id := e.presign(t, uid, "f.bin", len(data), mime)
-	_ = e.objs.Put(context.Background(), id, data, mime)
+	_ = e.objs.Put(context.Background(), "files/"+id, data, mime)
 	if rec := e.post(t, e.srv.HandleComplete, uid, url.Values{"file_id": {id}}); rec.Code != http.StatusOK {
 		t.Fatalf("complete: %d %s", rec.Code, rec.Body.String())
 	}
@@ -180,7 +180,7 @@ func TestDirectUploadImageFlow(t *testing.T) {
 	if rec := e.post(t, e.srv.HandleComplete, "alice", url.Values{"file_id": {id}}); rec.Code != http.StatusConflict {
 		t.Fatalf("complete before upload: expected 409, got %d", rec.Code)
 	}
-	_ = e.objs.Put(ctx, id, png, "image/png")
+	_ = e.objs.Put(ctx, "files/"+id, png, "image/png")
 	if rec := e.post(t, e.srv.HandleComplete, "bob", url.Values{"file_id": {id}}); rec.Code != http.StatusNotFound {
 		t.Fatalf("complete by non-owner: expected 404, got %d", rec.Code)
 	}
@@ -211,7 +211,7 @@ func TestDirectUploadImageFlow(t *testing.T) {
 	}
 
 	rec = e.download(t, "alice", id, "&thumb=1")
-	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://oss.test/get/"+id+"_thumb?fn=" {
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://oss.test/get/files/"+id+"_thumb?fn=" {
 		t.Fatalf("thumb download: %d %s", rec.Code, rec.Header().Get("Location"))
 	}
 	if cc := rec.Header().Get("Cache-Control"); cc != "private, max-age=1800" {
@@ -223,7 +223,7 @@ func TestCompleteSizeMismatchDiscards(t *testing.T) {
 	e := newFileTestEnv(t, true)
 	ctx := context.Background()
 	id := e.presign(t, "alice", "a.bin", 10, "application/octet-stream")
-	_ = e.objs.Put(ctx, id, []byte("short"), "application/octet-stream")
+	_ = e.objs.Put(ctx, "files/"+id, []byte("short"), "application/octet-stream")
 	if rec := e.post(t, e.srv.HandleComplete, "alice", url.Values{"file_id": {id}}); rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
@@ -231,7 +231,7 @@ func TestCompleteSizeMismatchDiscards(t *testing.T) {
 	if f, _ := e.files.GetFile(ctx, fid); f != nil {
 		t.Error("file row should be deleted")
 	}
-	if _, _, err := e.objs.Get(ctx, id); err == nil {
+	if _, _, err := e.objs.Get(ctx, "files/"+id); err == nil {
 		t.Error("object should be deleted")
 	}
 }
@@ -240,7 +240,7 @@ func TestCompleteDowngradesFakeImage(t *testing.T) {
 	e := newFileTestEnv(t, true)
 	data := []byte("<html><script>alert(1)</script></html>")
 	id := e.presign(t, "alice", "x.png", len(data), "image/png")
-	_ = e.objs.Put(context.Background(), id, data, "image/png")
+	_ = e.objs.Put(context.Background(), "files/"+id, data, "image/png")
 	rec := e.post(t, e.srv.HandleComplete, "alice", url.Values{"file_id": {id}, "width": {"10"}, "height": {"10"}})
 	m := decodeFileResp(t, rec)
 	if m["mime"] != "application/octet-stream" || m["width"] != 0.0 {
@@ -295,15 +295,20 @@ func TestDownloadAdminReadsAnyFile(t *testing.T) {
 func TestDownloadPendingIsHidden(t *testing.T) {
 	e := newFileTestEnv(t, true)
 	id := e.presign(t, "alice", "a.bin", 3, "application/octet-stream")
-	_ = e.objs.Put(context.Background(), id, []byte("abc"), "application/octet-stream")
+	_ = e.objs.Put(context.Background(), "files/"+id, []byte("abc"), "application/octet-stream")
 	if rec := e.download(t, "alice", id, ""); rec.Code != http.StatusNotFound {
 		t.Fatalf("pending file: expected 404, got %d", rec.Code)
 	}
 }
 
-func TestDownloadLegacyStreamsWithRange(t *testing.T) {
+func TestDownloadStreamsWithRange(t *testing.T) {
 	e := newFileTestEnv(t, false)
-	_ = e.objs.Put(context.Background(), "12345", []byte("0123456789"), "application/octet-stream")
+	ctx := context.Background()
+	_ = e.files.CreateFile(ctx, &repo.File{FileID: 12345, OwnerUID: "carol", Size: 10, Mime: "application/octet-stream", Status: repo.FileStatusReady})
+	_ = e.objs.Put(ctx, "files/12345", []byte("0123456789"), "application/octet-stream")
+	if rec := e.download(t, "carol", "999", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown id: expected 404, got %d", rec.Code)
+	}
 
 	q := "/file?id=12345&uid=carol&token=" + jwtToken(t, e.jwt, "carol", "carol")
 	req := httptest.NewRequest(http.MethodGet, q, nil)
@@ -431,13 +436,13 @@ func TestSweepPendingFiles(t *testing.T) {
 	fresh := &repo.File{FileID: 2, OwnerUID: "a", Status: repo.FileStatusPending, CreatedAt: time.Now().UnixMilli()}
 	_ = e.files.CreateFile(ctx, old)
 	_ = e.files.CreateFile(ctx, fresh)
-	_ = e.objs.Put(ctx, "1", []byte("x"), "")
+	_ = e.objs.Put(ctx, "files/1", []byte("x"), "")
 
 	e.srv.sweepPendingFiles(ctx)
 	if f, _ := e.files.GetFile(ctx, 1); f != nil {
 		t.Error("stale pending file should be removed")
 	}
-	if _, _, err := e.objs.Get(ctx, "1"); err == nil {
+	if _, _, err := e.objs.Get(ctx, "files/1"); err == nil {
 		t.Error("stale object should be removed")
 	}
 	if f, _ := e.files.GetFile(ctx, 2); f == nil {

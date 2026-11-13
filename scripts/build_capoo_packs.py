@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download Capoo (咖波) packs and merge into stickers-dist for OSS upload.
+"""Download Capoo (咖波) packs and merge into stickers-dist (upload with scripts/upload_stickers.sh).
 
 Source: CST-Cat/capoo-gallery (compressed GIFs mirrored from Capoo Telegram packs)
   https://github.com/CST-Cat/capoo-gallery
@@ -14,13 +14,11 @@ import re
 import shutil
 import sys
 import urllib.request
-import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "stickers-dist"
 TMP = ROOT / ".tmp" / "capoo-src"
-CDN_BASE = "https://oss.chaisz.com/im-sticker-pack"
 GALLERY_RAW = "https://raw.githubusercontent.com/CST-Cat/capoo-gallery/main/gifs"
 GALLERY_API = "https://api.github.com/repos/CST-Cat/capoo-gallery/contents/gifs"
 
@@ -109,13 +107,11 @@ def convert_pack(src_dir: Path, pack_id: str, display_name: str) -> dict:
         shutil.copy2(src, out_dir / file_name)
         stickers.append({"id": sid, "file": file_name, "w": 240, "h": 240})
 
-    base_url = f"{CDN_BASE.rstrip('/')}/{pack_id}/"
     pack = {
         "pack_id": pack_id,
         "name": display_name,
         "version": 1,
         "cover": stickers[0]["file"],
-        "base_url": base_url,
         "stickers": stickers,
     }
     (out_dir / "pack.json").write_text(
@@ -123,20 +119,11 @@ def convert_pack(src_dir: Path, pack_id: str, display_name: str) -> dict:
         encoding="utf-8",
     )
 
-    zip_out = OUT / f"{pack_id}.zip"
-    if zip_out.exists():
-        zip_out.unlink()
-    with zipfile.ZipFile(zip_out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for f in sorted(out_dir.iterdir()):
-            zf.write(f, arcname=f.name)
-
-    print(f"  -> {pack_id}: {len(stickers)} stickers, zip={zip_out.stat().st_size // 1024}KB")
+    print(f"  -> {pack_id}: {len(stickers)} stickers")
     return {
         "pack_id": pack_id,
         "name": display_name,
         "version": 1,
-        "base_url": base_url,
-        "zip_url": f"{CDN_BASE.rstrip('/')}/{pack_id}.zip",
         "cover": stickers[0]["file"],
         "count": len(stickers),
     }
@@ -148,25 +135,18 @@ def merge_catalog(new_entries: list[dict]) -> None:
     if catalog_path.exists():
         catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     else:
-        catalog = {"version": 1, "cdn_base": CDN_BASE.rstrip("/"), "packs": []}
+        catalog = {"version": 1, "packs": []}
 
     replace_ids = {e["pack_id"] for e in new_entries}
     keep = [p for p in catalog.get("packs", []) if p.get("pack_id") not in replace_ids]
     catalog["version"] = 1
-    catalog["cdn_base"] = CDN_BASE.rstrip("/")
+    catalog.pop("cdn_base", None)
     catalog["packs"] = keep + new_entries
     catalog_path.write_text(
         json.dumps(catalog, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
 
-    ios_res = ROOT / "ios" / "App" / "Resources" / "Stickers"
-    ios_res.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(catalog_path, ios_res / "catalog.json")
-
-    docs = ROOT / "docs" / "stickers"
-    docs.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(catalog_path, docs / "catalog.json")
 
 
 def main() -> int:
@@ -186,7 +166,7 @@ def main() -> int:
 
     merge_catalog(entries)
     print(f"\nDone: {len(entries)} Capoo packs merged into {OUT}")
-    print(f"Upload stickers-dist/ to OSS prefix im-sticker-pack")
+    print("Upload with scripts/upload_stickers.sh (object storage prefix stickers/)")
     return 0
 
 

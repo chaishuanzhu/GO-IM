@@ -94,7 +94,7 @@ Phase 4 在不改变 Phase 1-3 架构骨架的前提下，横向扩展了三个�
 
 - 支持格式：JPEG, PNG, GIF, WebP（通过 `golang.org/x/image/webp`）
 - 解压炸弹防御：超过 4096px 的图片跳过缩略图生成
-- 上传时自动生成缩略图并存入 object store（`{fileID}_thumb` key）
+- 上传时自动生成缩略图并存入 object store（与原文件同目录，`files/{fileID}_thumb`；头像为 `avatars/{fileID}_thumb`）
 
 ### 3.4 待完成
 

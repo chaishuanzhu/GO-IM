@@ -305,7 +305,6 @@ internal suspend fun fetchBytes(client: HttpClient, url: String): ByteArray {
 
 @Serializable
 internal data class CatalogDto(
-    @SerialName("cdn_base") val cdnBase: String? = null,
     val packs: List<CatalogPackDto> = emptyList(),
 )
 
@@ -314,7 +313,6 @@ internal data class CatalogPackDto(
     @SerialName("pack_id") val packId: String,
     val name: String = "",
     val version: Int = 1,
-    @SerialName("base_url") val baseUrl: String? = null,
     val cover: String? = null,
     val count: Int = 0,
 )
@@ -325,7 +323,6 @@ internal data class PackManifestDto(
     val name: String = "",
     val version: Int = 1,
     val cover: String? = null,
-    @SerialName("base_url") val baseUrl: String? = null,
     val stickers: List<StickerDto> = emptyList(),
 )
 
@@ -337,41 +334,36 @@ data class CatalogPack(
     val packId: String,
     val name: String,
     val version: Int,
-    val baseUrl: String,
     val cover: String?,
     val count: Int,
 )
 
-/** 贴纸 CDN：`catalog.json` → 每包 `pack.json` → `{base_url}{file}`；不需要登录。 */
-class StickerCdnApi(private val client: HttpClient) {
-    suspend fun catalog(url: String = CATALOG_URL): List<CatalogPack> = parseCatalog(fetchBytes(client, url).decodeToString())
+/** 网关贴纸接口（docs/07 `GET /stickers/…`，无需登录）：`catalog.json` → `{pack}/pack.json` → `{pack}/{file}`。 */
+class StickerApi(
+    private val client: HttpClient,
+    private val baseUrl: () -> String,
+) {
+    suspend fun catalog(): List<CatalogPack> = parseCatalog(fetchBytes(client, url("catalog.json")).decodeToString())
 
-    suspend fun pack(baseUrl: String): StickerPack = parsePackManifest(fetchBytes(client, normalized(baseUrl) + "pack.json").decodeToString(), baseUrl)
+    suspend fun pack(packId: String): StickerPack = parsePackManifest(fetchBytes(client, url("$packId/pack.json")).decodeToString())
 
-    suspend fun bytes(url: String): ByteArray = fetchBytes(client, url)
+    suspend fun image(packId: String, fileName: String): ByteArray = fetchBytes(client, url("$packId/$fileName"))
+
+    private fun url(path: String) = baseUrl().trimEnd('/') + "/stickers/" + path
 
     companion object {
-        const val CDN_BASE = "https://oss.chaisz.com/im-sticker-pack"
-        const val CATALOG_URL = "$CDN_BASE/catalog.json"
-
-        fun normalized(baseUrl: String) = if (baseUrl.endsWith('/')) baseUrl else "$baseUrl/"
-
-        fun parseCatalog(text: String): List<CatalogPack> {
-            val dto = apiJson.decodeFromString(CatalogDto.serializer(), text)
-            val cdn = dto.cdnBase?.trimEnd('/') ?: CDN_BASE
-            return dto.packs.map {
+        fun parseCatalog(text: String): List<CatalogPack> =
+            apiJson.decodeFromString(CatalogDto.serializer(), text).packs.map {
                 CatalogPack(
                     packId = it.packId,
                     name = it.name.ifEmpty { it.packId },
                     version = it.version,
-                    baseUrl = normalized(it.baseUrl?.takeIf { u -> u.isNotEmpty() } ?: "$cdn/${it.packId}/"),
                     cover = it.cover,
                     count = it.count,
                 )
             }
-        }
 
-        fun parsePackManifest(text: String, fallbackBaseUrl: String): StickerPack {
+        fun parsePackManifest(text: String): StickerPack {
             val dto = apiJson.decodeFromString(PackManifestDto.serializer(), text)
             return StickerPack(
                 packId = dto.packId,
@@ -379,7 +371,6 @@ class StickerCdnApi(private val client: HttpClient) {
                 version = dto.version,
                 coverFileName = dto.cover,
                 stickers = dto.stickers.map { StickerItem(dto.packId, it.id, it.file, it.w, it.h) },
-                baseUrl = normalized(dto.baseUrl?.takeIf { it.isNotEmpty() } ?: fallbackBaseUrl),
             )
         }
     }

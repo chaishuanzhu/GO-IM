@@ -571,6 +571,36 @@ paths:
           description: "`If-None-Match` 命中"
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /stickers/{path}:
+    get:
+      tags: [用户]
+      summary: 贴纸（表情包）
+      description: |
+        无需登录，读取对象存储 `stickers/` 前缀下的贴纸资源（运维用 `scripts/upload_stickers.sh` 导入）：
+        - `catalog.json`：贴纸包目录 `{"version","packs":[{"pack_id","name","version","cover","count"}]}`
+        - `{pack_id}/pack.json`：包清单 `{"pack_id","name","version","cover","stickers":[{"id","file","w","h"}]}`
+        - `{pack_id}/{file}`：贴纸图片（webp / gif / png）
+
+        JSON 缓存 5 分钟，图片缓存 7 天；支持 `If-None-Match`。
+      security: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          description: "`catalog.json`、`{pack_id}/pack.json` 或 `{pack_id}/{file}`"
+          schema: { type: string, example: "capoo/pack.json" }
+      responses:
+        "200":
+          description: JSON 或图片
+          content:
+            application/json:
+              schema: { type: object }
+            image/*:
+              schema: { type: string, format: binary }
+        "304":
+          description: "`If-None-Match` 命中"
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /online:
     get:
       tags: [用户]

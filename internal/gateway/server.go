@@ -1141,8 +1141,7 @@ func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Printf("[server] thumbnail generation for %s failed: %v (uploading original only)", fileID, err)
 			} else {
-				thumbKey := fileID + "_thumb"
-				if err := s.objectStore.Put(r.Context(), thumbKey, thumb, "image/jpeg"); err != nil {
+				if err := s.objectStore.Put(r.Context(), thumbKey(fileKey(fileNum)), thumb, "image/jpeg"); err != nil {
 					log.Printf("[server] thumbnail upload for %s failed: %v", fileID, err)
 				} else {
 					thumbW, thumbH = ImageDimensions(thumb)
@@ -1153,11 +1152,11 @@ func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 将原图上传到对象存储。
-	if err := s.objectStore.Put(r.Context(), fileID, data, mime); err != nil {
+	if err := s.objectStore.Put(r.Context(), fileKey(fileNum), data, mime); err != nil {
 		log.Printf("[server] upload %s failed: %v", fileID, err)
 		// 原图上传失败时清理缩略图。
 		if IsImageMIME(mime) {
-			_ = s.objectStore.Delete(r.Context(), fileID+"_thumb")
+			_ = s.objectStore.Delete(r.Context(), thumbKey(fileKey(fileNum)))
 		}
 		http.Error(w, "upload failed", http.StatusInternalServerError)
 		return

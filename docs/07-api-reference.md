@@ -259,6 +259,22 @@ email=alice@example.com&code=123456&new_password=newpass1
 
 无需登录。只能读取已被设为头像的文件；`?thumb=1` 返回 200px 缩略图（没有缩略图时返回原图）。响应带 `Cache-Control: public, max-age=31536000, immutable`，换头像会产生新的 URL。
 
+设为头像时对象（含缩略图）从对象存储 `files/{id}` 移到 `avatars/{id}`，之后该文件仍可通过 `GET /file` 按会话鉴权读取。
+
+#### GET /stickers/{path} — 贴纸（表情包）
+
+无需登录。内容在对象存储 `stickers/` 前缀下，由 `scripts/upload_stickers.sh` 导入；客户端统一从网关取，不再使用外部 CDN。
+
+| 路径 | 内容 |
+|------|------|
+| `/stickers/catalog.json` | 贴纸包目录：`{"version":1,"packs":[{"pack_id","name","version","cover","count"}]}` |
+| `/stickers/{pack_id}/pack.json` | 包清单：`{"pack_id","name","version","cover","stickers":[{"id","file","w","h"}]}` |
+| `/stickers/{pack_id}/{file}` | 贴纸图片（gif / png / jpg / webp） |
+
+JSON `Cache-Control: public, max-age=300`，图片 `max-age=604800`；带 `ETag`，支持 `If-None-Match`。路径只允许上述三种形式（段为字母数字与 `._-`），其他返回 `404`。
+
+贴纸消息（`msg_type=6`）的 `content` 为 `{"pack_id","sticker_id","format","width","height"}`，接收方按 `pack_id` / 包清单从网关取图。
+
 #### GET /online — 在线用户
 
 **请求**
@@ -457,7 +473,7 @@ GET /group/list?uid=alice
 ```json
 {
   "file_id": "368662284068720640",
-  "upload_url": "https://oss.example.com/im-files/368662284068720640?X-Amz-Algorithm=...",
+  "upload_url": "https://oss.example.com/im-files/files/368662284068720640?X-Amz-Algorithm=...",
   "method": "PUT",
   "headers": { "Content-Type": "image/jpeg" },
   "expires_at": 1792051200000,
@@ -558,7 +574,7 @@ GET /file?id=337501598508912642&thumb=1&uid=alice&token=eyJhbG...
 - 开启直传时返回 `302`，`Location` 为对象存储的预签名下载地址（默认 1 小时有效，`Cache-Control: private, max-age=1800`）；图片/音视频内联显示，其他文件以原文件名作为附件下载。客户端需跟随重定向。
 - 未开启直传时直接返回文件数据，支持 `Range` 断点续传。
 
-请求缩略图但缩略图不存在（非图片、过大或尚未生成）时返回原文件。
+请求缩略图但缩略图不存在（非图片、过大或尚未生成）时返回原文件。没有文件记录的 ID 返回 `404`。
 
 **错误**
 | 状态码 | 说明 |

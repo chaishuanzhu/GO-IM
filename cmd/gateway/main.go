@@ -368,6 +368,22 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		server.SetPeerBroadcaster(grpcForwarder)
 	}
 
+	// --- 文件记录(按会话鉴权)与客户端直传 ---
+	var fileStore repo.FileStore = gateway.NewInMemoryFileStore()
+	if mysqlStore != nil {
+		fileStore = mysqlStore
+	}
+	server.SetFileStore(fileStore)
+	router.SetFileStore(fileStore)
+	if ms, ok := objectStore.(*gateway.MinioStore); ok && ms.DirectEnabled() {
+		osCfg := cfg.Gateway.ObjectStorage
+		server.SetDirectUpload(ms, osCfg.MaxUpload,
+			time.Duration(osCfg.PresignUploadTTL), time.Duration(osCfg.PresignDownloadTTL))
+		log.Printf("[main] direct upload enabled via %s (max %d bytes)", osCfg.PublicEndpoint, osCfg.MaxUpload)
+	} else {
+		log.Printf("[main] direct upload disabled (object_storage.public_endpoint not set), clients use POST /upload")
+	}
+
 	// --- 接入方服务端 API(/server/v1/*) ---
 	serverAPI, serverApps, err := setupServerAPI(cfg, mysqlStore, rdb, groupStore, server, router, modSvc)
 	if err != nil {
@@ -398,22 +414,6 @@ func NewApp(cfg *configs.Config) (*App, error) {
 		})
 		server.SetPresence(presence)
 		log.Printf("[main] presence: redis bitmap (node=%s)", node)
-	}
-
-	// --- 文件记录(按会话鉴权)与客户端直传 ---
-	var fileStore repo.FileStore = gateway.NewInMemoryFileStore()
-	if mysqlStore != nil {
-		fileStore = mysqlStore
-	}
-	server.SetFileStore(fileStore)
-	router.SetFileStore(fileStore)
-	if ms, ok := objectStore.(*gateway.MinioStore); ok && ms.DirectEnabled() {
-		osCfg := cfg.Gateway.ObjectStorage
-		server.SetDirectUpload(ms, osCfg.MaxUpload,
-			time.Duration(osCfg.PresignUploadTTL), time.Duration(osCfg.PresignDownloadTTL))
-		log.Printf("[main] direct upload enabled via %s (max %d bytes)", osCfg.PublicEndpoint, osCfg.MaxUpload)
-	} else {
-		log.Printf("[main] direct upload disabled (object_storage.public_endpoint not set), clients use POST /upload")
 	}
 
 	// --- 邮箱验证码(注册 / 找回密码 / 绑定邮箱) ---
@@ -603,6 +603,7 @@ func (app *App) Run(ctx context.Context) error {
 	mux.HandleFunc("/user/blocks", app.Server.HandleUserBlocks)
 	mux.HandleFunc("/user/report", app.Server.HandleUserReport)
 	mux.HandleFunc("/avatar/", app.Server.HandleAvatar)
+	mux.HandleFunc("/stickers/", app.Server.HandleStickers)
 	mux.HandleFunc("/online", app.Server.HandleOnlineUsers)
 
 	// 群聊管理端点。
