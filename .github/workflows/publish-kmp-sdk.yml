@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Override goim.sdk.version (empty = gradle.properties)"
+        description: "Override goim.sdk.version (leave empty to use gradle.properties)"
         required: false
         default: ""
 
@@ -31,10 +31,10 @@ jobs:
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ORG_GRADLE_PROJECT_goim.sdk.version: ${{ inputs.version }}
         run: |
+          set -euo pipefail
+          EXTRA=()
           if [ -n "${{ inputs.version }}" ]; then
-            ./gradlew publish -Pgoim.sdk.version="${{ inputs.version }}" --no-configuration-cache --stacktrace
-          else
-            ./gradlew publish --no-configuration-cache --stacktrace
+            EXTRA+=(-Pgoim.sdk.version="${{ inputs.version }}")
           fi
+          ./gradlew publish "${EXTRA[@]}" --no-configuration-cache --stacktrace
