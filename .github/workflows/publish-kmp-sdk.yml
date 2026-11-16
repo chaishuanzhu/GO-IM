@@ -1,4 +1,6 @@
 # Publish KMP SDK (lite/full + transitive libs) to GitHub Packages.
+# Publishes kotlinMultiplatform + android + desktop (JVM). iOS target artifacts
+# need a macOS runner; add a follow-up job when XCFramework Maven publish is required.
 name: publish-kmp-sdk
 
 on:
@@ -15,7 +17,7 @@ permissions:
 
 jobs:
   publish:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: kmp
@@ -32,8 +34,15 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          ARGS=(
+            publishKotlinMultiplatformPublicationToGitHubPackagesRepository
+            publishAndroidReleasePublicationToGitHubPackagesRepository
+            publishDesktopPublicationToGitHubPackagesRepository
+            --no-configuration-cache
+            --stacktrace
+          )
           if [ -n "${{ inputs.version }}" ]; then
-            ./gradlew publish -Pgoim.sdk.version="${{ inputs.version }}" --no-configuration-cache --stacktrace
+            ./gradlew -Pgoim.sdk.version="${{ inputs.version }}" "${ARGS[@]}"
           else
-            ./gradlew publish --no-configuration-cache --stacktrace
+            ./gradlew "${ARGS[@]}"
           fi
