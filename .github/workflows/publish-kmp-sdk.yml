@@ -1,0 +1,40 @@
+# Publish KMP SDK (lite/full + transitive libs) to GitHub Packages.
+name: publish-kmp-sdk
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override goim.sdk.version (empty = gradle.properties)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: kmp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Publish to GitHub Packages
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG_GRADLE_PROJECT_goim.sdk.version: ${{ inputs.version }}
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            ./gradlew publish -Pgoim.sdk.version="${{ inputs.version }}" --no-configuration-cache --stacktrace
+          else
+            ./gradlew publish --no-configuration-cache --stacktrace
+          fi
