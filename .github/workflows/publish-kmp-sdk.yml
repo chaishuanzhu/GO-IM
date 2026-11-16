@@ -32,9 +32,8 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
-          EXTRA=()
           if [ -n "${{ inputs.version }}" ]; then
-            EXTRA+=(-Pgoim.sdk.version="${{ inputs.version }}")
+            ./gradlew publish -Pgoim.sdk.version="${{ inputs.version }}" --no-configuration-cache --stacktrace
+          else
+            ./gradlew publish --no-configuration-cache --stacktrace
           fi
-          ./gradlew publish "${EXTRA[@]}" --no-configuration-cache --stacktrace
