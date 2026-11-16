@@ -92,3 +92,4 @@ wire = { id = "com.squareup.wire", version.ref = "wire" }
 # convention plugins (build-logic)
 goim-kmp-library = { id = "goim.kmp.library" }
 goim-kmp-compose = { id = "goim.kmp.compose" }
+goim-kmp-publish = { id = "goim.kmp.publish" }

@@ -32,5 +32,9 @@ gradlePlugin {
             id = "goim.kmp.compose"
             implementationClass = "KmpComposeConventionPlugin"
         }
+        register("kmpPublish") {
+            id = "goim.kmp.publish"
+            implementationClass = "GoImPublishConventionPlugin"
+        }
     }
 }

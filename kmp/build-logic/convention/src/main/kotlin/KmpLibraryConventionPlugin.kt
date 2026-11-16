@@ -17,6 +17,7 @@ class KmpLibraryConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
         pluginManager.apply("org.jetbrains.kotlin.multiplatform")
         pluginManager.apply("com.android.library")
+        applyGoImPublishIfLibrary()
 
         val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
         fun version(alias: String) = libs.findVersion(alias).get().requiredVersion
