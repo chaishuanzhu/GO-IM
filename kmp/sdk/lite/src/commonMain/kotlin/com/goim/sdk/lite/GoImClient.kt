@@ -67,6 +67,9 @@ class GoImClient private constructor(
         return session.value
     }
 
+    /** 切换 IM 网关根地址（须在 [openSession] 前调用）。 */
+    fun setServerUrl(url: String) = manager.setApiBaseUrl(url)
+
     companion object {
         fun create(config: GoImConfig, context: PlatformContext): GoImClient {
             val directories = AppDirectories(goimRootDirectory(context))

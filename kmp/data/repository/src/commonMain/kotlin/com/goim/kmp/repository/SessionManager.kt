@@ -129,6 +129,9 @@ class SessionManager(
     /** 非主动登出（被踢 / 登录失效）时提示用户。 */
     val ended: SharedFlow<SessionEndReason> = _ended.asSharedFlow()
 
+    /** 宿主在 [openSession] 前切换网关地址（嵌入式 App 的 IM URL 可能与业务服不同）。 */
+    fun setApiBaseUrl(url: String) = settings.setApiBaseUrl(url)
+
     val currentSession: UserSession? get() = (state.value as? SessionState.LoggedIn)?.session
 
     private val _accounts = MutableStateFlow(auth.savedAccounts())
