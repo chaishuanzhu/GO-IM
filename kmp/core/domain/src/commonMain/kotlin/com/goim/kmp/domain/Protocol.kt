@@ -34,6 +34,20 @@ sealed interface InboundEvent {
 
     /** 对方处理了我发出的好友请求；[removed] 表示对方删除了与我的好友关系。 */
     data class FriendResponded(val peerUid: String, val accepted: Boolean, val removed: Boolean = false) : InboundEvent
+
+    /**
+     * 在线-only 信令（CmdSignal）；不落库、无 ACK/未读。
+     * [type] 为 `"<ns>.<name>"`（如 `paircast.playback`）；[dataJson] 为 `data` 字段的 JSON 文本。
+     */
+    data class Signal(
+        val from: String,
+        val to: String,
+        val chatType: ChatType,
+        val type: String,
+        val dataJson: String,
+        val msgId: Long = 0L,
+        val timestampMs: Long = 0L,
+    ) : InboundEvent
 }
 
 /** 出站信封（对应 iOS `OutboundEnvelope`）。 */
@@ -55,4 +69,15 @@ sealed interface OutboundEnvelope {
     data class FriendRequest(val to: String) : OutboundEnvelope
 
     data class FriendResponse(val to: String, val accept: Boolean) : OutboundEnvelope
+
+    /**
+     * 在线-only 信令；[dataJson] 写入 content 的 `data`（须为合法 JSON，默认 `{}`）。
+     * [chatType] 为 [ChatType.SINGLE] 时 [to] 为 uid；否则为群/聊天室 ID。
+     */
+    data class Signal(
+        val to: String,
+        val type: String,
+        val dataJson: String = "{}",
+        val chatType: ChatType = ChatType.GROUP,
+    ) : OutboundEnvelope
 }

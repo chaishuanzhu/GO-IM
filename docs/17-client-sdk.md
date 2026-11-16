@@ -97,8 +97,8 @@ repositories {
 
 ```kotlin
 // KMP commonMain，或 Android 用 sdk-*-android
-implementation("com.goim:sdk-lite:0.1.0-SNAPSHOT")
-// implementation("com.goim:sdk-full:0.1.0-SNAPSHOT")
+implementation("com.goim:sdk-lite:0.2.0-SNAPSHOT")
+// implementation("com.goim:sdk-full:0.2.0-SNAPSHOT")
 ```
 
 ---
@@ -143,6 +143,16 @@ suspend fun startIm(context: PlatformContext, uid: String, token: String) {
 
     session.conversations.observeConversations().collect { /* UI */ }
     session.sendText(peer = "100001", text = "hi")
+
+    // CmdSignal：在线-only，不落库；connection.inboundEvents 为全量 raw（可多订阅）
+    session.sendSignal(
+        to = "g_room",
+        type = "paircast.playback",
+        dataJson = """{"action":"pause","seq":3}""",
+    )
+    session.signals.collect { signal ->
+        if (signal.type == "paircast.room_updated") { /* 解析 signal.dataJson */ }
+    }
 
     client.sessionEnded.collect { reason ->
         when (reason) {
@@ -198,4 +208,5 @@ fun HostImTab(client: GoImClient) {
 **Q: 只要消息能力？** 用 Lite，不要引 Full。  
 **Q: Token 过期？** `sessionEnded` → `closeSession` → 重新 `users/token` → `openSession`。  
 **Q: 本机 publish 401？** Token 缺 `write:packages`，用 Actions 发布或 `gh auth refresh -h github.com -s write:packages`。  
-**Q: 和 Paircast？** 服务端 `pkg/imserver`；客户端 Lite 自绘即可。
+**Q: 和 Paircast？** 服务端 `pkg/imserver`；客户端 Lite 自绘 + `sendSignal` / `signals`（如 `paircast.playback`）。  
+**Q: Signal？** `session.sendSignal(to, type, dataJson)` / `session.signals`；内容 `{"type","data"}`，无 ACK/离线/未读。

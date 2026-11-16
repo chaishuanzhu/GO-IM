@@ -52,8 +52,22 @@ class CmdDispatchHandler(
             )
             Cmd.HEARTBEAT -> onHeartbeat()
             Cmd.LOGIN_RESP -> onLoginResp()
+            Cmd.SIGNAL -> mapSignal(msg)?.let { onEvent(it) }
             else -> ctx.fireChannelRead(msg)
         }
+    }
+
+    private fun mapSignal(w: WireMessage): InboundEvent.Signal? {
+        val (type, dataJson) = SignalCodec.parse(w.content) ?: return null
+        return InboundEvent.Signal(
+            from = w.from,
+            to = w.to,
+            chatType = ChatType.from(w.chat_type),
+            type = type,
+            dataJson = dataJson,
+            msgId = w.msg_id,
+            timestampMs = w.timestamp,
+        )
     }
 
     private fun mapMessage(w: WireMessage) = Message(

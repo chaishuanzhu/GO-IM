@@ -29,19 +29,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import com.goim.kmp.pipeline.SignalCodec
 import im.Message as WireMessage
 
 /**
@@ -71,10 +73,13 @@ class ConnectionRepositoryImpl(
     private val _state = MutableStateFlow(ConnectionState.DISCONNECTED)
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
-    private val events = Channel<InboundEvent>(Channel.UNLIMITED)
+    /** 多订阅（SessionCoordinator + 宿主 Signal/raw）；缓冲满时丢最旧。 */
+    private val events = MutableSharedFlow<InboundEvent>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
 
-    /** 单一收集者（SessionCoordinator）。 */
-    override val inboundEvents: Flow<InboundEvent> = events.receiveAsFlow()
+    override val inboundEvents: Flow<InboundEvent> = events.asSharedFlow()
 
     private var transport: IMTransport? = null
     private var pipeline: IMPipeline? = null
@@ -214,7 +219,7 @@ class ConnectionRepositoryImpl(
         p.addLast(
             CmdDispatchHandler(
                 selfUid = user.uid,
-                onEvent = { events.trySend(it) },
+                onEvent = { events.tryEmit(it) },
                 onLoginResp = { loginGate.complete(Unit) },
                 onHeartbeat = { pongReceived = true },
                 onKick = {
@@ -420,6 +425,20 @@ class ConnectionRepositoryImpl(
                 cmd = Cmd.FRIEND_RESPONSE, seq = nextSeq(), from = user.uid, to = envelope.to, timestamp = now,
                 content = if (envelope.accept) """{"action":"accept"}""" else """{"action":"reject"}""",
             )
+            is OutboundEnvelope.Signal -> {
+                val content = SignalCodec.encode(envelope.type, envelope.dataJson)
+                    ?: error("signal type must be non-empty")
+                WireMessage(
+                    cmd = Cmd.SIGNAL,
+                    seq = nextSeq(),
+                    from = user.uid,
+                    to = envelope.to,
+                    chat_type = envelope.chatType.value,
+                    content = content,
+                    timestamp = now,
+                    need_ack = false,
+                )
+            }
         }
     }
 

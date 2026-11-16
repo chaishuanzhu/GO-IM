@@ -92,6 +92,7 @@ class SessionCoordinator(
             is InboundEvent.FriendRequestReceived -> friends?.onRequestReceived(event)
             is InboundEvent.FriendRequestResult -> friends?.onRequestResult(event)
             is InboundEvent.FriendResponded -> friends?.onResponded(event)
+            is InboundEvent.Signal -> Unit // 宿主经 inboundEvents / signals 自行处理；不落库
         }
     }
 

@@ -2,18 +2,22 @@ package com.goim.kmp.repository
 
 import com.goim.kmp.common.DomainError
 import com.goim.kmp.domain.InboundEvent
+import com.goim.kmp.domain.OutboundEnvelope
 import com.goim.kmp.domain.ServerSettingsRepository
+import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.ConnectionState
 import com.goim.kmp.model.TransportKind
 import com.goim.kmp.model.User
 import com.goim.kmp.pipeline.LengthFrame
 import com.goim.kmp.pipeline.LengthFrameDecoder
+import com.goim.kmp.pipeline.SignalCodec
 import com.goim.kmp.proto.Cmd
 import com.goim.kmp.proto.MessageCodec
 import com.goim.kmp.transport.IMEndpoint
 import com.goim.kmp.transport.IMTransport
 import com.goim.kmp.transport.TransportClosedException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -127,10 +131,12 @@ class ConnectionRepositoryImplTest {
     fun kickStopsReconnect() = runTest {
         val h = Harness(this, TransportKind.WEB_SOCKET)
         h.repo.connect(user, TransportKind.WEB_SOCKET)
+        val got = async { h.repo.inboundEvents.first() }
+        runCurrent()
         h.transports[0].push(WireMessage(cmd = Cmd.KICK))
         h.transports[0].drop()
         runCurrent()
-        assertEquals(InboundEvent.Kick(), h.repo.inboundEvents.first())
+        assertEquals(InboundEvent.Kick(), got.await())
         advanceTimeBy(60_000)
         assertEquals(1, h.transports.size)
     }
@@ -201,9 +207,11 @@ class ConnectionRepositoryImplTest {
         val h = Harness(this, TransportKind.WEB_SOCKET)
         h.repo.connect(user, TransportKind.WEB_SOCKET)
 
+        val got = async { h.repo.inboundEvents.first() }
+        runCurrent()
         h.transports[0].push(WireMessage(cmd = Cmd.ACK, seq = 3, msg_id = 9))
         runCurrent()
-        assertEquals(InboundEvent.Ack(3, 9), h.repo.inboundEvents.first())
+        assertEquals(InboundEvent.Ack(3, 9), got.await())
 
         h.transports[0].drop()
         runCurrent()
@@ -238,7 +246,45 @@ class ConnectionRepositoryImplTest {
         advanceTimeBy(60_000)
         assertEquals(1, h.transports.size)
         assertFailsWith<DomainError.InvalidState> {
-            h.repo.send(com.goim.kmp.domain.OutboundEnvelope.UnreadCount)
+            h.repo.send(OutboundEnvelope.UnreadCount)
         }
+    }
+
+    @Test
+    fun sendSignalEncodesTypedContent() = runTest {
+        val h = Harness(this, TransportKind.WEB_SOCKET)
+        h.repo.connect(user, TransportKind.WEB_SOCKET)
+        h.repo.send(
+            OutboundEnvelope.Signal(
+                to = "g_room",
+                type = "paircast.playback",
+                dataJson = """{"seq":1}""",
+                chatType = ChatType.GROUP,
+            ),
+        )
+        val signal = h.transports[0].sent.last { it.cmd == Cmd.SIGNAL }
+        assertEquals("g_room", signal.to)
+        assertEquals(ChatType.GROUP.value, signal.chat_type)
+        assertEquals(false, signal.need_ack)
+        val parsed = SignalCodec.parse(signal.content)
+        assertEquals("paircast.playback", parsed!!.first)
+        assertTrue(parsed.second.contains("seq"))
+    }
+
+    @Test
+    fun inboundSignalReachesSharedFlow() = runTest {
+        val h = Harness(this, TransportKind.WEB_SOCKET)
+        h.repo.connect(user, TransportKind.WEB_SOCKET)
+        val got = async { h.repo.inboundEvents.first() as InboundEvent.Signal }
+        runCurrent()
+        val content = SignalCodec.encode("paircast.room_updated", """{"group_id":"g_1"}""")!!
+        h.transports[0].push(
+            WireMessage(cmd = Cmd.SIGNAL, from = "sys", to = "g_1", chat_type = 2, content = content, timestamp = 50),
+        )
+        runCurrent()
+        val event = got.await()
+        assertEquals("paircast.room_updated", event.type)
+        assertEquals("g_1", event.to)
+        assertTrue(event.dataJson.contains("group_id"))
     }
 }

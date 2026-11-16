@@ -46,3 +46,11 @@ repositories {
 implementation("com.goim:sdk-lite:0.2.0-SNAPSHOT")
 // 或 implementation("com.goim:sdk-full:0.2.0-SNAPSHOT")
 ```
+
+## Signal（Lite）
+
+```kotlin
+session.sendSignal(to = "g_room", type = "paircast.playback", dataJson = """{"seq":1}""")
+session.signals.collect { /* InboundEvent.Signal */ }
+// 全量入站：session.connection.inboundEvents（多订阅）
+```

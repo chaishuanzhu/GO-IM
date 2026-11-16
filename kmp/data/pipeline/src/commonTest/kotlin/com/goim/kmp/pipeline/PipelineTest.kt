@@ -11,6 +11,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import im.Message as WireMessage
 
@@ -175,6 +176,57 @@ class PipelineTest {
         assertEquals(mapOf("a" to 1), CmdDispatchHandler.parseUnreadCounts("""{"counts":{"a":1.0}}"""))
         assertEquals(null, CmdDispatchHandler.parseUnreadCounts("not json"))
         assertEquals(null, CmdDispatchHandler.parseUnreadCounts("""{"uid":"x"}"""))
+    }
+
+    @Test
+    fun signalCodecRoundTripAndRejectsEmptyType() {
+        val encoded = SignalCodec.encode("paircast.playback", """{"action":"pause","seq":3}""")
+        assertNotNull(encoded)
+        val (type, data) = assertNotNull(SignalCodec.parse(encoded!!))
+        assertEquals("paircast.playback", type)
+        assertTrue(data.contains("pause"))
+        assertEquals(null, SignalCodec.encode(""))
+        assertEquals(null, SignalCodec.parse("""{"data":{}}"""))
+        assertEquals(null, SignalCodec.parse("not-json"))
+        val noData = assertNotNull(SignalCodec.parse("""{"type":"x.y"}"""))
+        assertEquals("x.y", noData.first)
+        assertEquals("{}", noData.second)
+    }
+
+    @Test
+    fun signalFramesDispatchAndUntypedDropped() = runTest {
+        val events = mutableListOf<InboundEvent>()
+        val pipeline = IMPipeline {}
+            .addLast(ProtobufDecodeHandler())
+            .addLast(CmdDispatchHandler("alice", onEvent = { events += it }))
+
+        val content = SignalCodec.encode("paircast.playback", """{"seq":1}""")!!
+        pipeline.fireChannelRead(
+            MessageCodec.encode(
+                WireMessage(
+                    cmd = Cmd.SIGNAL,
+                    from = "bob",
+                    to = "g_room",
+                    chat_type = 2,
+                    content = content,
+                    msg_id = 9,
+                    timestamp = 100,
+                ),
+            ),
+        )
+        pipeline.fireChannelRead(
+            MessageCodec.encode(WireMessage(cmd = Cmd.SIGNAL, from = "bob", to = "g_room", content = """{"data":{}}""")),
+        )
+
+        assertEquals(1, events.size)
+        val signal = assertIs<InboundEvent.Signal>(events[0])
+        assertEquals("bob", signal.from)
+        assertEquals("g_room", signal.to)
+        assertEquals(ChatType.GROUP, signal.chatType)
+        assertEquals("paircast.playback", signal.type)
+        assertTrue(signal.dataJson.contains("seq"))
+        assertEquals(9L, signal.msgId)
+        assertEquals(100L, signal.timestampMs)
     }
 
     private fun tcpPipeline(
