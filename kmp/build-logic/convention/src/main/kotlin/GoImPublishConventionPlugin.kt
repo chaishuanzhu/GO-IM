@@ -18,7 +18,9 @@ class GoImPublishConventionPlugin : Plugin<Project> {
         pluginManager.apply("maven-publish")
 
         group = "com.goim"
-        version = rootProject.findProperty("goim.sdk.version")?.toString() ?: "0.1.0-SNAPSHOT"
+        val sdkVersion = rootProject.findProperty("goim.sdk.version")?.toString()?.takeIf { it.isNotBlank() }
+            ?: "0.1.0-SNAPSHOT"
+        version = sdkVersion
 
         val baseArtifact = path.removePrefix(":").replace(':', '-')
 
@@ -32,6 +34,8 @@ class GoImPublishConventionPlugin : Plugin<Project> {
 
         extensions.configure<PublishingExtension> {
             publications.withType<MavenPublication>().configureEach {
+                groupId = "com.goim"
+                version = sdkVersion
                 artifactId = when {
                     name.contains("kotlinMultiplatform", ignoreCase = true) -> baseArtifact
                     name.equals("androidRelease", ignoreCase = true) -> "$baseArtifact-android"
