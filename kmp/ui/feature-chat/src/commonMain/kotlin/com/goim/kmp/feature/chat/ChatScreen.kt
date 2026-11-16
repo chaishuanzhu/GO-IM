@@ -80,11 +80,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.goim.kmp.designsystem.ChatTopBarActions
+import com.goim.kmp.designsystem.ChatTopBarUi
 import com.goim.kmp.designsystem.GoImDimens
 import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.GoImIcons
 import com.goim.kmp.designsystem.GoImTheme
+import com.goim.kmp.designsystem.LocalGoImUiSlots
+import com.goim.kmp.designsystem.MessageBubbleContext
 import com.goim.kmp.designsystem.title
+import com.goim.kmp.designsystem.toUi
 import com.goim.kmp.designsystem.GoImSpacing
 import com.goim.kmp.designsystem.GoImSize
 import com.goim.kmp.domain.FileRepository
@@ -154,56 +159,72 @@ fun ChatScreen(viewModel: ChatViewModel, onBack: (() -> Unit)?, onOpenInfo: (() 
 
     val isGroup = conversation.chatType == ChatType.GROUP
     val title = if (isGroup) conversation.title else rememberContactTitle(conversation.peerOrGroupId, conversation.title)
+    val slots = LocalGoImUiSlots.current
+    val subtitle = when {
+        state.connectionState != ConnectionState.CONNECTED -> state.connectionState.title
+        conversation.chatType == ChatType.GROUP -> "群聊"
+        else -> null
+    }
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isGroup) {
-                            MonogramAvatar(title, size = GoImSize.avatarMd)
-                        } else {
-                            UserAvatar(conversation.peerOrGroupId, title, size = GoImSize.avatarMd, showPresence = true)
-                        }
-                        Spacer(Modifier.width(GoImSpacing.s3))
-                        Column {
-                            Text(
-                                title,
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            val subtitle = when {
-                                state.connectionState != ConnectionState.CONNECTED -> state.connectionState.title
-                                conversation.chatType == ChatType.GROUP -> "群聊"
-                                else -> null
-                            }
-                            if (subtitle != null) {
-                                Text(
-                                    subtitle,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+            val customTopBar = slots.chatTopBar
+            if (customTopBar != null) {
+                customTopBar(
+                    ChatTopBarUi(
+                        title = title,
+                        subtitle = subtitle,
+                        isGroup = isGroup,
+                        peerOrGroupId = conversation.peerOrGroupId,
+                        showBack = onBack != null,
+                        showInfo = onOpenInfo != null,
+                    ),
+                    ChatTopBarActions(onBack = onBack, onOpenInfo = onOpenInfo),
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isGroup) {
+                                MonogramAvatar(title, size = GoImSize.avatarMd)
                             } else {
-                                PresenceText(conversation.peerOrGroupId, style = MaterialTheme.typography.labelSmall)
+                                UserAvatar(conversation.peerOrGroupId, title, size = GoImSize.avatarMd, showPresence = true)
+                            }
+                            Spacer(Modifier.width(GoImSpacing.s3))
+                            Column {
+                                Text(
+                                    title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (subtitle != null) {
+                                    Text(
+                                        subtitle,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    PresenceText(conversation.peerOrGroupId, style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
-                    }
-                },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
-                    }
-                },
-                actions = {
-                    if (onOpenInfo != null) {
-                        if (conversation.chatType == ChatType.GROUP) {
-                            IconButton(onClick = onOpenInfo) { Icon(GoImIcons.Group, contentDescription = "群信息") }
-                        } else {
-                            IconButton(onClick = onOpenInfo) { Icon(Icons.Filled.Person, contentDescription = "好友信息") }
+                    },
+                    navigationIcon = {
+                        if (onBack != null) {
+                            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
                         }
-                    }
-                },
-            )
+                    },
+                    actions = {
+                        if (onOpenInfo != null) {
+                            if (conversation.chatType == ChatType.GROUP) {
+                                IconButton(onClick = onOpenInfo) { Icon(GoImIcons.Group, contentDescription = "群信息") }
+                            } else {
+                                IconButton(onClick = onOpenInfo) { Icon(Icons.Filled.Person, contentDescription = "好友信息") }
+                            }
+                        }
+                    },
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
         // 底部安全区由输入栏自己处理（背景铺到屏幕底边），这里只让出顶栏
@@ -380,6 +401,11 @@ private fun CenterNotice(text: String) {
 
 @Composable
 private fun Bubble(message: Message, maxBubbleWidth: Dp, onRetry: (Message) -> Unit, bubbles: BubbleEnv) {
+    val custom = LocalGoImUiSlots.current.messageBubble
+    if (custom != null) {
+        custom(message.toUi(), MessageBubbleContext(maxWidth = maxBubbleWidth, onRetry = { onRetry(message) }))
+        return
+    }
     val senderName = if (message.isOutgoing) bubbles.selfName else rememberDisplayName(message.fromUid)
     BubbleRow(message, senderName, avatarUrl = null, maxBubbleWidth, bubbles, onRetry = onRetry)
 }

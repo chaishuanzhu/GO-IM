@@ -41,6 +41,16 @@ class AccountSwitchTest {
         manager.currentSession!!.conversations.observeConversations().first().map { it.id }
 
     @Test
+    fun openSessionWithoutLogin() = runBlocking {
+        val session = manager.openSession(alice, persistCredentials = true)
+        assertEquals("alice", session.user.uid)
+        assertEquals("alice", auth.currentUser()?.uid)
+        manager.closeSession()
+        assertIs<SessionState.LoggedOut>(manager.state.value)
+        Unit
+    }
+
+    @Test
     fun switchAddForgetAndLogout() = runBlocking {
         auth.saveSession(alice)
         manager.mount(alice)

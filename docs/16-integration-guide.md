@@ -19,6 +19,8 @@ IM 只负责连接、消息、群和在线状态。两边的边界：
 
 参考实现：Paircast（一起看）的服务端就是这样一个接入方，见文末。
 
+客户端若用 KMP SDK：Lite / Full 分包与接入示例见 [17-client-sdk.md](17-client-sdk.md)。
+
 ## 1. 登记接入方
 
 网关配置 `gateway.server_api`（需要 MySQL）：

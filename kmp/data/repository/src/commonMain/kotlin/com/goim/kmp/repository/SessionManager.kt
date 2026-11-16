@@ -141,6 +141,28 @@ class SessionManager(
         auth.currentUser()?.let { mount(it) }
     }
 
+    /**
+     * 宿主已持有 uid+token 时直接建会话（不走登录接口）。
+     * [persistCredentials]=true 时写入本机 SessionStore，便于 [restore]；嵌入式宿主可设 false 自行管令牌。
+     */
+    suspend fun openSession(user: User, persistCredentials: Boolean = true): UserSession {
+        if (persistCredentials) auth.saveSession(user)
+        mount(user)
+        return currentSession ?: error("openSession failed to mount uid=${user.uid}")
+    }
+
+    /** 关闭当前会话；[clearCredentials] 为 true 时清除本机活跃凭据（对齐 [logout]）。 */
+    suspend fun closeSession(clearCredentials: Boolean = true) {
+        if (clearCredentials) logout()
+        else lock.withLock {
+            val session = (state.value as? SessionState.LoggedIn)?.session ?: return
+            _state.value = SessionState.LoggedOut
+            session.close()
+            auth.deactivate()
+            _accounts.value = auth.savedAccounts()
+        }
+    }
+
     /** 登录 / 注册成功（凭据已保存）后调用。 */
     suspend fun mount(user: User) = lock.withLock {
         (state.value as? SessionState.LoggedIn)?.session?.close()

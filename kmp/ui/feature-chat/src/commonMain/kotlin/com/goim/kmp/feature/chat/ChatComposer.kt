@@ -105,6 +105,7 @@ import com.goim.kmp.designsystem.GoImDimens
 import com.goim.kmp.designsystem.GoImSpacing
 import com.goim.kmp.designsystem.GoImSize
 import com.goim.kmp.designsystem.GoImElevation
+import com.goim.kmp.designsystem.LocalGoImUiSlots
 import com.goim.kmp.platform.VoiceRecorder
 import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.dialogs.FileKitMode
@@ -237,6 +238,7 @@ internal fun ChatComposer(
             ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
             }
+            LocalGoImUiSlots.current.composerTrailing?.invoke()
         }
         if (media != null) {
             Row(Modifier.fillMaxWidth().padding(horizontal = GoImSpacing.s2, vertical = GoImSpacing.s1), horizontalArrangement = Arrangement.SpaceAround) {
@@ -419,6 +421,7 @@ private fun DesktopComposer(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
+                LocalGoImUiSlots.current.composerTrailing?.invoke()
                 Button(onClick = onSend, enabled = draft.isNotBlank()) { Text("发送") }
             }
         }

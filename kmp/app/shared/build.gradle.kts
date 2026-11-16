@@ -15,16 +15,13 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(projects.core.common)
+            api(projects.sdk.full)
             implementation(projects.core.domain)
             implementation(projects.data.repository)
             implementation(projects.platform)
             implementation(projects.ui.designsystem)
             implementation(projects.ui.featureAuth)
-            implementation(projects.ui.featureConversations)
-            implementation(projects.ui.featureChat)
             implementation(projects.ui.featureSettings)
-            implementation(projects.ui.featureContacts)
-            implementation(projects.ui.featureSearch)
             implementation(libs.androidx.navigation.compose)
             implementation(libs.androidx.lifecycle.viewmodel.compose)
             implementation(libs.androidx.lifecycle.runtime.compose)

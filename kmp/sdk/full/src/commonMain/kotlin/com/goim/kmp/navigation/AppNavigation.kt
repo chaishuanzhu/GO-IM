@@ -70,23 +70,21 @@ import androidx.navigation.toRoute
 import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
 import androidx.compose.runtime.DisposableEffect
-import com.goim.kmp.LocalTitleBarInset
+import com.goim.kmp.designsystem.LocalTitleBarInset
 import com.goim.kmp.common.LogBuffer
 import com.goim.kmp.common.platformDescription
 import androidx.compose.foundation.layout.Spacer
 import com.goim.kmp.designsystem.EmptyState
 import com.goim.kmp.designsystem.GoImDimens
+import com.goim.kmp.designsystem.LocalGoImUiSlots
 import com.goim.kmp.designsystem.PaneSurface
 import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.GoImIcons
-import com.goim.kmp.domain.LoginUseCase
 import com.goim.kmp.domain.MarkReadUseCase
 import com.goim.kmp.domain.SendFileMessageUseCase
 import com.goim.kmp.domain.SendStickerUseCase
 import com.goim.kmp.domain.SendTextMessageUseCase
 import com.goim.kmp.domain.ServerSettingsRepository
-import com.goim.kmp.feature.auth.LoginScreen
-import com.goim.kmp.feature.auth.LoginViewModel
 import com.goim.kmp.feature.chat.ChatMediaDeps
 import com.goim.kmp.feature.chat.ChatScreen
 import com.goim.kmp.feature.chat.ChatViewModel
@@ -126,7 +124,6 @@ import com.goim.kmp.network.GoImUserApi
 import com.goim.kmp.feature.settings.DeveloperDeps
 import com.goim.kmp.feature.settings.DeveloperScreen
 import com.goim.kmp.feature.settings.DeveloperViewModel
-import com.goim.kmp.feature.settings.ServerSettingsScreen
 import com.goim.kmp.feature.settings.SettingsScreen
 import com.goim.kmp.feature.settings.ProfileScreen
 import com.goim.kmp.feature.settings.ProfileViewModel
@@ -168,42 +165,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Dialog
-
-/** 未登录：登录 ⇄ 服务器设置；登录页列出本机已保存的账号可直接切换。 */
-@Composable
-fun AuthNavHost() {
-    val nav = rememberNavController()
-    val manager = koinInject<SessionManager>()
-    val settings = koinInject<ServerSettingsRepository>()
-    val login = koinInject<LoginUseCase>()
-    val accounts by manager.accounts.collectAsState()
-    val scope = rememberCoroutineScope()
-
-    NavHost(nav, startDestination = LoginRoute) {
-        composable<LoginRoute> {
-            val vm = viewModel {
-                LoginViewModel(login, onLoggedIn = { user -> withContext(Dispatchers.Default) { manager.mount(user) } })
-            }
-            LoginScreen(
-                vm,
-                onOpenServerSettings = { nav.navigate(ServerSettingsRoute) },
-                savedAccounts = accounts,
-                onUseSavedAccount = { uid -> scope.launch(Dispatchers.Default) { manager.switchTo(uid) } },
-            )
-        }
-        composable<ServerSettingsRoute> {
-            val vm = viewModel {
-                SettingsViewModel(
-                    user = null,
-                    settings = settings,
-                    connectionState = null,
-                    switchTransport = { settings.setPreferredTransport(it) },
-                )
-            }
-            ServerSettingsScreen(vm, onBack = { nav.popBackStack() })
-        }
-    }
-}
 
 /** 窗口宽度档位（Material 3 window size class）。 */
 private enum class LayoutMode { COMPACT, MEDIUM, EXPANDED }
@@ -350,7 +311,9 @@ private fun MainNavContent(session: UserSession) {
         val chatDetail: @Composable () -> Unit = {
             val route = selected
             if (route == null) {
-                EmptyState(GoImIcons.Chat, "选择一个会话开始聊天", "或按 ⌘/Ctrl+F 搜索消息")
+                val emptyChat = LocalGoImUiSlots.current.emptyChat
+                if (emptyChat != null) emptyChat()
+                else EmptyState(GoImIcons.Chat, "选择一个会话开始聊天", "或按 ⌘/Ctrl+F 搜索消息")
             } else {
                 ChatWithInfoPanel(
                     session = session,

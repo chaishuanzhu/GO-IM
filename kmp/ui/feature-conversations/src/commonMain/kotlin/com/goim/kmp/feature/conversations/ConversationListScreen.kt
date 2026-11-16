@@ -50,9 +50,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.goim.kmp.designsystem.ConversationRowActions
 import com.goim.kmp.designsystem.EmptyState
 import com.goim.kmp.designsystem.GoImFormat
 import com.goim.kmp.designsystem.GoImIcons
+import com.goim.kmp.designsystem.LocalGoImUiSlots
 import com.goim.kmp.designsystem.MonogramAvatar
 import com.goim.kmp.designsystem.UserAvatar
 import com.goim.kmp.designsystem.rememberContactTitle
@@ -62,6 +64,7 @@ import com.goim.kmp.designsystem.UnreadBadge
 import com.goim.kmp.designsystem.title
 import com.goim.kmp.designsystem.GoImSpacing
 import com.goim.kmp.designsystem.GoImDimens
+import com.goim.kmp.designsystem.toUi
 import com.goim.kmp.model.ConnectionState
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.Conversation
@@ -78,6 +81,7 @@ fun ConversationListScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showNewChat by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    val slots = LocalGoImUiSlots.current
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -105,7 +109,11 @@ fun ConversationListScreen(
         },
     ) { padding ->
         if (state.loaded && state.conversations.isEmpty()) {
-            EmptyState(GoImIcons.Chat, "暂无会话", "点按右下角按钮开始聊天", Modifier.padding(padding))
+            Box(Modifier.padding(padding).fillMaxSize()) {
+                val empty = slots.emptyConversations
+                if (empty != null) empty()
+                else EmptyState(GoImIcons.Chat, "暂无会话", "点按右下角按钮开始聊天")
+            }
         } else {
             LazyColumn(
                 Modifier.fillMaxSize(),
@@ -115,13 +123,19 @@ fun ConversationListScreen(
                 ),
             ) {
                 items(state.conversations, key = { it.id }, contentType = { "conversation" }) { conversation ->
-                    SwipeToDeleteRow(onDelete = { viewModel.delete(conversation.id) }) {
-                        ConversationRow(
-                            conversation,
-                            selected = conversation.id == selectedId,
-                            onClick = { onOpenChat(conversation) },
-                            onDelete = { viewModel.delete(conversation.id) },
-                        )
+                    val selected = conversation.id == selectedId
+                    val onClick = { onOpenChat(conversation) }
+                    val onDelete = { viewModel.delete(conversation.id) }
+                    SwipeToDeleteRow(onDelete = onDelete) {
+                        val customRow = slots.conversationRow
+                        if (customRow != null) {
+                            customRow(
+                                conversation.toUi(selected),
+                                ConversationRowActions(onClick = onClick, onDelete = onDelete),
+                            )
+                        } else {
+                            ConversationRow(conversation, selected = selected, onClick = onClick, onDelete = onDelete)
+                        }
                     }
                 }
             }
