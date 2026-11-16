@@ -26,7 +26,8 @@ export GITHUB_TOKEN=$(gh auth token)
 ./gradlew publish
 ```
 
-包浏览：<https://github.com/chaishuanzhu/GO-IM/packages>
+包浏览：<https://github.com/chaishuanzhu/GO-IM/packages>  
+CI 当前发 **android / desktop / KMP 元数据**（`0.1.0-SNAPSHOT`）；iOS target 包另需 macOS job。
 
 ## 宿主依赖
 

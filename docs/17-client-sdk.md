@@ -11,6 +11,7 @@ GO-IM KMP 客户端拆成两个 Maven 产物，供宿主 App 引入。服务端�
 - API 标记：`@GoImSdkPreview`（0.x，可能不兼容升级）
 - 网关：**≥ 2.0.0**（JWT、`device_id` / `platform`、protobuf）
 - 远程仓：**GitHub Packages** `https://maven.pkg.github.com/chaishuanzhu/GO-IM`（会同时发布 Lite/Full 的传递依赖模块：`core-*`、`data-*`、`platform`、`ui-*`）
+- CI 当前发布 **kotlinMultiplatform + android + desktop**；iOS target 包需 macOS runner（工作流里留了说明）
 
 源码模块：`kmp/sdk/lite`、`kmp/sdk/full`；短入口见 [`kmp/sdk/README.md`](../kmp/sdk/README.md)。
 
