@@ -2,32 +2,31 @@
 
 | 模块 | Maven | 说明 |
 |------|--------|------|
-| `:sdk:lite` | `com.goim:sdk-lite` | `GoImClient` / `GoImSession`，无 UI |
-| `:sdk:full` | `com.goim:sdk-full` | `GoImNavHost` + `GoImUiSlots` |
+| `:sdk:lite` | `com.goim:sdk-lite` | fat：业务内核，无 UI |
+| `:sdk:full` | `com.goim:sdk-full` | fat：默认 CMP UI + 插槽 |
 
 完整说明：**[docs/17-client-sdk.md](../../docs/17-client-sdk.md)**  
 服务端签发 token：**[docs/16-integration-guide.md](../../docs/16-integration-guide.md)**
 
 ## 发布到 GitHub Packages
 
-推荐（CI，自带 `packages: write`）：
+只发上述两个入口（内部模块已打进 AAR/JAR）：
 
 ```bash
 gh workflow run publish-kmp-sdk.yml --repo chaishuanzhu/GO-IM
 ```
 
-本机（需 JDK 21 + `write:packages`）：
+本机（JDK 21 + `write:packages`）：
 
 ```bash
 cd kmp
 export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
 export GITHUB_ACTOR=chaishuanzhu
 export GITHUB_TOKEN=$(gh auth token)
-./gradlew publish
+./gradlew :sdk:lite:publish :sdk:full:publish
 ```
 
-包浏览：<https://github.com/chaishuanzhu/GO-IM/packages>  
-CI 当前发 **android / desktop / KMP 元数据**（`0.1.0-SNAPSHOT`）；iOS target 包另需 macOS job。
+当前版本：`0.2.0-SNAPSHOT`（android / desktop / KMP metadata）。
 
 ## 宿主依赖
 
@@ -44,6 +43,6 @@ repositories {
     }
 }
 
-implementation("com.goim:sdk-lite:0.1.0-SNAPSHOT")
-// implementation("com.goim:sdk-full:0.1.0-SNAPSHOT")
+implementation("com.goim:sdk-lite:0.2.0-SNAPSHOT")
+// 或 implementation("com.goim:sdk-full:0.2.0-SNAPSHOT")
 ```

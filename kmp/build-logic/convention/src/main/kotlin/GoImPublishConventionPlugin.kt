@@ -9,9 +9,7 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 /**
  * 将 KMP 库模块发布到 Maven（本机 + 可选 GitHub Packages）。
  *
- * - group `com.goim`，version 来自 `goim.sdk.version`
- * - artifactId：`:sdk:lite` → `sdk-lite`；各 target 为 `sdk-lite-android` 等
- * - 远程仓：`GITHUB_ACTOR` + `GITHUB_TOKEN`（或 `GH_TOKEN`）存在时写入 GitHub Packages
+ * SDK 入口（`:sdk:lite` / `:sdk:full`）会额外打成 fat 包；其它库模块默认不发布。
  */
 class GoImPublishConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
@@ -23,6 +21,7 @@ class GoImPublishConventionPlugin : Plugin<Project> {
         version = sdkVersion
 
         val baseArtifact = path.removePrefix(":").replace(':', '-')
+        val isSdkEntrypoint = path == ":sdk:lite" || path == ":sdk:full"
 
         pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
             extensions.configure<KotlinMultiplatformExtension> {
@@ -30,6 +29,10 @@ class GoImPublishConventionPlugin : Plugin<Project> {
                     publishLibraryVariants("release")
                 }
             }
+        }
+
+        if (isSdkEntrypoint) {
+            configureFatSdkPublish()
         }
 
         extensions.configure<PublishingExtension> {
@@ -43,7 +46,13 @@ class GoImPublishConventionPlugin : Plugin<Project> {
                 }
                 pom {
                     name.set(baseArtifact)
-                    description.set("GO-IM KMP module $baseArtifact")
+                    description.set(
+                        if (isSdkEntrypoint) {
+                            "GO-IM fat SDK artifact $baseArtifact (embeds internal modules)"
+                        } else {
+                            "GO-IM KMP module $baseArtifact"
+                        },
+                    )
                     url.set("https://github.com/chaishuanzhu/GO-IM")
                 }
             }
@@ -68,8 +77,8 @@ class GoImPublishConventionPlugin : Plugin<Project> {
     }
 }
 
-/** 非 app 模块才挂发布插件（由 library / compose 约定调用）。 */
+/** 只给 SDK 入口挂发布；中间库不发到 Maven。 */
 internal fun Project.applyGoImPublishIfLibrary() {
-    if (path.startsWith(":app:")) return
+    if (path != ":sdk:lite" && path != ":sdk:full") return
     pluginManager.apply("goim.kmp.publish")
 }

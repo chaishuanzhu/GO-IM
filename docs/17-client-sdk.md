@@ -7,11 +7,11 @@ GO-IM KMP 客户端拆成两个 Maven 产物，供宿主 App 引入。服务端�
 | **Lite** | `sdk-lite` | 连接、消息、会话、群、好友、文件、资料；**无 Compose** |
 | **Full** | `sdk-full` | Lite + 默认 CMP 主界面 + 可替换插槽 |
 
-- 版本：`kmp/gradle.properties` → `goim.sdk.version`（当前 `0.1.0-SNAPSHOT`）
+- 版本：`kmp/gradle.properties` → `goim.sdk.version`（当前 `0.2.0-SNAPSHOT`）
 - API 标记：`@GoImSdkPreview`（0.x，可能不兼容升级）
 - 网关：**≥ 2.0.0**（JWT、`device_id` / `platform`、protobuf）
-- 远程仓：**GitHub Packages** `https://maven.pkg.github.com/chaishuanzhu/GO-IM`（会同时发布 Lite/Full 的传递依赖模块：`core-*`、`data-*`、`platform`、`ui-*`）
-- CI 当前发布 **kotlinMultiplatform + android + desktop**；iOS target 包需 macOS runner（工作流里留了说明）
+- 远程仓：**GitHub Packages** `https://maven.pkg.github.com/chaishuanzhu/GO-IM`
+- **只发两个 fat 入口**：`sdk-lite` / `sdk-full`（android / desktop / KMP metadata）；内部 `core-*`、`data-*`、`ui-*` 打进包内，不再单独发布。第三方依赖（Compose、Ktor、Koin…）仍由 POM 声明。
 
 源码模块：`kmp/sdk/lite`、`kmp/sdk/full`；短入口见 [`kmp/sdk/README.md`](../kmp/sdk/README.md)。
 
@@ -24,8 +24,8 @@ GO-IM KMP 客户端拆成两个 Maven 产物，供宿主 App 引入。服务端�
 编辑 `kmp/gradle.properties`：
 
 ```properties
-goim.sdk.version=0.1.0-SNAPSHOT
-# 正式版示例：0.1.0
+goim.sdk.version=0.2.0-SNAPSHOT
+# 正式版示例：0.2.0
 ```
 
 ### 推荐：GitHub Actions → GitHub Packages
@@ -49,26 +49,25 @@ Gradle Kotlin DSL 需要 **JDK 17/21**（勿用 25+）：
 cd kmp
 export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
 
-# 本机 ~/.m2（不需要 GitHub 凭据）
-./gradlew publishToMavenLocal
+# 本机 ~/.m2（只发两个入口）
+./gradlew :sdk:lite:publishToMavenLocal :sdk:full:publishToMavenLocal
 
 # 推到 GitHub Packages：需要 classic PAT / gh token 含 write:packages
 export GITHUB_ACTOR=chaishuanzhu
 export GITHUB_TOKEN=$(gh auth token)   # 或 PAT
 # 若缺少 scope：gh auth refresh -h github.com -s write:packages
-./gradlew publish
+./gradlew :sdk:lite:publish :sdk:full:publish
 ```
 
-约定插件 `goim.kmp.publish` 在设置了 `GITHUB_ACTOR` + `GITHUB_TOKEN`（或 `GH_TOKEN`）时自动加入 GitHub Packages 仓库；未设置时只保留 `publishToMavenLocal`。
+约定插件只给 `:sdk:lite` / `:sdk:full` 挂发布，并打 fat 包；设置了 `GITHUB_ACTOR` + `GITHUB_TOKEN`（或 `GH_TOKEN`）时写入 GitHub Packages。
 
 ### 坐标示例
 
 | 用途 | 坐标 |
 |------|------|
-| KMP common | `com.goim:sdk-lite:0.1.0-SNAPSHOT` |
-| Android | `com.goim:sdk-lite-android:0.1.0-SNAPSHOT` |
-| Desktop JVM | `com.goim:sdk-lite-desktop:0.1.0-SNAPSHOT` |
-| iOS | `com.goim:sdk-lite-iosArm64:…` / `sdk-lite-iosSimulatorArm64:…` |
+| KMP common | `com.goim:sdk-lite:0.2.0-SNAPSHOT` |
+| Android | `com.goim:sdk-lite-android:0.2.0-SNAPSHOT` |
+| Desktop JVM | `com.goim:sdk-lite-desktop:0.2.0-SNAPSHOT` |
 
 Full 将 `sdk-lite` 换成 `sdk-full`。正式发版建议去掉 `-SNAPSHOT` 并打 Git tag。
 
