@@ -1,6 +1,4 @@
-# Publish KMP SDK (lite/full + transitive libs) to GitHub Packages.
-# Publishes kotlinMultiplatform + android + desktop (JVM). iOS target artifacts
-# need a macOS runner; add a follow-up job when XCFramework Maven publish is required.
+# Publish fat sdk-lite + sdk-full only (internal modules embedded) to GitHub Packages.
 name: publish-kmp-sdk
 
 on:
@@ -33,21 +31,22 @@ jobs:
         with:
           cache-read-only: false
 
-      - name: Publish to GitHub Packages
+      - name: Publish fat sdk-lite / sdk-full
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          PUBLISH_TASKS=(
+            :sdk:lite:publishKotlinMultiplatformPublicationToGitHubPackagesRepository
+            :sdk:lite:publishAndroidReleasePublicationToGitHubPackagesRepository
+            :sdk:lite:publishDesktopPublicationToGitHubPackagesRepository
+            :sdk:full:publishKotlinMultiplatformPublicationToGitHubPackagesRepository
+            :sdk:full:publishAndroidReleasePublicationToGitHubPackagesRepository
+            :sdk:full:publishDesktopPublicationToGitHubPackagesRepository
+          )
           if [ -n "${{ inputs.version }}" ]; then
-            ./gradlew -Pgoim.sdk.version="${{ inputs.version }}" \
-              publishKotlinMultiplatformPublicationToGitHubPackagesRepository \
-              publishAndroidReleasePublicationToGitHubPackagesRepository \
-              publishDesktopPublicationToGitHubPackagesRepository \
+            ./gradlew -Pgoim.sdk.version="${{ inputs.version }}" "${PUBLISH_TASKS[@]}" \
               --no-configuration-cache --stacktrace
           else
-            ./gradlew \
-              publishKotlinMultiplatformPublicationToGitHubPackagesRepository \
-              publishAndroidReleasePublicationToGitHubPackagesRepository \
-              publishDesktopPublicationToGitHubPackagesRepository \
-              --no-configuration-cache --stacktrace
+            ./gradlew "${PUBLISH_TASKS[@]}" --no-configuration-cache --stacktrace
           fi
