@@ -1,6 +1,8 @@
 package com.goim.kmp.domain
 
+import co.touchlab.kermit.Logger
 import com.goim.kmp.common.DomainError
+import com.goim.kmp.common.nowMillis
 import com.goim.kmp.model.ChatType
 import com.goim.kmp.model.EmailCodePurpose
 import com.goim.kmp.model.FileMeta
@@ -12,7 +14,10 @@ import com.goim.kmp.model.StickerRef
 import com.goim.kmp.model.Message
 import com.goim.kmp.model.TransportKind
 import com.goim.kmp.model.User
+import com.goim.kmp.model.toContentJson
 import kotlinx.coroutines.CancellationException
+
+private val sendFileLog = Logger.withTag("ImgSend")
 
 /** 登录 / 注册 / 找回密码；连接在会话挂载（UserHome + 数据库）之后由 app 层发起。 */
 class LoginUseCase(private val auth: AuthRepository) {
@@ -139,6 +144,16 @@ class SendFileMessageUseCase(
         return uploadAndDeliver(pending, meta.fileId, meta)
     }
 
+    /**
+     * 压缩完成后改写气泡 content（mime / 尺寸 / 文件名），仍指向同一 localId。
+     * 须在 [FileRepository.replaceStaged] 之后调用，UI 才能立刻切到 JPEG 预览。
+     */
+    suspend fun patchStagedMeta(pending: Message, meta: FileMeta): Message {
+        val updated = pending.copy(content = meta.toContentJson())
+        messages.upsert(updated)
+        return updated
+    }
+
     /** 失败的文件消息：仍在本地暂存则重新上传，否则按原 content 重发。 */
     suspend fun retry(message: Message): Message {
         if (!message.isOutgoing) throw DomainError.InvalidState("only outgoing messages can be retried")
@@ -168,7 +183,10 @@ class SendFileMessageUseCase(
 
     private suspend fun uploadAndDeliver(pending: Message, localId: String, local: FileMeta): Message {
         try {
+            val t0 = nowMillis()
+            sendFileLog.i { "uploadAndDeliver start localId=$localId name=${local.name} mime=${local.mime} size=${local.size}" }
             val uploaded = files.upload(localId, local.name, local.mime)
+            sendFileLog.i { "uploadAndDeliver.http ${nowMillis() - t0}ms remoteId=${uploaded.fileId}" }
             val meta = uploaded.copy(
                 mime = resolvedMime(local.mime, uploaded.mime),
                 name = uploaded.name.ifBlank { local.name },
@@ -176,8 +194,12 @@ class SendFileMessageUseCase(
                 height = uploaded.height?.takeIf { it > 0 } ?: local.height,
                 duration = uploaded.duration?.takeIf { it > 0 } ?: local.duration,
             )
+            var t = nowMillis()
             runCatching { files.promote(localId, meta.fileId, meta.mime) }
+            sendFileLog.i { "uploadAndDeliver.promote ${nowMillis() - t}ms" }
+            t = nowMillis()
             val delivered = messages.deliverOutgoingFile(pending, meta)
+            sendFileLog.i { "uploadAndDeliver.cmdFile ${nowMillis() - t}ms total=${nowMillis() - t0}ms" }
             // content 已是远端 ID（失败时重发不需要再上传）
             runCatching { files.discardStaged(localId) }
             return delivered

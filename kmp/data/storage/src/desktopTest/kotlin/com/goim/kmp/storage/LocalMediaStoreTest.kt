@@ -27,6 +27,17 @@ class LocalMediaStoreTest {
     }
 
     @Test
+    fun replaceStagedKeepsIdAndSwitchesExtension() {
+        val id = store.stage(byteArrayOf(1, 2), "a.heic")
+        assertTrue(store.path(id)!!.name.endsWith(".heic"))
+        store.replaceStaged(id, byteArrayOf(9, 8, 7), "a.jpg")
+        assertEquals(id, id)
+        assertTrue(store.path(id)!!.name.endsWith(".jpg"))
+        assertContentEquals(byteArrayOf(9, 8, 7), store.bytes(id))
+        assertEquals("a.jpg", store.displayName(id))
+    }
+
+    @Test
     fun promoteCopiesIntoMediaOrFilesUnderRemoteId() {
         val img = store.stage(byteArrayOf(9), "a.jpg")
         store.promote(img, "1001", "image/jpeg")

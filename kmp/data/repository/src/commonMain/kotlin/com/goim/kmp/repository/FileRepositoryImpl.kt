@@ -43,6 +43,9 @@ class FileRepositoryImpl(
 
     override suspend fun stage(bytes: ByteArray, fileName: String): String = io { store.stage(bytes, fileName) }
 
+    override suspend fun replaceStaged(localId: String, bytes: ByteArray, fileName: String) =
+        io { store.replaceStaged(localId, bytes, fileName) }
+
     override suspend fun stagedBytes(localId: String): ByteArray? = io { store.bytes(localId) }
 
     override suspend fun upload(localId: String, fileName: String, mime: String): FileMeta {

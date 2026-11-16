@@ -67,7 +67,7 @@
 | 能力 | iOS 实现 | KMP 方案 | 阶段 |
 |------|----------|----------|------|
 | 图片：相册多选（≤9）、原图开关、相机拍照 | `ChatImageAccessoryPanel` + PHPicker / UIImagePicker | 图片面板 + `expect MediaPicker` / `CameraCapture` | M3 |
-| 图片压缩（预览 1280px/0.7；发送 0.72 起，1600px 降级，原图 0.92，≤10MB） | `ImageCompressor` | `expect ImageCodec`，**参数完全对齐** | M3 |
+| 图片压缩（发送一步 1600px/0.72，超 900KB 再 1280/0.55；原图 8192/0.92，≤10MB） | `ImageCompressor` | `expect ImageCodec` | M3 |
 | 系统相册受限访问提示（黄条） | 黄色 tip bar | iOS 同；Android 14 部分照片权限同样展示；Desktop 无 | M3 |
 | 视频选择发送 + 播放 | PHPicker + AVPlayer | `expect VideoPlayer`（AVPlayer / Media3 ExoPlayer / Desktop 系统播放器打开） | M3 |
 | 文件选择发送 + 下载进度 + 预览 | UIDocumentPicker + `FileDownloadCenter` + Quick Look | FileKit 选择 + `FileDownloadCenter`（common）+ `expect FileOpener` | M3 |
@@ -672,7 +672,7 @@ GOIM/
 **实现要点与偏差：**
 
 - **MIME 修正**：网关按内容嗅探 MIME，语音（m4a）会返回 `video/mp4` 或 `application/octet-stream`。客户端在本地 MIME 为 `audio/*`、或服务端返回 octet-stream / zip 时保留本地值。
-- **图片压缩**：与 iOS 档位一致（4096 / 1600 / 1280 / 1024 逐级降质量，目标约 900 KB）；原图 q0.92、最长边 8192，超过 8 MB 时回落到普通档位。GIF 不压缩，原样发送。Android 按 EXIF 旋转；iOS 用 `UIGraphicsImageRenderer` 输出 JPEG（同时处理方向与 HEIC）。
+- **图片压缩**：普通发送一步到位（最长边 1600、质量 0.72，目标约 900 KB；仍超则再压一档 1280/0.55）；原图 q0.92、最长边 8192，超过 8 MB 时回落到普通档。GIF 不压缩，原样发送。Android 按 EXIF 旋转；iOS 用 `UIGraphicsImageRenderer` 输出 JPEG（同时处理方向与 HEIC）。
 - **视频**：从系统选择器选取，时长由 `MediaMetadataRetriever` / `AVURLAsset` 读取（桌面端无时长）；气泡为文件卡片样式，**没有封面缩略图**。
 - **打开文件 / 视频**：iOS 用 Quick Look；Android 用 `FileProvider`（`${applicationId}.fileprovider`）交给外部应用；桌面用 `Desktop.open`。
 - **语音**：Android `MediaRecorder`（AAC 16 kHz 单声道），iOS `AVAudioRecorder`；**桌面端暂不支持录音（M4）**，语音播放交给系统应用。不足 500 ms 提示「录音太短」。

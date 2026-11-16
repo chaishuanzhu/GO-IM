@@ -10,5 +10,8 @@ kotlin {
             implementation(libs.kotlinx.datetime)
             implementation(libs.coil.compose)
         }
+        androidMain.dependencies {
+            implementation(libs.androidx.activity.compose)
+        }
     }
 }

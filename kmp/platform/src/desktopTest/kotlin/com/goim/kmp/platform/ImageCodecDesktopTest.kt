@@ -46,4 +46,18 @@ class ImageCodecDesktopTest {
         assertEquals(32, out.width)
         assertTrue(centerColor(out.bytes).blue > 200, "clamped to the rightmost 100×100 square")
     }
+
+    @Test
+    fun compressFitsDefaultMaxDimensionInOnePass() {
+        val image = BufferedImage(4000, 3000, BufferedImage.TYPE_INT_RGB)
+        image.createGraphics().apply {
+            color = Color(40, 120, 200)
+            fillRect(0, 0, 4000, 3000)
+            dispose()
+        }
+        val png = ByteArrayOutputStream().also { ImageIO.write(image, "png", it) }.toByteArray()
+        val out = assertNotNull(ImageCompressor.compress(png, original = false))
+        assertTrue(maxOf(out.width, out.height) <= ImageCompressor.DEFAULT_MAX_DIMENSION)
+        assertTrue(out.bytes.size <= ImageCompressor.TARGET_BYTES)
+    }
 }

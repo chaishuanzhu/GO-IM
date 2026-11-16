@@ -1,9 +1,24 @@
 package com.goim.kmp.platform
 
+import co.touchlab.kermit.Logger
 import com.goim.kmp.common.PlatformContext
+import com.goim.kmp.common.nowMillis
 import kotlinx.coroutines.flow.StateFlow
 
 class EncodedImage(val bytes: ByteArray, val width: Int, val height: Int)
+
+/** 发图耗时诊断日志，logcat 过滤 tag `ImgSend`。 */
+val imgSendLog = Logger.withTag("ImgSend")
+
+inline fun <T> imgSendTimed(step: String, detail: String = "", block: () -> T): T {
+    val t0 = nowMillis()
+    return try {
+        block().also { imgSendLog.i { "$step ok ${nowMillis() - t0}ms $detail" } }
+    } catch (e: Throwable) {
+        imgSendLog.e(e) { "$step fail ${nowMillis() - t0}ms $detail" }
+        throw e
+    }
+}
 
 /** 平台图片编解码：按 EXIF 方向摆正、等比缩放到 [maxDimension] 内、输出 JPEG（透明区域铺白）。 */
 expect object ImageCodec {
@@ -16,35 +31,60 @@ expect object ImageCodec {
     fun cropSquareJpeg(bytes: ByteArray, left: Int, top: Int, size: Int, outSize: Int, quality: Float): EncodedImage?
 }
 
-/** 与 iOS `ImageCompressor` 相同的压缩阶梯；结果总是 JPEG。 */
+/**
+ * 发送前图片压缩，结果总是 JPEG。
+ *
+ * 普通发送尽量一步到位：最长边 [DEFAULT_MAX_DIMENSION]、质量 [DEFAULT_QUALITY]
+ * （接近主流 IM 的预览档）。绝大多数相册图一次编码即可落在 [TARGET_BYTES] 内；
+ * 仅超大噪声图才再压一档。原图档最长边 [ORIGINAL_MAX_DIMENSION]、质量 0.92，
+ * 超过 [ORIGINAL_SOFT_LIMIT] 时回落到普通档。
+ */
 object ImageCompressor {
     const val TARGET_BYTES = 900_000
     const val ORIGINAL_SOFT_LIMIT = 8_000_000
     const val HARD_LIMIT = 10 * 1024 * 1024
 
+    const val DEFAULT_MAX_DIMENSION = 1600
+    const val DEFAULT_QUALITY = 0.72f
+
     /** 原图也设上限，避免超大图解码撑爆内存（Android 位图）。 */
     private const val ORIGINAL_MAX_DIMENSION = 8192
 
-    fun compress(bytes: ByteArray, original: Boolean): EncodedImage? {
-        if (original) {
-            val full = ImageCodec.encodeJpeg(bytes, ORIGINAL_MAX_DIMENSION, 0.92f) ?: return null
-            if (full.bytes.size <= ORIGINAL_SOFT_LIMIT) return full
-        }
-        ladder(bytes, 4096, 0.72f, 0.28f, 0.08f, TARGET_BYTES)?.let { return it }
-        ladder(bytes, 1600, 0.55f, 0.25f, 0.08f, TARGET_BYTES)?.let { return it }
-        ImageCodec.encodeJpeg(bytes, 1280, 0.45f)?.takeIf { it.bytes.size <= HARD_LIMIT }?.let { return it }
-        return ladder(bytes, 1024, 0.4f, 0.05f, 0.05f, HARD_LIMIT)
-            ?: ImageCodec.encodeJpeg(bytes, 1024, 0.05f)
-    }
+    /** 一步压完仍超目标时的兜底：略缩小边长与质量，再编一次。 */
+    private const val FALLBACK_MAX_DIMENSION = 1280
+    private const val FALLBACK_QUALITY = 0.55f
 
-    private fun ladder(bytes: ByteArray, max: Int, start: Float, floor: Float, step: Float, limit: Int): EncodedImage? {
-        var q = start
-        while (q >= floor - 0.001f) {
-            val out = ImageCodec.encodeJpeg(bytes, max, q) ?: return null
-            if (out.bytes.size <= limit) return out
-            q -= step
+    fun compress(bytes: ByteArray, original: Boolean): EncodedImage? = imgSendTimed(
+        "compress",
+        "in=${bytes.size} original=$original",
+    ) {
+        if (original) {
+            val full = imgSendTimed("compress.encode.original", "max=$ORIGINAL_MAX_DIMENSION q=0.92") {
+                ImageCodec.encodeJpeg(bytes, ORIGINAL_MAX_DIMENSION, 0.92f)
+            } ?: return@imgSendTimed null
+            imgSendLog.i { "compress.original out=${full.bytes.size} ${full.width}x${full.height}" }
+            if (full.bytes.size <= ORIGINAL_SOFT_LIMIT) return@imgSendTimed full
+            imgSendLog.i { "compress.original over soft limit, fall through to default" }
         }
-        return null
+        val once = imgSendTimed("compress.encode.once", "max=$DEFAULT_MAX_DIMENSION q=$DEFAULT_QUALITY") {
+            ImageCodec.encodeJpeg(bytes, DEFAULT_MAX_DIMENSION, DEFAULT_QUALITY)
+        }
+        if (once == null) {
+            imgSendLog.w { "compress.encode.once returned null" }
+            return@imgSendTimed null
+        }
+        imgSendLog.i { "compress.once out=${once.bytes.size} ${once.width}x${once.height}" }
+        if (once.bytes.size <= TARGET_BYTES) return@imgSendTimed once
+        // 噪声很大的图偶发超 900KB：再编一次更小档；仍过大则保底 1024。
+        val fallback = imgSendTimed("compress.encode.fallback", "max=$FALLBACK_MAX_DIMENSION q=$FALLBACK_QUALITY") {
+            ImageCodec.encodeJpeg(bytes, FALLBACK_MAX_DIMENSION, FALLBACK_QUALITY)
+        } ?: return@imgSendTimed once
+        val best = if (fallback.bytes.size <= once.bytes.size) fallback else once
+        imgSendLog.i { "compress.fallback out=${fallback.bytes.size} picked=${best.bytes.size}" }
+        if (best.bytes.size <= HARD_LIMIT) return@imgSendTimed best
+        imgSendTimed("compress.encode.hard", "max=1024 q=0.4") {
+            ImageCodec.encodeJpeg(bytes, 1024, 0.4f)
+        }
     }
 }
 

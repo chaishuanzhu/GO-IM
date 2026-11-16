@@ -8,7 +8,9 @@ import com.goim.kmp.domain.SendFileMessageUseCase
 import com.goim.kmp.domain.SendStickerUseCase
 import com.goim.kmp.domain.StickerRepository
 import com.goim.kmp.model.ChatType
+import com.goim.kmp.model.FileMeta
 import com.goim.kmp.model.Message
+import com.goim.kmp.model.MessagePreview
 import com.goim.kmp.model.MimeTypes
 import com.goim.kmp.model.StickerItem
 import com.goim.kmp.model.StickerPack
@@ -17,6 +19,8 @@ import com.goim.kmp.model.User
 import com.goim.kmp.platform.ImageCodec
 import com.goim.kmp.platform.ImageCompressor
 import com.goim.kmp.platform.RecordedAudio
+import com.goim.kmp.platform.imgSendLog
+import com.goim.kmp.platform.imgSendTimed
 import com.goim.kmp.platform.mediaDurationSeconds
 import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.delete
@@ -68,14 +72,24 @@ class ChatMediaActions internal constructor(
 
     private var catalogSynced = false
 
-    /** 多选 ≤ 9：按选择顺序全部入队后并发上传；GIF 保持原样以保留动图。 */
+    /**
+     * 多选 ≤ 9：先按选择顺序入队出气泡，再并发压缩并上传。
+     * HEIC 等压缩可能超过 1s，先出气泡避免「点了没反应」；GIF 不压缩。
+     */
     fun sendImages(picked: List<PickedFile>, original: Boolean) = launchReporting {
-        val prepared = withContext(Dispatchers.Default) { picked.take(MAX_IMAGES).mapNotNull { prepareImage(it, original) } }
-        if (prepared.size < picked.size.coerceAtMost(MAX_IMAGES)) onError("部分图片无法读取，已跳过")
-        val pending = prepared.map { img ->
-            deps.sendFile.enqueue(to, chatType, img.bytes, img.name, img.mime, self, title) { LocalMediaInfo(img.width, img.height) }
+        imgSendLog.i { "sendImages count=${picked.size} original=$original sizes=${picked.map { it.bytes.size }}" }
+        val images = picked.take(MAX_IMAGES).filter { MimeTypes.fromFileName(it.name).startsWith("image/") }
+        if (images.size < picked.size.coerceAtMost(MAX_IMAGES)) onError("部分图片无法读取，已跳过")
+        val pending = imgSendTimed("enqueueAll", "n=${images.size}") {
+            images.map { file ->
+                val mime = MimeTypes.fromFileName(file.name)
+                // 尺寸留给压缩后再写；这里不解码 HEIF，保证气泡立刻出现。
+                deps.sendFile.enqueue(to, chatType, file.bytes, file.name, mime, self, title)
+            }
         }
-        pending.forEach { message -> uploadLater(message) }
+        pending.zip(images).forEach { (message, file) ->
+            compressThenUpload(message, file, original)
+        }
     }
 
     /** 读入待发送文件；超过 [MAX_FILE_BYTES] 或读取失败时提示并返回 null。 */
@@ -185,7 +199,56 @@ class ChatMediaActions internal constructor(
     private fun uploadLater(message: Message) {
         scope.launch {
             try {
-                deps.sendFile.upload(message)
+                imgSendTimed("upload+deliver", "seq=${message.clientSeq}") {
+                    deps.sendFile.upload(message)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onError(e.userMessage())
+            }
+        }
+    }
+
+    /** 气泡已在；后台压缩覆盖暂存 → 更新 content → 上传。 */
+    private fun compressThenUpload(message: Message, file: PickedFile, original: Boolean) {
+        scope.launch {
+            try {
+                val meta = MessagePreview.decodeFileMeta(message.content)
+                    ?: throw IllegalStateException("附件信息缺失")
+                val prepared = withContext(Dispatchers.Default) {
+                    imgSendTimed("prepareImage.async", "seq=${message.clientSeq}") {
+                        prepareImage(file, original)
+                    }
+                }
+                if (prepared == null) {
+                    imgSendLog.w { "compressThenUpload prepare failed seq=${message.clientSeq}" }
+                    onError("图片无法处理，已跳过")
+                    return@launch
+                }
+                var toUpload = message
+                val changed = prepared.bytes !== file.bytes ||
+                    prepared.name != file.name ||
+                    prepared.mime != meta.mime ||
+                    prepared.bytes.size.toLong() != meta.size
+                if (changed) {
+                    imgSendTimed("replaceStaged", "seq=${message.clientSeq} out=${prepared.bytes.size}") {
+                        deps.files.replaceStaged(meta.fileId, prepared.bytes, prepared.name)
+                    }
+                    val newMeta = FileMeta(
+                        fileId = meta.fileId,
+                        name = prepared.name,
+                        size = prepared.bytes.size.toLong(),
+                        mime = prepared.mime,
+                        width = prepared.width,
+                        height = prepared.height,
+                        duration = meta.duration,
+                    )
+                    toUpload = deps.sendFile.patchStagedMeta(message, newMeta)
+                }
+                imgSendTimed("upload+deliver", "seq=${message.clientSeq}") {
+                    deps.sendFile.upload(toUpload)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -210,15 +273,18 @@ class ChatMediaActions internal constructor(
 
     private fun prepareImage(file: PickedFile, original: Boolean): PreparedImage? {
         val mime = MimeTypes.fromFileName(file.name)
+        imgSendLog.i { "prepareImage name=${file.name} mime=$mime in=${file.bytes.size} original=$original" }
         if (mime == "image/gif") {
             val size = ImageCodec.dimensions(file.bytes)
             return PreparedImage(file.bytes, file.name, mime, size?.first, size?.second)
         }
         val base = file.name.substringBeforeLast('.').ifEmpty { "IMG_${nowMillis()}" }
         ImageCompressor.compress(file.bytes, original)?.let {
+            imgSendLog.i { "prepareImage compressed out=${it.bytes.size} ${it.width}x${it.height}" }
             return PreparedImage(it.bytes, "$base.jpg", "image/jpeg", it.width, it.height)
         }
         // 平台无法解码（如桌面端 HEIC）：原样发送
+        imgSendLog.w { "prepareImage compress failed, sending original name=${file.name} mime=$mime size=${file.bytes.size}" }
         if (!mime.startsWith("image/")) return null
         val size = ImageCodec.dimensions(file.bytes)
         return PreparedImage(file.bytes, file.name, mime, size?.first, size?.second)

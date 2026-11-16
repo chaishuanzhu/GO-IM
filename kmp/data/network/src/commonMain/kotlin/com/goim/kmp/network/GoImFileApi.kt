@@ -1,6 +1,8 @@
 package com.goim.kmp.network
 
+import co.touchlab.kermit.Logger
 import com.goim.kmp.common.DomainError
+import com.goim.kmp.common.nowMillis
 import com.goim.kmp.model.FileMeta
 import com.goim.kmp.model.StickerItem
 import com.goim.kmp.model.StickerPack
@@ -35,6 +37,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+
+private val imgUploadLog = Logger.withTag("ImgSend")
 
 @Serializable
 internal data class UploadResponseDto(
@@ -73,16 +77,24 @@ class GoImFileApi(
         mime: String,
         onProgress: (Float) -> Unit = {},
     ): FileMeta {
+        val t0 = nowMillis()
+        imgUploadLog.i { "upload start name=$fileName mime=$mime bytes=${bytes.size}" }
         val direct = try {
             uploadDirect(bytes, fileName, mime, onProgress)
-        } catch (_: DirectUploadUnavailable) {
+        } catch (e: DirectUploadUnavailable) {
+            imgUploadLog.i { "upload direct unavailable, fallback gateway (${nowMillis() - t0}ms)" }
             null
         }
-        if (direct != null) return direct
+        if (direct != null) {
+            imgUploadLog.i { "upload done via=direct ${nowMillis() - t0}ms fileId=${direct.fileId}" }
+            return direct
+        }
         if (bytes.size > LEGACY_MAX_BYTES) {
             throw DomainError.InvalidState("当前服务器仅支持 ${LEGACY_MAX_BYTES / 1024 / 1024}MB 以内的文件")
         }
-        return uploadViaGateway(bytes, fileName, mime, onProgress)
+        return uploadViaGateway(bytes, fileName, mime, onProgress).also {
+            imgUploadLog.i { "upload done via=gateway ${nowMillis() - t0}ms fileId=${it.fileId}" }
+        }
     }
 
     private suspend fun uploadDirect(
@@ -91,6 +103,7 @@ class GoImFileApi(
         mime: String,
         onProgress: (Float) -> Unit,
     ): FileMeta {
+        var t = nowMillis()
         val presignResponse = postForm(
             "file/presign",
             "name" to fileName,
@@ -100,11 +113,13 @@ class GoImFileApi(
         if (presignResponse.status.value in DIRECT_UNSUPPORTED) throw DirectUploadUnavailable()
         ensureSuccess(presignResponse)
         val presign = decode(presignResponse, PresignResponseDto.serializer())
+        imgUploadLog.i { "upload.presign ${nowMillis() - t}ms fileId=${presign.fileId}" }
 
         val contentType = presign.headers.entries
             .firstOrNull { it.key.equals(HttpHeaders.ContentType, ignoreCase = true) }?.value
             ?.let { runCatching { ContentType.parse(it) }.getOrNull() }
             ?: ContentType.Application.OctetStream
+        t = nowMillis()
         val putResponse = try {
             client.request(presign.uploadUrl) {
                 method = HttpMethod.parse(presign.method.uppercase())
@@ -117,14 +132,18 @@ class GoImFileApi(
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            imgUploadLog.w { "upload.put failed ${nowMillis() - t}ms: ${e.message}" }
             // 对象存储域名不可达：交给调用方回退到网关中转
             throw DirectUploadUnavailable()
         }
         ensureSuccess(putResponse)
+        imgUploadLog.i { "upload.put ${nowMillis() - t}ms bytes=${bytes.size}" }
 
+        t = nowMillis()
         val completeResponse = postForm("file/complete", "file_id" to presign.fileId)
         ensureSuccess(completeResponse)
+        imgUploadLog.i { "upload.complete ${nowMillis() - t}ms" }
         return toFileMeta(completeResponse, bytes.size.toLong(), fileName, mime)
     }
 
@@ -149,6 +168,7 @@ class GoImFileApi(
         mime: String,
         onProgress: (Float) -> Unit,
     ): FileMeta {
+        val t = nowMillis()
         val response = request {
             client.submitFormWithBinaryData(
                 url = url("upload"),
@@ -172,6 +192,7 @@ class GoImFileApi(
                 }
             }
         }
+        imgUploadLog.i { "upload.gateway ${nowMillis() - t}ms bytes=${bytes.size}" }
         return toFileMeta(response, bytes.size.toLong(), fileName, mime)
     }
 

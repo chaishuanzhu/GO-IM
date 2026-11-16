@@ -29,6 +29,19 @@ class LocalMediaStore(
         return id
     }
 
+    /**
+     * 用压缩后的字节覆盖同一 [localId] 的暂存（扩展名可变，例如 .heic → .jpg）。
+     * 先出气泡再压缩时用：气泡仍引用同一 localId。
+     */
+    fun replaceStaged(localId: String, bytes: ByteArray, suggestedName: String) {
+        require(LocalFileId.isLocal(localId)) { "replaceStaged expects a local id" }
+        fs.createDirectories(home.tmp)
+        remove(localId)
+        val path = home.tmp / storedFileName(diskKey(localId), suggestedName)
+        writeAtomically(path, bytes)
+        writeName(path, suggestedName)
+    }
+
     fun bytes(fileId: String): ByteArray? = path(fileId)?.let { p -> runCatching { fs.read(p) { readByteArray() } }.getOrNull() }
 
     fun path(fileId: String): Path? {

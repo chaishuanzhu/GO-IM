@@ -36,7 +36,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
@@ -44,6 +43,8 @@ import coil3.size.Size
 import com.goim.kmp.designsystem.GoImMediaColors
 import com.goim.kmp.designsystem.GoImSize
 import com.goim.kmp.designsystem.GoImSpacing
+import com.goim.kmp.designsystem.MediaFullscreenWindowEffect
+import com.goim.kmp.designsystem.mediaFullscreenDialogProperties
 import com.goim.kmp.platform.EncodedImage
 import kotlin.math.exp
 import kotlin.math.min
@@ -100,7 +101,9 @@ class AvatarCropState(private val imageWidth: Int, private val imageHeight: Int,
 /** 全屏头像裁剪：拖动 / 双指（桌面滚轮）缩放，圆形取景框内即头像。 */
 @Composable
 fun AvatarCropDialog(image: EncodedImage, onCancel: () -> Unit, onConfirm: (CropSquare) -> Unit) {
-    Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onCancel, properties = mediaFullscreenDialogProperties()) {
+        // Android：黑底铺进系统栏；顶栏按钮仍走 safeDrawing。
+        MediaFullscreenWindowEffect()
         Surface(Modifier.fillMaxSize(), color = GoImMediaColors.background, contentColor = GoImMediaColors.content) {
             Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                 var state by remember { mutableStateOf<AvatarCropState?>(null) }

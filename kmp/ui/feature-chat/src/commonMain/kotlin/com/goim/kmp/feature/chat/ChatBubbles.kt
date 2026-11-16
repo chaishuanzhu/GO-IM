@@ -66,6 +66,8 @@ import com.goim.kmp.designsystem.GoImSpacing
 import com.goim.kmp.designsystem.GoImSize
 import com.goim.kmp.designsystem.GoImDimens
 import com.goim.kmp.designsystem.GoImMediaColors
+import com.goim.kmp.designsystem.MediaFullscreenWindowEffect
+import com.goim.kmp.designsystem.mediaFullscreenDialogProperties
 import com.goim.kmp.domain.FileDownloadEvent
 import com.goim.kmp.domain.FileRepository
 import com.goim.kmp.domain.StickerRepository
@@ -286,7 +288,9 @@ internal fun StickerView(ref: StickerRef, stickers: StickerRepository, size: Dp,
 internal fun ImagePreviewDialog(model: String, localPath: String?, onDismiss: () -> Unit) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
-    Dialog(onDismissRequest = onDismiss, properties = fullScreenDialogProperties()) {
+    Dialog(onDismissRequest = onDismiss, properties = mediaFullscreenDialogProperties()) {
+        // Android：黑底铺进状态栏 / 导航栏；关闭按钮仍避开安全区。
+        MediaFullscreenWindowEffect()
         Box(Modifier.fillMaxSize().background(GoImMediaColors.background)) {
             AsyncImage(
                 model = model,

@@ -271,6 +271,9 @@ interface FileRepository {
     /** 暂存到 `Users/{uid}/tmp`，返回 `local:{uuid}`。 */
     suspend fun stage(bytes: ByteArray, fileName: String): String
 
+    /** 覆盖同一 localId 的暂存内容（可改扩展名）；用于先出气泡再压缩。 */
+    suspend fun replaceStaged(localId: String, bytes: ByteArray, fileName: String)
+
     suspend fun stagedBytes(localId: String): ByteArray?
 
     /** 上传暂存文件；服务端未返回的宽高由调用方补齐。 */
