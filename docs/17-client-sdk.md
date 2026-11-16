@@ -208,5 +208,5 @@ fun HostImTab(client: GoImClient) {
 **Q: 只要消息能力？** 用 Lite，不要引 Full。  
 **Q: Token 过期？** `sessionEnded` → `closeSession` → 重新 `users/token` → `openSession`。  
 **Q: 本机 publish 401？** Token 缺 `write:packages`，用 Actions 发布或 `gh auth refresh -h github.com -s write:packages`。  
-**Q: 和 Paircast？** 服务端 `pkg/imserver`；客户端 Lite 自绘 + `sendSignal` / `signals`（如 `paircast.playback`）。  
-**Q: Signal？** `session.sendSignal(to, type, dataJson)` / `session.signals`；内容 `{"type","data"}`，无 ACK/离线/未读。
+**Q: 和 Paircast？** 服务端 `pkg/imserver`；客户端 Lite 自绘 + `sendSignal` / `signals`（如 `paircast.playback`）。本地联调可用 `includeBuild("../GO-IM/kmp")` 替换 Maven `com.goim:sdk-lite`（含 iOS）。  
+**Q: Signal？** `session.sendSignal(to, type, dataJson)` / `session.signals`；内容 `{"type","data"}`，无 ACK/离线/未读。`connection.inboundEvents` 可多订阅。
