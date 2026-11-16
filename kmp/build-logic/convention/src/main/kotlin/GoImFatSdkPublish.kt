@@ -1,6 +1,5 @@
 import org.gradle.api.Project
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier
-import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
@@ -32,16 +31,30 @@ internal fun Project.configureFatSdkPublish() {
         })
     }
 
-    tasks.matching { it.name == "bundleReleaseAar" }.configureEach {
-        val androidJars = provider {
-            collectAndroidProjectJars().filter { it.exists() }
-        }
-        inputs.files(androidJars)
-        doLast {
-            val aar = outputs.files.singleFile
-            val jars = androidJars.get()
-            logger.lifecycle("Fat AAR embed ${jars.size} project jars into ${aar.name}")
-            val fat = File(temporaryDir, "${project.name}-fat.aar")
+    afterEvaluate {
+        val bundle = tasks.findByName("bundleReleaseAar") ?: return@afterEvaluate
+        val embedProjects = fatEmbedProjects()
+        // 用路径依赖，确保 KMP/AGP 延迟创建的 bundleLibRuntimeToJarRelease 也会跑
+        val jarTaskPaths = embedProjects.map { "${it.path}:bundleLibRuntimeToJarRelease" }
+        bundle.dependsOn(jarTaskPaths)
+        bundle.doLast {
+            val aar = bundle.outputs.files.singleFile
+            val jars = embedProjects.mapNotNull { dep ->
+                dep.tasks.findByName("bundleLibRuntimeToJarRelease")
+                    ?.outputs?.files?.files
+                    ?.firstOrNull { it.extension.equals("jar", ignoreCase = true) && it.exists() }
+            }.distinct()
+            logger.lifecycle(
+                "Fat AAR embed ${jars.size}/${embedProjects.size} project jars into ${aar.name} " +
+                    "(missing: ${embedProjects.map { it.path }.filter { path ->
+                        jars.none { it.path.contains(path.removePrefix(":").replace(':', '/')) } &&
+                            jars.none { it.path.contains(path.substringAfterLast(':')) }
+                    }})",
+            )
+            require(jars.size >= embedProjects.size / 2) {
+                "Fat AAR for ${project.path}: only ${jars.size} jars for ${embedProjects.map { it.path }}"
+            }
+            val fat = File(bundle.temporaryDir, "${project.name}-fat.aar")
             mergeAarWithProjectDeps(aar, jars, fat)
             fat.copyTo(aar, overwrite = true)
         }
@@ -104,27 +117,18 @@ private fun Project.projectDependencyFiles(configurationNames: List<String>): Li
     return seen.toList()
 }
 
-/** 收集 android runtime 上所有工程依赖的 class jar（bundleLibRuntimeToJarRelease）。 */
-private fun Project.collectAndroidProjectJars(): List<File> {
-    val classpathName = listOf("androidReleaseRuntimeClasspath", "releaseRuntimeClasspath")
-        .firstOrNull { configurations.findByName(it) != null }
-        ?: return emptyList()
-    val configuration = configurations.getByName(classpathName)
-    val projectIds = configuration.incoming.resolutionResult.allDependencies
-        .asSequence()
-        .filterIsInstance<ResolvedDependencyResult>()
-        .map { it.selected.id }
-        .filterIsInstance<ProjectComponentIdentifier>()
-        .map { it.projectPath }
-        .toSet()
-
-    return projectIds.mapNotNull { path ->
-        val dep = project(path)
-        val jarTask = dep.tasks.findByName("bundleLibRuntimeToJarRelease")
-            ?: dep.tasks.findByName("jvmJar")
-            ?: dep.tasks.findByName("jar")
-        jarTask?.outputs?.files?.files?.firstOrNull { it.extension.equals("jar", true) }
+/** lite：core/data/platform；full：core/data/platform/ui + sdk-lite。 */
+private fun Project.fatEmbedProjects(): List<Project> {
+    fun wanted(sub: Project): Boolean = when (this.path) {
+        ":sdk:lite" ->
+            sub.path.startsWith(":core:") || sub.path.startsWith(":data:") || sub.path == ":platform"
+        ":sdk:full" ->
+            !sub.path.startsWith(":app") && sub.path != path &&
+                (sub.path.startsWith(":core:") || sub.path.startsWith(":data:") ||
+                    sub.path.startsWith(":ui:") || sub.path == ":platform" || sub.path == ":sdk:lite")
+        else -> false
     }
+    return rootProject.subprojects.filter(::wanted)
 }
 
 private fun mergeAarWithProjectDeps(thinAar: File, deps: List<File>, output: File) {
