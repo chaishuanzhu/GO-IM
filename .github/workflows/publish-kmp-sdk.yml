@@ -29,20 +29,25 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
       - name: Publish to GitHub Packages
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ARGS=(
-            publishKotlinMultiplatformPublicationToGitHubPackagesRepository
-            publishAndroidReleasePublicationToGitHubPackagesRepository
-            publishDesktopPublicationToGitHubPackagesRepository
-            --no-configuration-cache
-            --stacktrace
-          )
           if [ -n "${{ inputs.version }}" ]; then
-            ./gradlew -Pgoim.sdk.version="${{ inputs.version }}" "${ARGS[@]}"
+            ./gradlew -Pgoim.sdk.version="${{ inputs.version }}" \
+              publishKotlinMultiplatformPublicationToGitHubPackagesRepository \
+              publishAndroidReleasePublicationToGitHubPackagesRepository \
+              publishDesktopPublicationToGitHubPackagesRepository \
+              --no-configuration-cache --stacktrace
           else
-            ./gradlew "${ARGS[@]}"
+            ./gradlew \
+              publishKotlinMultiplatformPublicationToGitHubPackagesRepository \
+              publishAndroidReleasePublicationToGitHubPackagesRepository \
+              publishDesktopPublicationToGitHubPackagesRepository \
+              --no-configuration-cache --stacktrace
           fi
