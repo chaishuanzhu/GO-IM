@@ -1,4 +1,4 @@
-package com.goim.sdk.lite
+package com.goim.sdk.core
 
 import com.goim.kmp.domain.ConnectionRepository
 import com.goim.kmp.domain.ConversationRepository

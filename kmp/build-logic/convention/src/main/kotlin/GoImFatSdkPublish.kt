@@ -13,7 +13,7 @@ import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 /**
- * 仅用于 `:sdk:lite` / `:sdk:full`：
+ * 仅用于 `:sdk:core` / `:sdk:uikit`：
  * - desktop JAR / android AAR 内嵌工程模块 class
  * - POM 去掉工程坐标（`com.goim` / `goim-kmp.*` / version=unspecified）
  * - 关闭 Gradle Module Metadata，避免再解析中间包
@@ -117,15 +117,15 @@ private fun Project.projectDependencyFiles(configurationNames: List<String>): Li
     return seen.toList()
 }
 
-/** lite：core/data/platform；full：core/data/platform/ui + sdk-lite。 */
+/** core：core/data/platform；uikit：core/data/platform/ui + sdk-core。 */
 private fun Project.fatEmbedProjects(): List<Project> {
     fun wanted(sub: Project): Boolean = when (this.path) {
-        ":sdk:lite" ->
+        ":sdk:core" ->
             sub.path.startsWith(":core:") || sub.path.startsWith(":data:") || sub.path == ":platform"
-        ":sdk:full" ->
+        ":sdk:uikit" ->
             !sub.path.startsWith(":app") && sub.path != path &&
                 (sub.path.startsWith(":core:") || sub.path.startsWith(":data:") ||
-                    sub.path.startsWith(":ui:") || sub.path == ":platform" || sub.path == ":sdk:lite")
+                    sub.path.startsWith(":ui:") || sub.path == ":platform" || sub.path == ":sdk:core")
         else -> false
     }
     return rootProject.subprojects.filter(::wanted)

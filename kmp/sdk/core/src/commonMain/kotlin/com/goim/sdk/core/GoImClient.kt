@@ -1,4 +1,4 @@
-package com.goim.sdk.lite
+package com.goim.sdk.core
 
 import com.goim.kmp.common.PlatformContext
 import com.goim.kmp.model.User
@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /**
- * Lite SDK 入口：创建后 [openSession] 注入宿主身份，再通过 [session] / 返回值使用业务能力。
+ * Core SDK 入口：创建后 [openSession] 注入宿主身份，再通过 [session] / 返回值使用业务能力。
  *
  * 不包含登录 / 注册 UI；不依赖 Compose。
  */
@@ -41,7 +41,7 @@ class GoImClient private constructor(
     /** 非主动关闭（踢下线 / 令牌失效等）时通知宿主；宿主应 [closeSession] 后重新 [openSession]。 */
     val sessionEnded: SharedFlow<SessionEndReason> get() = manager.ended
 
-    /** 底层 [SessionManager]，供 Full SDK / 示范 App 复用（账号列表、switchTo 等）。 */
+    /** 底层 [SessionManager]，供 UIKit / 示范 App 复用（账号列表、switchTo 等）。 */
     val sessionManager: SessionManager get() = manager
 
     suspend fun openSession(identity: GoImIdentity, persistCredentials: Boolean = true): GoImSession {

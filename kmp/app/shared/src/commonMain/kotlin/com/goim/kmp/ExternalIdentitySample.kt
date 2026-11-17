@@ -2,19 +2,19 @@ package com.goim.kmp
 
 import com.goim.kmp.common.PlatformContext
 import com.goim.kmp.repository.SessionManager
-import com.goim.sdk.lite.GoImClient
-import com.goim.sdk.lite.GoImConfig
-import com.goim.sdk.lite.GoImIdentity
-import com.goim.sdk.lite.GoImSdkPreview
+import com.goim.sdk.core.GoImClient
+import com.goim.sdk.core.GoImConfig
+import com.goim.sdk.core.GoImIdentity
+import com.goim.sdk.core.GoImSdkPreview
 
 /**
  * 示范：宿主自有账号体系拿到 GO-IM `uid`+`token` 后启动会话（不走 [com.goim.kmp.navigation.AuthNavHost]）。
  *
- * Paircast 类接入方：业务后端 `/server/v1/users/token` → 客户端调用本方法 → [com.goim.sdk.full.GoImNavHost]。
+ * Paircast 类接入方：业务后端 `/server/v1/users/token` → 客户端调用本方法 → [com.goim.sdk.uikit.GoImNavHost]。
  */
 @GoImSdkPreview
 object ExternalIdentitySample {
-    /** 独立 Lite 客户端（嵌入式宿主常用）。 */
+    /** 独立 Core 客户端（嵌入式宿主常用）。 */
     fun createClient(serverUrl: String, context: PlatformContext, deviceId: String = ""): GoImClient =
         GoImClient.create(GoImConfig(serverUrl = serverUrl, deviceId = deviceId), context)
 

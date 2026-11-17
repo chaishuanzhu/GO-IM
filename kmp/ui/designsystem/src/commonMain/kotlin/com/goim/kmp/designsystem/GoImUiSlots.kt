@@ -93,9 +93,9 @@ data class ChatTopBarActions(
 )
 
 /**
- * Full SDK 可替换插槽。字段为 null 时各 feature 使用内置默认 Composable。
+ * UIKit 可替换插槽。字段为 null 时各 feature 使用内置默认 Composable。
  *
- * 典型用法：在 [com.goim.sdk.full.GoImNavHost] 传入自定义 lambda。
+ * 典型用法：在 [com.goim.sdk.uikit.GoImNavHost] 传入自定义 lambda。
  */
 @Immutable
 data class GoImUiSlots(

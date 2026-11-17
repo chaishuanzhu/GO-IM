@@ -1,4 +1,4 @@
-@file:OptIn(com.goim.sdk.lite.GoImSdkPreview::class)
+@file:OptIn(com.goim.sdk.core.GoImSdkPreview::class)
 
 package com.goim.kmp
 
@@ -50,7 +50,7 @@ import com.goim.kmp.repository.SessionEndReason
 import com.goim.kmp.repository.SessionManager
 import com.goim.kmp.repository.SessionState
 import com.goim.kmp.repository.UserSession
-import com.goim.sdk.full.GoImSessionNavHost
+import com.goim.sdk.uikit.GoImSessionNavHost
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,7 +61,7 @@ import org.koin.compose.koinInject
  * 三端共用的根 Composable；调用前需 `initKoin`。
  * [titleBar]：macOS 桌面端透明标题栏下的拖动区（铺在内容之下，空白处可拖动窗口），高度 [titleBarHeight]。
  *
- * 登录 / 注册仍由本 App 持有；登录成功后主区走 Full SDK [GoImSessionNavHost]。
+ * 登录 / 注册仍由本 App 持有；登录成功后主区走 UIKit [GoImSessionNavHost]。
  */
 @Composable
 fun App(titleBarHeight: Dp = 0.dp, titleBar: @Composable () -> Unit = {}) {

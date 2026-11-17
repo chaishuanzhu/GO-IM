@@ -5,12 +5,15 @@ plugins {
 kotlin {
     sourceSets {
         commonMain.dependencies {
+            // Public API surface hosts compile against.
             api(projects.core.model)
             api(projects.core.domain)
             api(projects.data.repository)
+            api(libs.kotlinx.coroutines.core)
+
+            // Implementation details (fat AAR/JAR embeds project code; POM keeps third-party).
             implementation(projects.data.network)
             implementation(projects.data.storage)
-            implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)
@@ -25,8 +28,11 @@ kotlin {
 publishing {
     publications.withType<MavenPublication>().configureEach {
         pom {
-            name.set("GO-IM SDK Lite")
-            description.set("GO-IM client SDK without Compose UI (session, messages, conversations).")
+            name.set("GO-IM SDK Core")
+            description.set(
+                "GO-IM Core SDK (no UI): session, messages, conversations, groups, friends, media. " +
+                    "Hosts supply account login UI and push vendor SDKs.",
+            )
         }
     }
 }

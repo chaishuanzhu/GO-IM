@@ -1,6 +1,6 @@
 @file:OptIn(GoImSdkPreview::class)
 
-package com.goim.sdk.lite
+package com.goim.sdk.core
 
 import com.goim.kmp.common.PlatformContext
 import com.goim.kmp.model.TransportKind

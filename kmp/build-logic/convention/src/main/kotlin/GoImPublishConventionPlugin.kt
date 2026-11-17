@@ -9,7 +9,8 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 /**
  * 将 KMP 库模块发布到 Maven（本机 + 可选 GitHub Packages）。
  *
- * SDK 入口（`:sdk:lite` / `:sdk:full`）会额外打成 fat 包；其它库模块默认不发布。
+ * SDK 入口（`:sdk:core` / `:sdk:uikit`）额外打 fat Android/Desktop 包。
+ * 中间库也发布 metadata + iOS（及 desktop 若有），**不发布 Android 变体**，避免与 fat AAR 内嵌 class 重复。
  */
 class GoImPublishConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
@@ -21,12 +22,15 @@ class GoImPublishConventionPlugin : Plugin<Project> {
         version = sdkVersion
 
         val baseArtifact = path.removePrefix(":").replace(':', '-')
-        val isSdkEntrypoint = path == ":sdk:lite" || path == ":sdk:full"
+        val isSdkEntrypoint = path == ":sdk:core" || path == ":sdk:uikit"
 
         pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
             extensions.configure<KotlinMultiplatformExtension> {
-                androidTarget {
-                    publishLibraryVariants("release")
+                // Only the fat SDK entrypoints publish Android AARs.
+                if (isSdkEntrypoint) {
+                    androidTarget {
+                        publishLibraryVariants("release")
+                    }
                 }
             }
         }
@@ -77,8 +81,8 @@ class GoImPublishConventionPlugin : Plugin<Project> {
     }
 }
 
-/** 只给 SDK 入口挂发布；中间库不发到 Maven。 */
+/** 库模块都发布（跳过 app）；入口 SDK 另见 [configureFatSdkPublish]。 */
 internal fun Project.applyGoImPublishIfLibrary() {
-    if (path != ":sdk:lite" && path != ":sdk:full") return
+    if (path.startsWith(":app")) return
     pluginManager.apply("goim.kmp.publish")
 }

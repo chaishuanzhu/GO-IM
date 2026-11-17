@@ -1,4 +1,4 @@
-package com.goim.sdk.full
+package com.goim.sdk.uikit
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -19,16 +19,16 @@ import com.goim.kmp.model.Appearance
 import com.goim.kmp.navigation.MainNavHost
 import com.goim.kmp.repository.SessionState
 import com.goim.kmp.repository.UserSession
-import com.goim.sdk.lite.GoImClient
-import com.goim.sdk.lite.GoImSdkPreview
+import com.goim.sdk.core.GoImClient
+import com.goim.sdk.core.GoImSdkPreview
 
-/** Full SDK 可选行为：是否展示设置入口等（预留；当前主区与示范 App 一致）。 */
+/** UIKit 可选行为：是否展示设置入口等（预留；当前主区与示范 App 一致）。 */
 data class GoImUiOptions(
     val showSettings: Boolean = true,
 )
 
 /**
- * Full SDK 主入口：在已 [GoImClient.openSession] / [GoImClient.restore] 后嵌入默认 CMP 主界面。
+ * UIKit 主入口：在已 [GoImClient.openSession] / [GoImClient.restore] 后嵌入默认 CMP 主界面。
  * 通过 [slots] 替换会话行、气泡、顶栏等；无会话时显示加载指示（宿主应先完成身份注入）。
  */
 @GoImSdkPreview

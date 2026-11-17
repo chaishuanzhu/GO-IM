@@ -1,9 +1,9 @@
-package com.goim.sdk.lite
+package com.goim.sdk.core
 
 import com.goim.kmp.model.TransportKind
 
 /**
- * Lite SDK 启动配置。
+ * Core SDK 启动配置。
  *
  * [deviceId] / [platform] 会写入设备偏好并在建连时上报网关；同一设备重连会顶掉自己的旧连接。
  * [platform] 取值与网关约定一致：`android` / `ios` / `ipados` / `macos` / `windows` / `linux`。

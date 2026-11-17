@@ -6,26 +6,31 @@ plugins {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            api(projects.sdk.lite)
+            // Same-version Core is required; hosts depending on UIKit need not declare Core.
+            api(projects.sdk.core)
             api(projects.ui.designsystem)
             api(projects.ui.featureConversations)
             api(projects.ui.featureChat)
             api(projects.ui.featureContacts)
             api(projects.ui.featureSearch)
             api(projects.ui.featureSettings)
+
+            // Compose / navigation appear on the UIKit API surface (slots, NavHost).
+            api(libs.androidx.navigation.compose)
+            api(libs.androidx.lifecycle.viewmodel.compose)
+            api(libs.androidx.lifecycle.runtime.compose)
+            api(libs.coil.compose)
+
+            // Auth feature screens are for the sample app path only — not a public product line.
             implementation(projects.ui.featureAuth)
             implementation(projects.core.domain)
             implementation(projects.data.repository)
             implementation(projects.data.network)
             implementation(projects.platform)
-            implementation(libs.androidx.navigation.compose)
-            implementation(libs.androidx.lifecycle.viewmodel.compose)
-            implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.koin.core)
             implementation(libs.koin.compose)
             implementation(libs.kermit)
-            implementation(libs.coil.compose)
         }
     }
 }
@@ -33,8 +38,11 @@ kotlin {
 publishing {
     publications.withType<MavenPublication>().configureEach {
         pom {
-            name.set("GO-IM SDK Full")
-            description.set("GO-IM client SDK with default Compose UI and replaceable slots.")
+            name.set("GO-IM SDK UIKit")
+            description.set(
+                "GO-IM UIKit: default Compose Multiplatform chat UI and replaceable slots on top of sdk-core. " +
+                    "Does not include host account login/registration.",
+            )
         }
     }
 }
