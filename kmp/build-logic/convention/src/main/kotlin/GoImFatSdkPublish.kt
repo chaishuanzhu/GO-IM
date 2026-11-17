@@ -1,5 +1,8 @@
 import org.gradle.api.Project
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.component.ModuleComponentSelector
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier
+import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
@@ -14,12 +17,13 @@ import java.util.zip.ZipOutputStream
 
 /**
  * 仅用于 `:sdk:core` / `:sdk:uikit`：
- * - desktop JAR / android AAR 内嵌工程模块 class
- * - POM 去掉工程坐标（`com.goim` / `goim-kmp.*` / version=unspecified）
- * - 关闭 Gradle Module Metadata，避免再解析中间包
+ * - desktop JAR / android AAR 内嵌工程模块 class（Android/Desktop 运行时自包含）
+ * - KMP / iOS 的 Gradle Module Metadata **保留**对中间模块的依赖（中间模块发 metadata+iOS，不发 Android）
+ * - fat 的 androidRelease / desktop：POM 与 .module 去掉 com.goim 工程坐标，
+ *   并把内嵌模块的一阶第三方依赖摊平写回（Kermit / Ktor 等），避免 Duplicate class 与 ClassNotFound
  */
 internal fun Project.configureFatSdkPublish() {
-    tasks.withType<GenerateModuleMetadata>().configureEach { enabled = false }
+    val sdkProject = this
 
     tasks.withType<Jar>().configureEach {
         if (name != "desktopJar") return@configureEach
@@ -31,10 +35,24 @@ internal fun Project.configureFatSdkPublish() {
         })
     }
 
+    // Rewrite fat Android/Desktop module metadata only — keep KMP/iOS metadata intact.
+    tasks.withType<GenerateModuleMetadata>().configureEach {
+        val androidFat = name.contains("AndroidRelease", ignoreCase = true)
+        val desktopFat = name.contains("Desktop", ignoreCase = true) &&
+            !name.contains("KotlinMultiplatform", ignoreCase = true)
+        if (!androidFat && !desktopFat) return@configureEach
+        val configurationName = if (androidFat) "releaseRuntimeClasspath" else "desktopRuntimeClasspath"
+        doLast {
+            val out = outputs.files.singleFile
+            if (!out.isFile) return@doLast
+            val external = sdkProject.fatExternalMavenDeps(configurationName)
+            out.writeText(rewriteFatModuleMetadata(out.readText(), external))
+        }
+    }
+
     afterEvaluate {
         val bundle = tasks.findByName("bundleReleaseAar") ?: return@afterEvaluate
         val embedProjects = fatEmbedProjects()
-        // 用路径依赖，确保 KMP/AGP 延迟创建的 bundleLibRuntimeToJarRelease 也会跑
         val jarTaskPaths = embedProjects.map { "${it.path}:bundleLibRuntimeToJarRelease" }
         bundle.dependsOn(jarTaskPaths)
         bundle.doLast {
@@ -61,11 +79,6 @@ internal fun Project.configureFatSdkPublish() {
     }
 
     pluginManager.withPlugin("maven-publish") {
-        extensions.configure<PublishingExtension> {
-            publications.withType<MavenPublication>().configureEach {
-                stripEmbeddedProjectDependencies()
-            }
-        }
         afterEvaluate {
             val baseArtifact = path.removePrefix(":").replace(':', '-')
             extensions.configure<PublishingExtension> {
@@ -75,18 +88,97 @@ internal fun Project.configureFatSdkPublish() {
                         name.equals("androidRelease", ignoreCase = true) -> "$baseArtifact-android"
                         else -> "$baseArtifact-$name"
                     }
-                    stripEmbeddedProjectDependencies()
+                    when {
+                        name.equals("androidRelease", ignoreCase = true) ->
+                            rewriteFatPomDependencies { fatExternalMavenDeps("releaseRuntimeClasspath") }
+                        name.equals("desktop", ignoreCase = true) ->
+                            rewriteFatPomDependencies { fatExternalMavenDeps("desktopRuntimeClasspath") }
+                    }
                 }
             }
         }
     }
 }
 
-private fun MavenPublication.stripEmbeddedProjectDependencies() {
+private data class ExternalMavenDep(val group: String, val module: String, val version: String)
+
+/**
+ * First-level Maven deps of this entrypoint + every embedded project on [configurationName].
+ * (Not the full transitive closure — Gradle still resolves transitives for consumers.)
+ */
+private fun Project.fatExternalMavenDeps(configurationName: String): List<ExternalMavenDep> {
+    val configuration = configurations.findByName(configurationName) ?: return emptyList()
+    val embedPaths = (fatEmbedProjects().map { it.path } + path).toSet()
+    val seen = linkedSetOf<String>()
+    val out = mutableListOf<ExternalMavenDep>()
+    configuration.incoming.resolutionResult.allDependencies
+        .filterIsInstance<ResolvedDependencyResult>()
+        .forEach { result ->
+            val from = result.from.id as? ProjectComponentIdentifier ?: return@forEach
+            if (from.projectPath !in embedPaths) return@forEach
+            val requested = result.requested as? ModuleComponentSelector ?: return@forEach
+            if (requested.group == "com.goim" || requested.group.startsWith("goim-kmp")) return@forEach
+            val key = "${requested.group}:${requested.module}"
+            if (!seen.add(key)) return@forEach
+            val version = (result.selected.id as? ModuleComponentIdentifier)?.version
+                ?.takeIf { it.isNotBlank() && it != "unspecified" }
+                ?: requested.version.takeIf { it.isNotBlank() && it != "unspecified" }
+                ?: return@forEach
+            out += ExternalMavenDep(requested.group, requested.module, version)
+        }
+    return out
+}
+
+/** Drop com.goim deps; ensure flattened third-party deps are present on runtime variants. */
+@Suppress("UNCHECKED_CAST")
+private fun rewriteFatModuleMetadata(json: String, external: List<ExternalMavenDep>): String {
+    val root = groovy.json.JsonSlurper().parseText(json) as MutableMap<String, Any?>
+    val variants = root["variants"] as? MutableList<MutableMap<String, Any?>> ?: return json
+    for (variant in variants) {
+        val name = variant["name"] as? String ?: continue
+        val isRuntime = name.contains("Runtime", ignoreCase = true)
+        val isApi = name.contains("Api", ignoreCase = true)
+        if (!isRuntime && !isApi) continue
+
+        val deps = (variant["dependencies"] as? MutableList<MutableMap<String, Any?>>)
+            ?: mutableListOf<MutableMap<String, Any?>>().also { variant["dependencies"] = it }
+
+        deps.removeAll { dep ->
+            val group = dep["group"] as? String ?: return@removeAll false
+            val version = dep["version"] as? Map<*, *>
+            val requires = version?.get("requires") as? String
+            group == "com.goim" || group.startsWith("goim-kmp") || requires == "unspecified"
+        }
+
+        val existing = deps.mapNotNull { dep ->
+            val g = dep["group"] as? String ?: return@mapNotNull null
+            val m = dep["module"] as? String ?: return@mapNotNull null
+            "$g:$m"
+        }.toMutableSet()
+
+        if (isRuntime) {
+            for (ext in external) {
+                val key = "${ext.group}:${ext.module}"
+                if (!existing.add(key)) continue
+                deps += mutableMapOf(
+                    "group" to ext.group,
+                    "module" to ext.module,
+                    "version" to mutableMapOf("requires" to ext.version),
+                )
+            }
+        }
+        if (deps.isEmpty()) variant.remove("dependencies")
+    }
+    return groovy.json.JsonBuilder(root).toPrettyString() + "\n"
+}
+
+/** Resolve external deps lazily inside withXml (publication task execution), not at configuration time. */
+private fun MavenPublication.rewriteFatPomDependencies(external: () -> List<ExternalMavenDep>) {
     pom.withXml {
-        val depsNode = (asNode().get("dependencies") as? groovy.util.NodeList)
-            ?.firstOrNull() as? groovy.util.Node
-            ?: return@withXml
+        val rootNode = asNode()
+        val depsNode = (
+            (rootNode.get("dependencies") as? groovy.util.NodeList)?.firstOrNull() as? groovy.util.Node
+        ) ?: (rootNode.appendNode("dependencies") as groovy.util.Node)
         depsNode.children()
             .filterIsInstance<groovy.util.Node>()
             .filter { dep ->
@@ -95,6 +187,21 @@ private fun MavenPublication.stripEmbeddedProjectDependencies() {
                 group == "com.goim" || group.startsWith("goim-kmp") || version == "unspecified"
             }
             .forEach { depsNode.remove(it) }
+
+        val existing = depsNode.children()
+            .filterIsInstance<groovy.util.Node>()
+            .map { "${it.childText("groupId")}:${it.childText("artifactId")}" }
+            .toMutableSet()
+
+        for (ext in external()) {
+            val key = "${ext.group}:${ext.module}"
+            if (!existing.add(key)) continue
+            val dep = depsNode.appendNode("dependency")
+            dep.appendNode("groupId", ext.group)
+            dep.appendNode("artifactId", ext.module)
+            dep.appendNode("version", ext.version)
+            dep.appendNode("scope", "runtime")
+        }
     }
 }
 
